@@ -7,10 +7,19 @@
 --      convenience — this is the actual security boundary.
 --   2. Prevent save_record_with_links from mutating the stored record_type
 --      of an existing row.
---   3. Rewrite restore_user_archive so every semantic check runs BEFORE the
+--   3. Replace public.assert_record_data_valid with a strict per-type
+--      contract that mirrors src/lib/types.ts exactly. Missing nullable
+--      fields are invalid; they must be present as JSON null.
+--   4. Rewrite restore_user_archive so every semantic check runs BEFORE the
 --      caller's current records or links are deleted. Failure at any check
 --      raises, the transaction rolls back, and the previous archive is
---      preserved intact.
+--      preserved intact. app_metadata is never touched by restore.
+--
+-- PL/pgSQL note:
+--   pg_catalog.jsonb_typeof returns SQL NULL for a missing key, and
+--   `NULL <> 'array'` is NULL (falsy) inside PL/pgSQL IF. Every required
+--   field guard below therefore uses `IS DISTINCT FROM` so a missing key
+--   raises rather than silently passes.
 --
 -- Migrations 0001..0007 remain unchanged.
 
@@ -41,7 +50,255 @@ alter table public.records
   );
 
 -- ----------------------------------------------------------------------
--- 2. save_record_with_links: forbid record_type mutation on update.
+-- 2. assert_record_data_valid: strict per-type recordData contract.
+--
+--    Matches src/lib/types.ts exactly. Every field must be present with
+--    the expected JSON type. Nullable fields must be present as JSON null
+--    when absent; missing keys are always rejected.
+--
+--    SECURITY INVOKER: This function performs pure structural validation.
+--    It is called internally by SECURITY DEFINER RPCs. Execution is
+--    revoked from PUBLIC and anon and granted only to authenticated to
+--    match the surrounding call sites.
+-- ----------------------------------------------------------------------
+create or replace function public.assert_record_data_valid(
+  rec_type text,
+  data jsonb
+) returns void
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  s text;
+  key text;
+  string_fields text[];
+  uuid_re constant text := '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+  date_re constant text := '^\d{4}-\d{2}-\d{2}$';
+begin
+  if data is null or pg_catalog.jsonb_typeof(data) is distinct from 'object' then
+    raise exception 'recordData must be a JSON object' using errcode = '22023';
+  end if;
+
+  if rec_type = 'tool' then
+    string_fields := array[
+      'category','status','whatCaughtMyEye','whatItPromised',
+      'whatActuallyHappened','whatWorked','whatFailed',
+      'whyIKeptOrStoppedUsingIt','revisitCondition','finalVerdict'
+    ];
+    foreach key in array string_fields loop
+      if not (data ? key) then
+        raise exception 'tool.% is required', key using errcode = '22023';
+      end if;
+      if pg_catalog.jsonb_typeof(data -> key) is distinct from 'string' then
+        raise exception 'tool.% must be a JSON string', key using errcode = '22023';
+      end if;
+    end loop;
+
+    if pg_catalog.btrim(data ->> 'category') = '' then
+      raise exception 'tool.category must be a non-empty string' using errcode = '22023';
+    end if;
+    if (data ->> 'status') not in (
+      'Active','Useful but dormant','Experimental','Worth revisiting',
+      'Disappointing','Buried','Grok-tier cursed'
+    ) then
+      raise exception 'tool.status invalid: %', data ->> 'status' using errcode = '22023';
+    end if;
+
+    -- replacementToolId: JSON null or UUID string; key required
+    if not (data ? 'replacementToolId') then
+      raise exception 'tool.replacementToolId is required (use null when absent)' using errcode = '22023';
+    end if;
+    if pg_catalog.jsonb_typeof(data -> 'replacementToolId') not in ('null','string') then
+      raise exception 'tool.replacementToolId must be null or a UUID string' using errcode = '22023';
+    end if;
+    if pg_catalog.jsonb_typeof(data -> 'replacementToolId') = 'string' then
+      s := data ->> 'replacementToolId';
+      if s !~* uuid_re then
+        raise exception 'tool.replacementToolId is not a UUID: %', s using errcode = '22023';
+      end if;
+    end if;
+
+    -- lastReviewed: JSON null or YYYY-MM-DD string; key required
+    if not (data ? 'lastReviewed') then
+      raise exception 'tool.lastReviewed is required (use null when absent)' using errcode = '22023';
+    end if;
+    if pg_catalog.jsonb_typeof(data -> 'lastReviewed') not in ('null','string') then
+      raise exception 'tool.lastReviewed must be null or a YYYY-MM-DD string' using errcode = '22023';
+    end if;
+    if pg_catalog.jsonb_typeof(data -> 'lastReviewed') = 'string' then
+      s := data ->> 'lastReviewed';
+      if s !~ date_re then
+        raise exception 'tool.lastReviewed must be YYYY-MM-DD: %', s using errcode = '22023';
+      end if;
+      begin
+        perform s::date;
+      exception when others then
+        raise exception 'tool.lastReviewed is not a valid calendar date: %', s using errcode = '22023';
+      end;
+    end if;
+
+  elsif rec_type = 'repository' then
+    string_fields := array[
+      'githubUrl','whatCaughtMyEye','whatItClaims','whatItActuallyDoes',
+      'maintenanceImpression','complexity','risk','integrationCost',
+      'immediateUsefulness','longTermValue','finalVerdict'
+    ];
+    foreach key in array string_fields loop
+      if not (data ? key) then
+        raise exception 'repository.% is required', key using errcode = '22023';
+      end if;
+      if pg_catalog.jsonb_typeof(data -> key) is distinct from 'string' then
+        raise exception 'repository.% must be a JSON string', key using errcode = '22023';
+      end if;
+    end loop;
+
+    if pg_catalog.btrim(data ->> 'githubUrl') = '' then
+      raise exception 'repository.githubUrl must be a non-empty string' using errcode = '22023';
+    end if;
+
+    foreach key in array array['complexity','risk','integrationCost','immediateUsefulness','longTermValue'] loop
+      if (data ->> key) not in ('Unknown','Low','Medium','High','Very high') then
+        raise exception 'repository.% invalid rating: %', key, data ->> key using errcode = '22023';
+      end if;
+    end loop;
+
+    -- recommendedAction: JSON null or approved action string; key required
+    if not (data ? 'recommendedAction') then
+      raise exception 'repository.recommendedAction is required (use null when absent)' using errcode = '22023';
+    end if;
+    if pg_catalog.jsonb_typeof(data -> 'recommendedAction') not in ('null','string') then
+      raise exception 'repository.recommendedAction must be null or a string' using errcode = '22023';
+    end if;
+    if pg_catalog.jsonb_typeof(data -> 'recommendedAction') = 'string' then
+      if (data ->> 'recommendedAction') not in (
+        'Use now','Cellar','Compare later','Extract patterns',
+        'Document only','Skip','Pour down sink'
+      ) then
+        raise exception 'repository.recommendedAction invalid: %', data ->> 'recommendedAction' using errcode = '22023';
+      end if;
+    end if;
+
+    -- lastReviewed: JSON null or YYYY-MM-DD; key required
+    if not (data ? 'lastReviewed') then
+      raise exception 'repository.lastReviewed is required (use null when absent)' using errcode = '22023';
+    end if;
+    if pg_catalog.jsonb_typeof(data -> 'lastReviewed') not in ('null','string') then
+      raise exception 'repository.lastReviewed must be null or a YYYY-MM-DD string' using errcode = '22023';
+    end if;
+    if pg_catalog.jsonb_typeof(data -> 'lastReviewed') = 'string' then
+      s := data ->> 'lastReviewed';
+      if s !~ date_re then
+        raise exception 'repository.lastReviewed must be YYYY-MM-DD: %', s using errcode = '22023';
+      end if;
+      begin
+        perform s::date;
+      exception when others then
+        raise exception 'repository.lastReviewed is not a valid calendar date: %', s using errcode = '22023';
+      end;
+    end if;
+
+  elsif rec_type = 'conversation' then
+    -- conversationDate: JSON null or YYYY-MM-DD; key required
+    if not (data ? 'conversationDate') then
+      raise exception 'conversation.conversationDate is required (use null when absent)' using errcode = '22023';
+    end if;
+    if pg_catalog.jsonb_typeof(data -> 'conversationDate') not in ('null','string') then
+      raise exception 'conversation.conversationDate must be null or a YYYY-MM-DD string' using errcode = '22023';
+    end if;
+    if pg_catalog.jsonb_typeof(data -> 'conversationDate') = 'string' then
+      s := data ->> 'conversationDate';
+      if s !~ date_re then
+        raise exception 'conversation.conversationDate must be YYYY-MM-DD: %', s using errcode = '22023';
+      end if;
+      begin
+        perform s::date;
+      exception when others then
+        raise exception 'conversation.conversationDate is not a valid calendar date: %', s using errcode = '22023';
+      end;
+    end if;
+
+    string_fields := array[
+      'projectRoute','highSignalFindings','decisionsMade','openLoops',
+      'reusablePrompts','memoryCandidates','rawConversationText'
+    ];
+    foreach key in array string_fields loop
+      if not (data ? key) then
+        raise exception 'conversation.% is required', key using errcode = '22023';
+      end if;
+      if pg_catalog.jsonb_typeof(data -> key) is distinct from 'string' then
+        raise exception 'conversation.% must be a JSON string', key using errcode = '22023';
+      end if;
+    end loop;
+
+    if (data ->> 'projectRoute') not in (
+      'The Forge','The Chamber','The Book','General','Do not preserve'
+    ) then
+      raise exception 'conversation.projectRoute invalid: %', data ->> 'projectRoute' using errcode = '22023';
+    end if;
+
+  elsif rec_type = 'decision' then
+    string_fields := array[
+      'reason','trigger','whatWouldChangeMyMind','decisionDate','status','confidence'
+    ];
+    foreach key in array string_fields loop
+      if not (data ? key) then
+        raise exception 'decision.% is required', key using errcode = '22023';
+      end if;
+      if pg_catalog.jsonb_typeof(data -> key) is distinct from 'string' then
+        raise exception 'decision.% must be a JSON string', key using errcode = '22023';
+      end if;
+    end loop;
+
+    if pg_catalog.btrim(data ->> 'reason') = '' then
+      raise exception 'decision.reason must be a non-empty string' using errcode = '22023';
+    end if;
+
+    s := data ->> 'decisionDate';
+    if s !~ date_re then
+      raise exception 'decision.decisionDate must be YYYY-MM-DD: %', s using errcode = '22023';
+    end if;
+    begin
+      perform s::date;
+    exception when others then
+      raise exception 'decision.decisionDate is not a valid calendar date: %', s using errcode = '22023';
+    end;
+
+    if (data ->> 'status') not in (
+      'Current','Tentative','Superseded','Reversed','Archived'
+    ) then
+      raise exception 'decision.status invalid: %', data ->> 'status' using errcode = '22023';
+    end if;
+    if (data ->> 'confidence') not in ('Low','Medium','High') then
+      raise exception 'decision.confidence invalid: %', data ->> 'confidence' using errcode = '22023';
+    end if;
+
+    -- supersedesDecisionId: JSON null or UUID string; key required
+    if not (data ? 'supersedesDecisionId') then
+      raise exception 'decision.supersedesDecisionId is required (use null when absent)' using errcode = '22023';
+    end if;
+    if pg_catalog.jsonb_typeof(data -> 'supersedesDecisionId') not in ('null','string') then
+      raise exception 'decision.supersedesDecisionId must be null or a UUID string' using errcode = '22023';
+    end if;
+    if pg_catalog.jsonb_typeof(data -> 'supersedesDecisionId') = 'string' then
+      s := data ->> 'supersedesDecisionId';
+      if s !~* uuid_re then
+        raise exception 'decision.supersedesDecisionId is not a UUID: %', s using errcode = '22023';
+      end if;
+    end if;
+
+  else
+    raise exception 'unknown recordType: %', rec_type using errcode = '22023';
+  end if;
+end;
+$$;
+
+revoke execute on function public.assert_record_data_valid(text, jsonb) from public;
+revoke execute on function public.assert_record_data_valid(text, jsonb) from anon;
+revoke execute on function public.assert_record_data_valid(text, jsonb) from authenticated;
+
+-- ----------------------------------------------------------------------
+-- 3. save_record_with_links: forbid record_type mutation on update.
 --    All other behavior is preserved from 0006.
 -- ----------------------------------------------------------------------
 create or replace function public.save_record_with_links(
@@ -77,7 +334,7 @@ begin
     pg_catalog.hashtextextended(caller_id::text, 0)
   );
 
-  if record_payload is null or pg_catalog.jsonb_typeof(record_payload) <> 'object' then
+  if record_payload is null or pg_catalog.jsonb_typeof(record_payload) is distinct from 'object' then
     raise exception 'record_payload must be a JSON object' using errcode = '22023';
   end if;
 
@@ -220,9 +477,10 @@ revoke execute on function public.save_record_with_links(jsonb, uuid[]) from ano
 grant execute on function public.save_record_with_links(jsonb, uuid[]) to authenticated;
 
 -- ----------------------------------------------------------------------
--- 3. restore_user_archive: preflight-validate every record and link before
+-- 4. restore_user_archive: preflight-validate every record and link before
 --    touching any caller-owned row. Any failure raises, the transaction
---    rolls back, and the previous archive survives untouched.
+--    rolls back, and the previous archive survives untouched. app_metadata
+--    is intentionally NOT touched.
 -- ----------------------------------------------------------------------
 create or replace function public.restore_user_archive(
   archive_payload jsonb
@@ -233,8 +491,6 @@ set search_path = ''
 as $$
 declare
   caller_id uuid := auth.uid();
-  app_name text;
-  schema_ver int;
   exported_at text;
   rec jsonb;
   lnk jsonb;
@@ -265,7 +521,7 @@ begin
   if caller_id is null then
     raise exception 'authentication required' using errcode = '42501';
   end if;
-  if archive_payload is null or pg_catalog.jsonb_typeof(archive_payload) <> 'object' then
+  if archive_payload is null or pg_catalog.jsonb_typeof(archive_payload) is distinct from 'object' then
     raise exception 'archive_payload must be a JSON object' using errcode = '22023';
   end if;
 
@@ -274,22 +530,42 @@ begin
   );
 
   -- ---- Envelope ------------------------------------------------------
-  app_name := archive_payload ->> 'application';
-  schema_ver := nullif(archive_payload ->> 'schemaVersion','')::int;
-  exported_at := archive_payload ->> 'exportedAt';
-  if app_name is distinct from 'The Excavatorium' then
+  -- application: must be JSON string exactly "The Excavatorium"
+  if pg_catalog.jsonb_typeof(archive_payload -> 'application') is distinct from 'string' then
+    raise exception 'archive.application must be a JSON string' using errcode = '22023';
+  end if;
+  if (archive_payload ->> 'application') <> 'The Excavatorium' then
     raise exception 'archive.application must be "The Excavatorium"' using errcode = '22023';
   end if;
-  if schema_ver is distinct from 1 then
-    raise exception 'unsupported schemaVersion: %', coalesce(schema_ver::text,'(null)') using errcode = '22023';
+
+  -- schemaVersion: must be JSON number exactly equal to 1.
+  -- The string "1" is rejected because jsonb equality distinguishes types.
+  if pg_catalog.jsonb_typeof(archive_payload -> 'schemaVersion') is distinct from 'number' then
+    raise exception 'archive.schemaVersion must be a JSON number' using errcode = '22023';
   end if;
-  if exported_at is null or exported_at !~ '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$' then
+  if (archive_payload -> 'schemaVersion') <> '1'::jsonb then
+    raise exception 'unsupported schemaVersion: %', archive_payload ->> 'schemaVersion' using errcode = '22023';
+  end if;
+
+  -- exportedAt: JSON string, UTC-Z regex, AND parseable as timestamptz.
+  if pg_catalog.jsonb_typeof(archive_payload -> 'exportedAt') is distinct from 'string' then
+    raise exception 'archive.exportedAt must be a JSON string' using errcode = '22023';
+  end if;
+  exported_at := archive_payload ->> 'exportedAt';
+  if exported_at !~ '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$' then
     raise exception 'archive.exportedAt must be an ISO-8601 UTC timestamp' using errcode = '22023';
   end if;
-  if pg_catalog.jsonb_typeof(archive_payload -> 'records') <> 'array' then
+  begin
+    perform exported_at::timestamptz;
+  exception when others then
+    raise exception 'archive.exportedAt is not a valid UTC timestamp: %', exported_at using errcode = '22023';
+  end;
+
+  -- records / links: must be JSON arrays (missing key rejected).
+  if pg_catalog.jsonb_typeof(archive_payload -> 'records') is distinct from 'array' then
     raise exception 'archive.records must be an array' using errcode = '22023';
   end if;
-  if pg_catalog.jsonb_typeof(archive_payload -> 'links') <> 'array' then
+  if pg_catalog.jsonb_typeof(archive_payload -> 'links') is distinct from 'array' then
     raise exception 'archive.links must be an array' using errcode = '22023';
   end if;
 
@@ -316,15 +592,15 @@ begin
   ) on commit drop;
 
   -- ---- Preflight records --------------------------------------------
-  -- Every field is required with an explicit JSON type. Missing or
-  -- wrong-typed fields raise; no silent defaults.
+  -- Every required field must be present with an explicit JSON type.
+  -- Missing or wrong-typed fields raise; no silent defaults.
   for rec in select * from pg_catalog.jsonb_array_elements(archive_payload -> 'records') loop
-    if pg_catalog.jsonb_typeof(rec) <> 'object' then
+    if pg_catalog.jsonb_typeof(rec) is distinct from 'object' then
       raise exception 'records[] entry is not an object' using errcode = '22023';
     end if;
 
     -- id: required UUID string
-    if pg_catalog.jsonb_typeof(rec -> 'id') <> 'string' then
+    if pg_catalog.jsonb_typeof(rec -> 'id') is distinct from 'string' then
       raise exception 'record.id is required and must be a string' using errcode = '22023';
     end if;
     rec_id_txt := rec ->> 'id';
@@ -334,7 +610,7 @@ begin
     rec_id := rec_id_txt::uuid;
 
     -- recordType: required approved string
-    if pg_catalog.jsonb_typeof(rec -> 'recordType') <> 'string' then
+    if pg_catalog.jsonb_typeof(rec -> 'recordType') is distinct from 'string' then
       raise exception 'record.recordType is required and must be a string (id %)', rec_id using errcode = '22023';
     end if;
     rec_type := rec ->> 'recordType';
@@ -343,7 +619,7 @@ begin
     end if;
 
     -- title: required non-empty string
-    if pg_catalog.jsonb_typeof(rec -> 'title') <> 'string' then
+    if pg_catalog.jsonb_typeof(rec -> 'title') is distinct from 'string' then
       raise exception 'record.title is required and must be a string (id %)', rec_id using errcode = '22023';
     end if;
     rec_title := rec ->> 'title';
@@ -352,34 +628,49 @@ begin
     end if;
 
     -- summary: required string (empty string permitted)
-    if pg_catalog.jsonb_typeof(rec -> 'summary') <> 'string' then
+    if pg_catalog.jsonb_typeof(rec -> 'summary') is distinct from 'string' then
       raise exception 'record.summary is required and must be a string (id %)', rec_id using errcode = '22023';
     end if;
 
-    -- tags: required JSON array of strings
-    if pg_catalog.jsonb_typeof(rec -> 'tags') <> 'array' then
+    -- tags: required JSON array of trimmed non-empty strings without
+    -- case-insensitive duplicates within this record.
+    if pg_catalog.jsonb_typeof(rec -> 'tags') is distinct from 'array' then
       raise exception 'record.tags is required and must be an array (id %)', rec_id using errcode = '22023';
     end if;
     if exists (
       select 1
         from pg_catalog.jsonb_array_elements(rec -> 'tags') as e(value)
-       where pg_catalog.jsonb_typeof(e.value) <> 'string'
+       where pg_catalog.jsonb_typeof(e.value) is distinct from 'string'
     ) then
-      raise exception 'record.tags entries must all be strings (id %)', rec_id using errcode = '22023';
+      raise exception 'record.tags entries must all be JSON strings (id %)', rec_id using errcode = '22023';
+    end if;
+    if exists (
+      select 1
+        from pg_catalog.jsonb_array_elements_text(rec -> 'tags') as e(value)
+       where pg_catalog.btrim(e.value) is distinct from e.value
+          or e.value = ''
+    ) then
+      raise exception 'record.tags entries must be trimmed and non-empty (id %)', rec_id using errcode = '22023';
+    end if;
+    if (
+      select count(distinct lower(value))
+        from pg_catalog.jsonb_array_elements_text(rec -> 'tags')
+    ) <> pg_catalog.jsonb_array_length(rec -> 'tags') then
+      raise exception 'record.tags contains case-insensitive duplicates (id %)', rec_id using errcode = '22023';
     end if;
 
-    -- recordData: required JSON object
-    if pg_catalog.jsonb_typeof(rec -> 'recordData') <> 'object' then
+    -- recordData: required JSON object; deep contract enforced below.
+    if pg_catalog.jsonb_typeof(rec -> 'recordData') is distinct from 'object' then
       raise exception 'record.recordData is required and must be a JSON object (id %)', rec_id using errcode = '22023';
     end if;
 
     -- isExample: required JSON boolean (not a string, not a number)
-    if pg_catalog.jsonb_typeof(rec -> 'isExample') <> 'boolean' then
+    if pg_catalog.jsonb_typeof(rec -> 'isExample') is distinct from 'boolean' then
       raise exception 'record.isExample is required and must be a JSON boolean (id %)', rec_id using errcode = '22023';
     end if;
     rec_is_example := (rec -> 'isExample')::boolean;
 
-    -- seedKey: required, must be JSON null or JSON string (key MUST be present)
+    -- seedKey: key required; must be JSON null or JSON string.
     if not (rec ? 'seedKey') then
       raise exception 'record.seedKey is required (use null when absent) (id %)', rec_id using errcode = '22023';
     end if;
@@ -430,14 +721,14 @@ begin
     end if;
 
     -- createdAt / updatedAt: required UTC ISO-8601 strings
-    if pg_catalog.jsonb_typeof(rec -> 'createdAt') <> 'string' then
+    if pg_catalog.jsonb_typeof(rec -> 'createdAt') is distinct from 'string' then
       raise exception 'record.createdAt is required and must be a string (id %)', rec_id using errcode = '22023';
     end if;
     rec_created := rec ->> 'createdAt';
     if rec_created !~ '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$' then
       raise exception 'record.createdAt malformed (id %)', rec_id using errcode = '22023';
     end if;
-    if pg_catalog.jsonb_typeof(rec -> 'updatedAt') <> 'string' then
+    if pg_catalog.jsonb_typeof(rec -> 'updatedAt') is distinct from 'string' then
       raise exception 'record.updatedAt is required and must be a string (id %)', rec_id using errcode = '22023';
     end if;
     rec_updated := rec ->> 'updatedAt';
@@ -512,12 +803,12 @@ begin
   -- (i.e. key absent from the object) is rejected rather than defaulted
   -- to null; callers must send JSON null explicitly.
   for lnk in select * from pg_catalog.jsonb_array_elements(archive_payload -> 'links') loop
-    if pg_catalog.jsonb_typeof(lnk) <> 'object' then
+    if pg_catalog.jsonb_typeof(lnk) is distinct from 'object' then
       raise exception 'links[] entry is not an object' using errcode = '22023';
     end if;
 
     -- id: required UUID string
-    if pg_catalog.jsonb_typeof(lnk -> 'id') <> 'string' then
+    if pg_catalog.jsonb_typeof(lnk -> 'id') is distinct from 'string' then
       raise exception 'link.id is required and must be a string' using errcode = '22023';
     end if;
     lnk_id_txt := lnk ->> 'id';
@@ -527,10 +818,10 @@ begin
     lnk_id := lnk_id_txt::uuid;
 
     -- sourceId / targetId: required UUID strings
-    if pg_catalog.jsonb_typeof(lnk -> 'sourceId') <> 'string' then
+    if pg_catalog.jsonb_typeof(lnk -> 'sourceId') is distinct from 'string' then
       raise exception 'link.sourceId is required and must be a string (id %)', lnk_id using errcode = '22023';
     end if;
-    if pg_catalog.jsonb_typeof(lnk -> 'targetId') <> 'string' then
+    if pg_catalog.jsonb_typeof(lnk -> 'targetId') is distinct from 'string' then
       raise exception 'link.targetId is required and must be a string (id %)', lnk_id using errcode = '22023';
     end if;
     src_txt := lnk ->> 'sourceId';
@@ -554,7 +845,7 @@ begin
     end if;
 
     -- createdAt: required UTC ISO-8601 string
-    if pg_catalog.jsonb_typeof(lnk -> 'createdAt') <> 'string' then
+    if pg_catalog.jsonb_typeof(lnk -> 'createdAt') is distinct from 'string' then
       raise exception 'link.createdAt is required and must be a string (id %)', lnk_id using errcode = '22023';
     end if;
     lnk_created := lnk ->> 'createdAt';
@@ -681,7 +972,6 @@ begin
   -- caller-owned records and record_links. Authentication, profiles, and
   -- app_metadata (schema version, seed_lifecycle_initialized, timestamps)
   -- remain exactly as they were before the call.
-
 
   return jsonb_build_object(
     'insertedRecords', inserted_records,
