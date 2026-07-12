@@ -47,6 +47,14 @@ type LinkRow = {
   created_at: string;
 };
 
+function normalizeTimestamp(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`Invalid database timestamp: ${value}`);
+  }
+  return parsed.toISOString();
+}
+
 function toRecord(row: RecordRow): ArchiveRecord {
   const base: BaseArchiveRecord = {
     id: row.id,
