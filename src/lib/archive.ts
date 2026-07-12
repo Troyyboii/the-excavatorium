@@ -47,6 +47,14 @@ type LinkRow = {
   created_at: string;
 };
 
+function normalizeTimestamp(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`Invalid database timestamp: ${value}`);
+  }
+  return parsed.toISOString();
+}
+
 function toRecord(row: RecordRow): ArchiveRecord {
   const base: BaseArchiveRecord = {
     id: row.id,
@@ -56,8 +64,8 @@ function toRecord(row: RecordRow): ArchiveRecord {
     tags: row.tags ?? [],
     isExample: row.is_example,
     seedKey: row.seed_key,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    createdAt: normalizeTimestamp(row.created_at),
+    updatedAt: normalizeTimestamp(row.updated_at),
   };
   switch (row.record_type) {
     case "tool":
@@ -89,7 +97,7 @@ function toLink(row: LinkRow): ArchiveLink {
     sourceId: row.source_record_id,
     targetId: row.target_record_id,
     seedKey: row.seed_key,
-    createdAt: row.created_at,
+    createdAt: normalizeTimestamp(row.created_at),
   };
 }
 
