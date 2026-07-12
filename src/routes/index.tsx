@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent } from "react";
-import { supabase, SUPABASE_URL } from "@/lib/supabase";
+import { supabase, SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from "@/lib/supabase";
 
 export const Route = createFileRoute("/")({
   component: Index,
