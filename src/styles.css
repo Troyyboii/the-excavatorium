@@ -59,60 +59,62 @@
   --font-serif: "Libre Caslon Text", "Iowan Old Style", Georgia, serif;
 }
 
-:root, .dark {
+:root,
+.dark {
   --radius: 8px;
 
   --background: #121110;
-  --foreground: #F0E9DF;
+  --foreground: #f0e9df;
 
-  --card: #1C1917;
-  --card-foreground: #F0E9DF;
-  --popover: #1C1917;
-  --popover-foreground: #F0E9DF;
+  --card: #1c1917;
+  --card-foreground: #f0e9df;
+  --popover: #1c1917;
+  --popover-foreground: #f0e9df;
 
-  --primary: #7A263A;
-  --primary-foreground: #F0E9DF;
+  --primary: #7a263a;
+  --primary-foreground: #f0e9df;
 
-  --secondary: #29241F;
-  --secondary-foreground: #F0E9DF;
+  --secondary: #29241f;
+  --secondary-foreground: #f0e9df;
 
-  --muted: #211E1B;
-  --muted-foreground: #7D736A;
+  --muted: #211e1b;
+  --muted-foreground: #7d736a;
 
-  --accent: #29241F;
-  --accent-foreground: #F0E9DF;
+  --accent: #29241f;
+  --accent-foreground: #f0e9df;
 
   --destructive: #984543;
-  --destructive-foreground: #F0E9DF;
+  --destructive-foreground: #f0e9df;
 
-  --border: #37312B;
-  --input: #37312B;
-  --ring: #A88752;
+  --border: #37312b;
+  --input: #37312b;
+  --ring: #a88752;
 
   --sidebar: #171513;
-  --sidebar-foreground: #F0E9DF;
-  --sidebar-primary: #7A263A;
-  --sidebar-primary-foreground: #F0E9DF;
-  --sidebar-accent: #29241F;
-  --sidebar-accent-foreground: #F0E9DF;
-  --sidebar-border: #37312B;
-  --sidebar-ring: #A88752;
+  --sidebar-foreground: #f0e9df;
+  --sidebar-primary: #7a263a;
+  --sidebar-primary-foreground: #f0e9df;
+  --sidebar-accent: #29241f;
+  --sidebar-accent-foreground: #f0e9df;
+  --sidebar-border: #37312b;
+  --sidebar-ring: #a88752;
 
-  --record: #211E1B;
-  --record-hover: #29241F;
-  --brass: #A88752;
-  --brass-muted: #52452F;
-  --burgundy-muted: #3C2028;
-  --strong-border: #4A4139;
-  --success: #58715D;
-  --warning: #9B7846;
+  --record: #211e1b;
+  --record-hover: #29241f;
+  --brass: #a88752;
+  --brass-muted: #52452f;
+  --burgundy-muted: #3c2028;
+  --strong-border: #4a4139;
+  --success: #58715d;
+  --warning: #9b7846;
 }
 
 @layer base {
   * {
     border-color: var(--color-border);
   }
-  html, body {
+  html,
+  body {
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
@@ -124,15 +126,23 @@
     max-width: 100%;
     overflow-x: hidden;
   }
-  h1, h2, h3, h4 {
+  h1,
+  h2,
+  h3,
+  h4 {
     font-family: var(--font-serif);
     letter-spacing: -0.01em;
     overflow-wrap: anywhere;
   }
-  input, textarea, select, button {
+  input,
+  textarea,
+  select,
+  button {
     font-family: inherit;
   }
-  input, textarea, select {
+  input,
+  textarea,
+  select {
     max-width: 100%;
   }
   :focus-visible {
@@ -144,7 +154,9 @@
     color: var(--foreground);
   }
   @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after {
+    *,
+    *::before,
+    *::after {
       animation-duration: 0.001ms !important;
       transition-duration: 0.001ms !important;
     }

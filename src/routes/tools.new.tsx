@@ -9,7 +9,12 @@ function Page() {
   return (
     <div>
       <PageHeader title="New tool" />
-      <RecordForm recordType="tool" existing={null} allRecords={q.data?.records ?? []} allLinks={q.data?.links ?? []} />
+      <RecordForm
+        recordType="tool"
+        existing={null}
+        allRecords={q.data?.records ?? []}
+        allLinks={q.data?.links ?? []}
+      />
     </div>
   );
 }

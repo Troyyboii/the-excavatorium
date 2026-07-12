@@ -1,4 +1,9 @@
-import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
+import type {
+  InputHTMLAttributes,
+  ReactNode,
+  SelectHTMLAttributes,
+  TextareaHTMLAttributes,
+} from "react";
 
 export function Field({
   label,
@@ -41,10 +46,7 @@ export function TextArea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   );
 }
 
-export function Select({
-  children,
-  ...rest
-}: SelectHTMLAttributes<HTMLSelectElement>) {
+export function Select({ children, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <select {...rest} className={`${baseInput} ${rest.className ?? ""}`}>
       {children}
@@ -52,18 +54,10 @@ export function Select({
   );
 }
 
-export function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: ReactNode;
-}) {
+export function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="rounded-lg border border-border bg-card p-4 md:p-6">
-      <h2 className="mb-4 font-serif text-lg tracking-tight text-foreground">
-        {title}
-      </h2>
+      <h2 className="mb-4 font-serif text-lg tracking-tight text-foreground">{title}</h2>
       <div className="space-y-4">{children}</div>
     </section>
   );

@@ -69,22 +69,22 @@ export function Banner({
           ? "border-[color:var(--success)]/60 bg-[color:var(--success)]/10"
           : "border-border bg-card";
   return (
-    <div className={`rounded-md border p-3 text-sm ${border}`} role={kind === "error" ? "alert" : "status"}>
+    <div
+      className={`rounded-md border p-3 text-sm ${border}`}
+      role={kind === "error" ? "alert" : "status"}
+    >
       <div className="font-medium text-foreground">{title}</div>
       {children ? <div className="mt-1 text-muted-foreground">{children}</div> : null}
     </div>
   );
 }
 
-export function Toast({
-  message,
-  onClose,
-}: {
-  message: string;
-  onClose: () => void;
-}) {
+export function Toast({ message, onClose }: { message: string; onClose: () => void }) {
   return (
-    <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-md border border-border bg-card px-4 py-2 text-sm text-foreground shadow" role="status">
+    <div
+      className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-md border border-border bg-card px-4 py-2 text-sm text-foreground shadow"
+      role="status"
+    >
       <span>{message}</span>
       <button
         type="button"

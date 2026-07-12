@@ -33,13 +33,7 @@ type Filters = {
   tag?: string;
 };
 
-export function RecordListPage({
-  type,
-  records,
-}: {
-  type: RecordType;
-  records: ArchiveRecord[];
-}) {
+export function RecordListPage({ type, records }: { type: RecordType; records: ArchiveRecord[] }) {
   const items = useMemo(() => records.filter((r) => r.recordType === type), [records, type]);
   const [f, setF] = useState<Filters>({});
   const allTags = useMemo(() => {
@@ -52,34 +46,79 @@ export function RecordListPage({
     let out = items;
     if (f.tag) out = out.filter((r) => r.tags.includes(f.tag!));
     if (type === "tool") {
-      if (f.toolStatus) out = out.filter((r) => (r as ArchiveRecord & { recordType: "tool" }).recordData.status === f.toolStatus);
+      if (f.toolStatus)
+        out = out.filter(
+          (r) => (r as ArchiveRecord & { recordType: "tool" }).recordData.status === f.toolStatus,
+        );
       if (f.toolCategory) {
         const c = f.toolCategory.toLowerCase();
-        out = out.filter((r) => (r as ArchiveRecord & { recordType: "tool" }).recordData.category.toLowerCase().includes(c));
+        out = out.filter((r) =>
+          (r as ArchiveRecord & { recordType: "tool" }).recordData.category
+            .toLowerCase()
+            .includes(c),
+        );
       }
     } else if (type === "repository") {
       if (f.repoAction) {
         out = out.filter((r) => {
-          const a = (r as ArchiveRecord & { recordType: "repository" }).recordData.recommendedAction;
+          const a = (r as ArchiveRecord & { recordType: "repository" }).recordData
+            .recommendedAction;
           if (f.repoAction === "awaiting") return a === null;
           return a === f.repoAction;
         });
       }
-      if (f.repoRisk) out = out.filter((r) => (r as ArchiveRecord & { recordType: "repository" }).recordData.risk === f.repoRisk);
+      if (f.repoRisk)
+        out = out.filter(
+          (r) => (r as ArchiveRecord & { recordType: "repository" }).recordData.risk === f.repoRisk,
+        );
     } else if (type === "conversation") {
-      if (f.convRoute) out = out.filter((r) => (r as ArchiveRecord & { recordType: "conversation" }).recordData.projectRoute === f.convRoute);
-      if (f.convHasLoops) out = out.filter((r) => (r as ArchiveRecord & { recordType: "conversation" }).recordData.openLoops.trim() !== "");
+      if (f.convRoute)
+        out = out.filter(
+          (r) =>
+            (r as ArchiveRecord & { recordType: "conversation" }).recordData.projectRoute ===
+            f.convRoute,
+        );
+      if (f.convHasLoops)
+        out = out.filter(
+          (r) =>
+            (r as ArchiveRecord & { recordType: "conversation" }).recordData.openLoops.trim() !==
+            "",
+        );
     } else if (type === "decision") {
-      if (f.decisionStatus) out = out.filter((r) => (r as ArchiveRecord & { recordType: "decision" }).recordData.status === f.decisionStatus);
-      if (f.decisionConfidence) out = out.filter((r) => (r as ArchiveRecord & { recordType: "decision" }).recordData.confidence === f.decisionConfidence);
+      if (f.decisionStatus)
+        out = out.filter(
+          (r) =>
+            (r as ArchiveRecord & { recordType: "decision" }).recordData.status ===
+            f.decisionStatus,
+        );
+      if (f.decisionConfidence)
+        out = out.filter(
+          (r) =>
+            (r as ArchiveRecord & { recordType: "decision" }).recordData.confidence ===
+            f.decisionConfidence,
+        );
     }
-    return [...out].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.title.localeCompare(b.title));
+    return [...out].sort(
+      (a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.title.localeCompare(b.title),
+    );
   }, [items, f, type]);
 
   const label =
-    type === "tool" ? "Tools" : type === "repository" ? "Repositories" : type === "conversation" ? "Conversations" : "Decisions";
+    type === "tool"
+      ? "Tools"
+      : type === "repository"
+        ? "Repositories"
+        : type === "conversation"
+          ? "Conversations"
+          : "Decisions";
   const singular =
-    type === "tool" ? "tool" : type === "repository" ? "repository" : type === "conversation" ? "conversation" : "decision";
+    type === "tool"
+      ? "tool"
+      : type === "repository"
+        ? "repository"
+        : type === "conversation"
+          ? "conversation"
+          : "decision";
   const hasActive = Object.values(f).some((v) => v !== undefined && v !== "" && v !== false);
 
   return (
@@ -112,7 +151,9 @@ export function RecordListPage({
               <FilterSelect
                 label="Action"
                 value={f.repoAction ?? ""}
-                onChange={(v) => setF({ ...f, repoAction: v as RepositoryAction | "awaiting" | "" })}
+                onChange={(v) =>
+                  setF({ ...f, repoAction: v as RepositoryAction | "awaiting" | "" })
+                }
                 options={["awaiting", ...REPOSITORY_ACTIONS]}
                 labels={{ awaiting: "Awaiting verdict" }}
               />
@@ -179,8 +220,14 @@ export function RecordListPage({
 
       {filtered.length === 0 ? (
         <EmptyState
-          title={items.length === 0 ? `No ${label.toLowerCase()} yet.` : "No records match the current filters."}
-          hint={items.length === 0 ? `Create the first ${singular} from the button above.` : undefined}
+          title={
+            items.length === 0
+              ? `No ${label.toLowerCase()} yet.`
+              : "No records match the current filters."
+          }
+          hint={
+            items.length === 0 ? `Create the first ${singular} from the button above.` : undefined
+          }
         />
       ) : (
         <RecordList items={filtered} />
@@ -212,7 +259,9 @@ function FilterSelect({
       >
         <option value="">All</option>
         {options.map((o) => (
-          <option key={o} value={o}>{labels?.[o] ?? o}</option>
+          <option key={o} value={o}>
+            {labels?.[o] ?? o}
+          </option>
         ))}
       </select>
     </label>

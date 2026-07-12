@@ -9,7 +9,12 @@ function Page() {
   return (
     <div>
       <PageHeader title="New conversation" />
-      <RecordForm recordType="conversation" existing={null} allRecords={q.data?.records ?? []} allLinks={q.data?.links ?? []} />
+      <RecordForm
+        recordType="conversation"
+        existing={null}
+        allRecords={q.data?.records ?? []}
+        allLinks={q.data?.links ?? []}
+      />
     </div>
   );
 }

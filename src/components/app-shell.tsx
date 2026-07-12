@@ -26,13 +26,7 @@ const NAV = [
   { to: "/settings", label: "Settings", icon: Gear },
 ] as const;
 
-export function AppShell({
-  email,
-  children,
-}: {
-  email: string | null;
-  children: ReactNode;
-}) {
+export function AppShell({ email, children }: { email: string | null; children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const qc = useQueryClient();
@@ -55,11 +49,7 @@ export function AppShell({
     <div className="flex min-h-screen bg-background text-foreground">
       {/* Desktop sidebar */}
       <aside className="hidden w-[220px] shrink-0 flex-col border-r border-border bg-sidebar md:flex">
-        <SidebarInner
-          email={email}
-          onSignOut={onSignOut}
-          isActive={isActive}
-        />
+        <SidebarInner email={email} onSignOut={onSignOut} isActive={isActive} />
       </aside>
 
       {/* Mobile drawer + backdrop */}
@@ -122,9 +112,7 @@ function SidebarInner({
   return (
     <>
       <div className="flex items-center justify-between border-b border-border px-4 py-4">
-        <span className="font-serif text-lg tracking-tight text-foreground">
-          The Excavatorium
-        </span>
+        <span className="font-serif text-lg tracking-tight text-foreground">The Excavatorium</span>
         {onClose ? (
           <button
             type="button"

@@ -420,7 +420,7 @@ function yaml(scalar: unknown): string {
   if (typeof scalar === "number" || typeof scalar === "boolean") return String(scalar);
   const s = String(scalar);
   if (s === "") return '""';
-  if (/[:#\-\[\]{},&*!|>'"%@`\n]/.test(s) || /^\s|\s$/.test(s)) return JSON.stringify(s);
+  if (/[:#[\]{},&*!|>'"%@`\n-]/.test(s) || /^\s|\s$/.test(s)) return JSON.stringify(s);
   return s;
 }
 

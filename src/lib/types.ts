@@ -2,12 +2,7 @@
 
 export type RecordType = "tool" | "repository" | "conversation" | "decision";
 
-export const RECORD_TYPES: RecordType[] = [
-  "tool",
-  "repository",
-  "conversation",
-  "decision",
-];
+export const RECORD_TYPES: RecordType[] = ["tool", "repository", "conversation", "decision"];
 
 export const RECORD_TYPE_LABEL: Record<RecordType, string> = {
   tool: "Tool",
@@ -59,13 +54,7 @@ export type ToolData = {
 
 export type RatingLevel = "Unknown" | "Low" | "Medium" | "High" | "Very high";
 
-export const RATING_LEVELS: RatingLevel[] = [
-  "Unknown",
-  "Low",
-  "Medium",
-  "High",
-  "Very high",
-];
+export const RATING_LEVELS: RatingLevel[] = ["Unknown", "Low", "Medium", "High", "Very high"];
 
 export type RepositoryAction =
   | "Use now"
@@ -102,12 +91,7 @@ export type RepositoryData = {
   lastReviewed: string | null;
 };
 
-export type ProjectRoute =
-  | "The Forge"
-  | "The Chamber"
-  | "The Book"
-  | "General"
-  | "Do not preserve";
+export type ProjectRoute = "The Forge" | "The Chamber" | "The Book" | "General" | "Do not preserve";
 
 export const PROJECT_ROUTES: ProjectRoute[] = [
   "The Forge",
@@ -128,12 +112,7 @@ export type ConversationData = {
   rawConversationText: string;
 };
 
-export type DecisionStatus =
-  | "Current"
-  | "Tentative"
-  | "Superseded"
-  | "Reversed"
-  | "Archived";
+export type DecisionStatus = "Current" | "Tentative" | "Superseded" | "Reversed" | "Archived";
 
 export const DECISION_STATUSES: DecisionStatus[] = [
   "Current",
@@ -186,11 +165,7 @@ export type DecisionRecord = BaseArchiveRecord & {
   recordData: DecisionData;
 };
 
-export type ArchiveRecord =
-  | ToolRecord
-  | RepositoryRecord
-  | ConversationRecord
-  | DecisionRecord;
+export type ArchiveRecord = ToolRecord | RepositoryRecord | ConversationRecord | DecisionRecord;
 
 export type ArchiveLink = {
   id: string;
@@ -261,11 +236,10 @@ export const emptyDecisionData = (today: string): DecisionData => ({
   supersedesDecisionId: null,
 });
 
-export function emptyRecordData(type: RecordType, today: string):
-  | ToolData
-  | RepositoryData
-  | ConversationData
-  | DecisionData {
+export function emptyRecordData(
+  type: RecordType,
+  today: string,
+): ToolData | RepositoryData | ConversationData | DecisionData {
   switch (type) {
     case "tool":
       return { ...emptyToolData };
@@ -279,5 +253,4 @@ export function emptyRecordData(type: RecordType, today: string):
 }
 
 // UUID v4 test (loose, no version enforcement) for restore validation.
-export const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

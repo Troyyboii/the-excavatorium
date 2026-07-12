@@ -29,10 +29,7 @@ export function TombstoneIfBuried({ r }: { r: ArchiveRecord }) {
   const s = r.recordData.status;
   if (s !== "Buried" && s !== "Grok-tier cursed") return null;
   return (
-    <span
-      title={s}
-      className="inline-flex items-center text-[color:var(--muted-foreground)]"
-    >
+    <span title={s} className="inline-flex items-center text-[color:var(--muted-foreground)]">
       <Cross size={16} weight="fill" />
     </span>
   );
@@ -53,7 +50,9 @@ export function RecordRow({ r, showType }: { r: ArchiveRecord; showType?: boolea
             <div className="min-w-0 flex-1 text-sm font-medium text-foreground line-clamp-2 sm:truncate">
               {r.title}
             </div>
-            <span className="shrink-0"><TombstoneIfBuried r={r} /></span>
+            <span className="shrink-0">
+              <TombstoneIfBuried r={r} />
+            </span>
             {r.isExample ? (
               <span className="shrink-0 rounded-sm border border-[color:var(--brass-muted)] px-1 font-mono text-[10px] uppercase tracking-wide text-[color:var(--brass)]">
                 seed

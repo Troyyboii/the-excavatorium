@@ -7,11 +7,8 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 const FALLBACK_URL = "https://rmlaknguklxwbbdnywcd.supabase.co";
 const FALLBACK_KEY = "sb_publishable_sigueHFNPiD455wrChYrog_SvJQFlIi";
 
-const url =
-  (import.meta.env.VITE_SUPABASE_URL as string | undefined) ?? FALLBACK_URL;
-const key =
-  (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined) ??
-  FALLBACK_KEY;
+const url = (import.meta.env.VITE_SUPABASE_URL as string | undefined) ?? FALLBACK_URL;
+const key = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined) ?? FALLBACK_KEY;
 
 export const SUPABASE_URL = url;
 export const SUPABASE_PUBLISHABLE_KEY = key;
