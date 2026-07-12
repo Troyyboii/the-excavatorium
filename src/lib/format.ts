@@ -18,6 +18,68 @@ import {
   UUID_RE,
 } from "./types";
 
+// ---------- Approved canonical seed keys (frozen backup contract) ----------
+// Every canonical example record has a fixed recordType. Every canonical link
+// has a fixed (sourceSeed, targetSeed) endpoint pair. The frozen contract is
+// oriented — the link seed key names its source first, then its target.
+export const APPROVED_RECORD_SEED_KEYS: Readonly<Record<string, RecordType>> = {
+  "example-tool-chatgpt": "tool",
+  "example-tool-perplexity": "tool",
+  "example-tool-obsidian": "tool",
+  "example-tool-codex": "tool",
+  "example-tool-grok": "tool",
+  "example-tool-mem0": "tool",
+  "example-repository-mem0": "repository",
+  "example-conversation-excavatorium-origin": "conversation",
+  "example-decision-chatgpt-primary": "decision",
+  "example-decision-perplexity-research": "decision",
+  "example-decision-grok-media": "decision",
+  "example-decision-no-mem0": "decision",
+  "example-decision-obsidian-vault": "decision",
+};
+
+export const APPROVED_LINK_SEED_KEYS: Readonly<
+  Record<string, { source: string; target: string }>
+> = {
+  "example-link-conversation-chatgpt": {
+    source: "example-conversation-excavatorium-origin",
+    target: "example-tool-chatgpt",
+  },
+  "example-link-conversation-grok": {
+    source: "example-conversation-excavatorium-origin",
+    target: "example-tool-grok",
+  },
+  "example-link-conversation-mem0": {
+    source: "example-conversation-excavatorium-origin",
+    target: "example-tool-mem0",
+  },
+  "example-link-conversation-repository-mem0": {
+    source: "example-conversation-excavatorium-origin",
+    target: "example-repository-mem0",
+  },
+  "example-link-conversation-decision-no-mem0": {
+    source: "example-conversation-excavatorium-origin",
+    target: "example-decision-no-mem0",
+  },
+  "example-link-conversation-decision-grok-media": {
+    source: "example-conversation-excavatorium-origin",
+    target: "example-decision-grok-media",
+  },
+  "example-link-mem0-repository": {
+    source: "example-tool-mem0",
+    target: "example-repository-mem0",
+  },
+  "example-link-decision-chatgpt-tool": {
+    source: "example-decision-chatgpt-primary",
+    target: "example-tool-chatgpt",
+  },
+  "example-link-decision-obsidian-tool": {
+    source: "example-decision-obsidian-vault",
+    target: "example-tool-obsidian",
+  },
+};
+
+
 // ---------- Tag normalization (spec §8) ----------
 export function normalizeTags(input: string[]): string[] {
   const seen = new Map<string, string>();
