@@ -169,7 +169,7 @@ export function RecordListPage({
             <button
               type="button"
               onClick={() => setF({})}
-              className="ml-auto inline-flex min-h-11 items-center rounded-md border border-input bg-background px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
+              className="inline-flex min-h-11 w-full items-center justify-center rounded-md border border-input bg-background px-3 py-2 text-sm text-muted-foreground hover:text-foreground sm:ml-auto sm:w-auto sm:justify-start"
             >
               Reset filters
             </button>
