@@ -38,8 +38,7 @@ export function LoginScreen() {
     }
     setLinkSending(true);
     setLinkStatus(null);
-    const emailRedirectTo =
-      typeof window !== "undefined" ? window.location.origin : undefined;
+    const emailRedirectTo = typeof window !== "undefined" ? window.location.origin : undefined;
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
       options: { shouldCreateUser: false, emailRedirectTo },
