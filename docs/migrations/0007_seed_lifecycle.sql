@@ -392,8 +392,24 @@ set search_path = ''
 as $$
 declare
   caller_id uuid := auth.uid();
-  has_any boolean;
-  restored integer := 0;
+  inserted_records integer := 0;
+  inserted_links integer := 0;
+  n integer;
+  id_chatgpt uuid;
+  decision_date text;
+
+  function_default_tool jsonb := jsonb_build_object(
+    'whatCaughtMyEye','',
+    'whatItPromised','',
+    'whatActuallyHappened','',
+    'whatWorked','',
+    'whatFailed','',
+    'whyIKeptOrStoppedUsingIt','',
+    'replacementToolId', null,
+    'revisitCondition','',
+    'finalVerdict','',
+    'lastReviewed', null
+  );
 begin
   if caller_id is null then
     raise exception 'authentication required' using errcode = '42501';
@@ -401,32 +417,272 @@ begin
   if local_date is null then
     raise exception 'local_date is required' using errcode = '22023';
   end if;
+
   perform pg_catalog.pg_advisory_xact_lock(
     pg_catalog.hashtextextended(caller_id::text, 0)
   );
 
-  -- If any canonical seed is missing we reinstall the missing pieces by
-  -- running install_canonical_seeds only for missing seed keys. For
-  -- simplicity we short-circuit: if every canonical record seed_key is
-  -- present, do nothing; otherwise, install any missing seeds and links.
-  select exists(
-    select 1 from public.records where user_id = caller_id and is_example
-  ) into has_any;
+  decision_date := pg_catalog.to_char(local_date, 'YYYY-MM-DD');
 
-  if not has_any then
-    -- fresh install of the full canonical set
-    perform public.install_canonical_seeds(caller_id, local_date);
-    restored := 15; -- 13 records + trigger; approximate; caller may recount client-side
-  else
-    -- Partial restore: insert any missing canonical records + links using
-    -- a temporary CTE. To keep this migration bounded, we call
-    -- install_canonical_seeds only when there are zero example rows.
-    -- Missing individual seeds must be restored by resetting examples
-    -- via remove_example_data followed by restore_missing_examples.
-    restored := 0;
-  end if;
+  -- ------------------------------------------------------------------
+  -- Phase 1: canonical records with NO cross-canonical references.
+  -- ChatGPT must be inserted first so grok/mem0 (which reference the
+  -- ChatGPT record id in JSON) can resolve the endpoint whether it
+  -- pre-existed or was inserted in this call. Every INSERT uses
+  -- ON CONFLICT (user_id, seed_key) DO NOTHING so existing canonical
+  -- rows AND any user edits to their record_data are preserved.
+  -- ------------------------------------------------------------------
 
-  return jsonb_build_object('restored', restored);
+  insert into public.records (user_id, record_type, title, summary, tags, record_data, is_example, seed_key)
+  values (
+    caller_id, 'tool', 'ChatGPT',
+    'Primary AI assistant combining dialogue, reasoning, memory, projects, files, and connected tools.',
+    '{}'::text[],
+    function_default_tool || jsonb_build_object(
+      'category','General AI assistant','status','Active',
+      'finalVerdict','Primary AI. Combines dialogue, reasoning, memory, projects, files, and connected tools.'),
+    true, 'example-tool-chatgpt'
+  )
+  on conflict (user_id, seed_key) do nothing;
+  get diagnostics n = row_count;
+  inserted_records := inserted_records + n;
+
+  -- Resolve ChatGPT id (existing or freshly inserted). Required for
+  -- grok/mem0 replacementToolId regardless of insert vs preserve.
+  select id into id_chatgpt from public.records
+   where user_id = caller_id and seed_key = 'example-tool-chatgpt';
+
+  insert into public.records (user_id, record_type, title, summary, tags, record_data, is_example, seed_key)
+  values (
+    caller_id, 'tool', 'Perplexity',
+    'Research layer for source discovery, current information, and citations.',
+    '{}'::text[],
+    function_default_tool || jsonb_build_object(
+      'category','AI research','status','Active',
+      'finalVerdict','Research layer for source discovery, current information, and citations.'),
+    true, 'example-tool-perplexity'
+  )
+  on conflict (user_id, seed_key) do nothing;
+  get diagnostics n = row_count; inserted_records := inserted_records + n;
+
+  insert into public.records (user_id, record_type, title, summary, tags, record_data, is_example, seed_key)
+  values (
+    caller_id, 'tool', 'Obsidian',
+    'Durable local Markdown vault with strong ownership and portability.',
+    '{}'::text[],
+    function_default_tool || jsonb_build_object(
+      'category','Knowledge management','status','Active',
+      'finalVerdict','Durable local Markdown note vault. Strong ownership and portability.'),
+    true, 'example-tool-obsidian'
+  )
+  on conflict (user_id, seed_key) do nothing;
+  get diagnostics n = row_count; inserted_records := inserted_records + n;
+
+  insert into public.records (user_id, record_type, title, summary, tags, record_data, is_example, seed_key)
+  values (
+    caller_id, 'tool', 'Codex',
+    'Local repository operator for bounded inspection, edits, validation, and diff-based workflows.',
+    '{}'::text[],
+    function_default_tool || jsonb_build_object(
+      'category','Coding agent','status','Active',
+      'finalVerdict','Local repository operator for bounded inspection, edits, validation, and diffs.'),
+    true, 'example-tool-codex'
+  )
+  on conflict (user_id, seed_key) do nothing;
+  get diagnostics n = row_count; inserted_records := inserted_records + n;
+
+  insert into public.records (user_id, record_type, title, summary, tags, record_data, is_example, seed_key)
+  values (
+    caller_id, 'tool', 'Grok',
+    'Retained only for limited media use.',
+    '{}'::text[],
+    function_default_tool || jsonb_build_object(
+      'category','General AI assistant','status','Useful but dormant',
+      'replacementToolId', id_chatgpt::text,
+      'finalVerdict','Continuity, depth, instruction following, and support were inadequate. Kept for limited media use only.'),
+    true, 'example-tool-grok'
+  )
+  on conflict (user_id, seed_key) do nothing;
+  get diagnostics n = row_count; inserted_records := inserted_records + n;
+
+  insert into public.records (user_id, record_type, title, summary, tags, record_data, is_example, seed_key)
+  values (
+    caller_id, 'tool', 'Mem0',
+    'Legitimate external memory infrastructure but currently unnecessary.',
+    '{}'::text[],
+    function_default_tool || jsonb_build_object(
+      'category','AI memory','status','Buried',
+      'replacementToolId', id_chatgpt::text,
+      'finalVerdict','Duplicates native ChatGPT memory, projects, and source files.'),
+    true, 'example-tool-mem0'
+  )
+  on conflict (user_id, seed_key) do nothing;
+  get diagnostics n = row_count; inserted_records := inserted_records + n;
+
+  insert into public.records (user_id, record_type, title, summary, tags, record_data, is_example, seed_key)
+  values (
+    caller_id, 'repository', 'mem0ai/mem0',
+    'Reference repository for the Mem0 system.',
+    '{}'::text[],
+    jsonb_build_object(
+      'githubUrl','https://github.com/mem0ai/mem0',
+      'whatCaughtMyEye','',
+      'whatItClaims','',
+      'whatItActuallyDoes','',
+      'maintenanceImpression','',
+      'complexity','Unknown',
+      'risk','Unknown',
+      'integrationCost','Unknown',
+      'immediateUsefulness','Unknown',
+      'longTermValue','Unknown',
+      'recommendedAction','Document only',
+      'finalVerdict','Legitimate system with no current integration need. Reconsider for a custom standalone AI application.',
+      'lastReviewed', null
+    ),
+    true, 'example-repository-mem0'
+  )
+  on conflict (user_id, seed_key) do nothing;
+  get diagnostics n = row_count; inserted_records := inserted_records + n;
+
+  insert into public.records (user_id, record_type, title, summary, tags, record_data, is_example, seed_key)
+  values (
+    caller_id, 'conversation', 'Mem0, Replit, and The Excavatorium',
+    'Origin conversation that shaped The Excavatorium.',
+    '{}'::text[],
+    jsonb_build_object(
+      'conversationDate', decision_date,
+      'projectRoute','The Forge',
+      'highSignalFindings','Why Mem0 is currently unnecessary. Why GitHub repositories attract attention. How the graveyard, tasting room, excavator, and ledger became one application.',
+      'decisionsMade','Direct Supabase for the final cloud version. Manual-first for version one. One final bounded prompt for the builder.',
+      'openLoops','Confirm private GitHub repository connection after the first working baseline.',
+      'reusablePrompts','',
+      'memoryCandidates','',
+      'rawConversationText','Short demonstration text. Do not embed real private conversation.'
+    ),
+    true, 'example-conversation-excavatorium-origin'
+  )
+  on conflict (user_id, seed_key) do nothing;
+  get diagnostics n = row_count; inserted_records := inserted_records + n;
+
+  insert into public.records (user_id, record_type, title, summary, tags, record_data, is_example, seed_key)
+  values (
+    caller_id, 'decision', 'Use ChatGPT as the primary AI', '', '{}'::text[],
+    jsonb_build_object(
+      'reason','ChatGPT provides the strongest combined environment for dialogue, reasoning, memory, projects, files, and connected tools.',
+      'trigger','','whatWouldChangeMyMind','',
+      'decisionDate', decision_date,
+      'status','Current','confidence','High',
+      'supersedesDecisionId', null
+    ),
+    true, 'example-decision-chatgpt-primary'
+  )
+  on conflict (user_id, seed_key) do nothing;
+  get diagnostics n = row_count; inserted_records := inserted_records + n;
+
+  insert into public.records (user_id, record_type, title, summary, tags, record_data, is_example, seed_key)
+  values (
+    caller_id, 'decision', 'Use Perplexity as the research layer', '', '{}'::text[],
+    jsonb_build_object(
+      'reason','Perplexity''s web search, source discovery, and citation-oriented reports complement ChatGPT''s stronger dialogue and reasoning.',
+      'trigger','','whatWouldChangeMyMind','',
+      'decisionDate', decision_date,
+      'status','Current','confidence','High',
+      'supersedesDecisionId', null
+    ),
+    true, 'example-decision-perplexity-research'
+  )
+  on conflict (user_id, seed_key) do nothing;
+  get diagnostics n = row_count; inserted_records := inserted_records + n;
+
+  insert into public.records (user_id, record_type, title, summary, tags, record_data, is_example, seed_key)
+  values (
+    caller_id, 'decision', 'Restrict Grok to limited media use', '', '{}'::text[],
+    jsonb_build_object(
+      'reason','Grok''s continuity, instruction following, depth, and support are insufficient for primary use, while selected media features remain useful.',
+      'trigger','','whatWouldChangeMyMind','',
+      'decisionDate', decision_date,
+      'status','Current','confidence','High',
+      'supersedesDecisionId', null
+    ),
+    true, 'example-decision-grok-media'
+  )
+  on conflict (user_id, seed_key) do nothing;
+  get diagnostics n = row_count; inserted_records := inserted_records + n;
+
+  insert into public.records (user_id, record_type, title, summary, tags, record_data, is_example, seed_key)
+  values (
+    caller_id, 'decision', 'Do not integrate Mem0 into the current workflow', '', '{}'::text[],
+    jsonb_build_object(
+      'reason','Mem0 duplicates native ChatGPT memory, project instructions, source files, and deliberate context management while adding another system to maintain.',
+      'trigger','','whatWouldChangeMyMind','',
+      'decisionDate', decision_date,
+      'status','Current','confidence','High',
+      'supersedesDecisionId', null
+    ),
+    true, 'example-decision-no-mem0'
+  )
+  on conflict (user_id, seed_key) do nothing;
+  get diagnostics n = row_count; inserted_records := inserted_records + n;
+
+  insert into public.records (user_id, record_type, title, summary, tags, record_data, is_example, seed_key)
+  values (
+    caller_id, 'decision', 'Keep Obsidian as the durable note vault', '', '{}'::text[],
+    jsonb_build_object(
+      'reason','Obsidian preserves local Markdown ownership, portability, linking, and durable long-term knowledge storage.',
+      'trigger','','whatWouldChangeMyMind','',
+      'decisionDate', decision_date,
+      'status','Current','confidence','High',
+      'supersedesDecisionId', null
+    ),
+    true, 'example-decision-obsidian-vault'
+  )
+  on conflict (user_id, seed_key) do nothing;
+  get diagnostics n = row_count; inserted_records := inserted_records + n;
+
+  -- ------------------------------------------------------------------
+  -- Phase 2: canonical links. Endpoint ids are resolved from the
+  -- caller's own records by exact seed_key. If either endpoint is
+  -- somehow absent the SELECT yields zero rows and no link is inserted.
+  -- ON CONFLICT (user_id, seed_key) DO NOTHING preserves existing
+  -- canonical links unchanged.
+  -- ------------------------------------------------------------------
+
+  with pairs(seed_key, source_seed, target_seed) as (
+    values
+      ('example-link-conversation-chatgpt',
+        'example-conversation-excavatorium-origin', 'example-tool-chatgpt'),
+      ('example-link-conversation-grok',
+        'example-conversation-excavatorium-origin', 'example-tool-grok'),
+      ('example-link-conversation-mem0',
+        'example-conversation-excavatorium-origin', 'example-tool-mem0'),
+      ('example-link-conversation-repository-mem0',
+        'example-conversation-excavatorium-origin', 'example-repository-mem0'),
+      ('example-link-conversation-decision-no-mem0',
+        'example-conversation-excavatorium-origin', 'example-decision-no-mem0'),
+      ('example-link-conversation-decision-grok-media',
+        'example-conversation-excavatorium-origin', 'example-decision-grok-media'),
+      ('example-link-mem0-repository',
+        'example-tool-mem0', 'example-repository-mem0'),
+      ('example-link-decision-chatgpt-tool',
+        'example-decision-chatgpt-primary', 'example-tool-chatgpt'),
+      ('example-link-decision-obsidian-tool',
+        'example-decision-obsidian-vault', 'example-tool-obsidian')
+  )
+  insert into public.record_links (user_id, source_record_id, target_record_id, seed_key)
+  select caller_id, s.id, t.id, p.seed_key
+    from pairs p
+    join public.records s
+      on s.user_id = caller_id and s.seed_key = p.source_seed
+    join public.records t
+      on t.user_id = caller_id and t.seed_key = p.target_seed
+  on conflict (user_id, seed_key) do nothing;
+  get diagnostics n = row_count;
+  inserted_links := inserted_links + n;
+
+  return jsonb_build_object(
+    'insertedRecords', inserted_records,
+    'insertedLinks', inserted_links
+  );
 end;
 $$;
 
