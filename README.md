@@ -5,9 +5,9 @@ GitHub repositories, long AI conversations, and technical decisions —
 what attracted you, what was promised, what actually happened, and the
 final verdict.
 
-**Status: Phase B is implemented and deployed.** Password login with a
-magic-link fallback, the product interface, and the GitHub connection are
-available in production.
+**Status: Implemented and deployed.** Password login with a magic-link
+fallback, the product interface, and the GitHub connection are available in
+production.
 
 ## Live app
 
@@ -63,6 +63,7 @@ Ordered SQL lives under [`docs/migrations/`](./docs/migrations/):
 | `0005_validation_helpers.sql` | Internal four-branch `assert_record_data_valid`                                                                            |
 | `0006_write_rpcs.sql`         | `save_record_with_links`, `delete_record_safely`                                                                           |
 | `0007_seed_lifecycle.sql`     | `initialize_user_archive`, `remove_example_data`, `restore_missing_examples`, `reset_user_archive`, `restore_user_archive` |
+| `0008_restore_hardening.sql`  | Canonical seed/type enforcement; strict record validation; immutable stored `record_type`; preflight restore validation before replacement |
 
 Apply them in numeric order via the Supabase SQL editor or the Supabase
 CLI (`supabase db execute`). They have not been applied automatically
@@ -73,8 +74,8 @@ by this repository.
 1. In the Supabase dashboard for the directly-managed project, create
    the owner account (Authentication → Users → Add user, or invite by
    email).
-2. From the login page in this app, submit the owner email and confirm
-   the magic link is delivered.
+2. From the login page in this app, sign in with the owner password. If
+   password login is unavailable, use the magic-link fallback.
 3. In Authentication → Providers → Email, **disable "Enable new user
    signups"**. This makes public signup impossible; the existing owner
    continues to receive magic links because `shouldCreateUser: false`
@@ -83,12 +84,13 @@ by this repository.
    URLs: the current Lovable preview URL, `http://localhost:8080`, and
    `https://the-excavatorium.lovable.app`.
 
-## Build and test commands
+## Validation commands
 
 ```
-bun install
-bun run dev         # local development
-bun run build       # production build
+bunx tsc --noEmit
+bun run build
+bun run lint
+git diff --check
 ```
 
 There are no automated tests in this repository.

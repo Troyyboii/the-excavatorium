@@ -26,6 +26,7 @@ docs/migrations/0004_profile_trigger.sql
 docs/migrations/0005_validation_helpers.sql
 docs/migrations/0006_write_rpcs.sql
 docs/migrations/0007_seed_lifecycle.sql
+docs/migrations/0008_restore_hardening.sql
 ```
 
 Two supported paths:
@@ -45,7 +46,15 @@ supabase db execute --file docs/migrations/0004_profile_trigger.sql
 supabase db execute --file docs/migrations/0005_validation_helpers.sql
 supabase db execute --file docs/migrations/0006_write_rpcs.sql
 supabase db execute --file docs/migrations/0007_seed_lifecycle.sql
+supabase db execute --file docs/migrations/0008_restore_hardening.sql
 ```
+
+Migration `0008_restore_hardening.sql` enforces the approved canonical
+seed-key-to-record-type mapping, validates record data strictly by type,
+prevents updates from changing an existing record's type, and preflights
+archive restores before deleting current records or links. A failed restore
+rolls back and leaves the existing archive intact; `app_metadata` is not
+modified.
 
 ## 3. Row-level security
 
@@ -62,17 +71,18 @@ In Authentication → URL Configuration, add:
 - the current Lovable preview URL, e.g.
   `https://id-preview--<uuid>.lovable.app`
 - `http://localhost:8080`
-- the future hosted URL when configured
+- `https://the-excavatorium.lovable.app`
 
 Do not use production wildcards.
 
-## 5. Owner magic-link setup
+## 5. Owner login setup
 
 1. Create the owner account in Authentication → Users.
-2. Confirm you can receive a magic link.
-3. Authentication → Providers → Email → **disable "Enable new user
+2. Use password login as the primary login method.
+3. Keep magic-link login available as the fallback method.
+4. Authentication → Providers → Email → **disable "Enable new user
    signups"**.
-4. Leave the Email provider enabled so magic-link OTPs continue to work
+5. Leave the Email provider enabled so magic-link OTPs remain available
    for the existing owner.
 
 ## 6. Signup disabling

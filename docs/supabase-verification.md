@@ -1,7 +1,8 @@
 # Supabase verification checklist
 
-Read-only checks to confirm the Phase A foundation is correctly
-installed in the directly-managed Supabase project. Every item is
+Read-only checks to confirm the deployed application and its Phase B
+foundation are correctly installed in the directly-managed Supabase project.
+Every item is
 recorded as exactly one of:
 
 ```
@@ -111,7 +112,24 @@ where t.relname = 'records'
 Expected: both check constraints present; `records_seed_key_allowed_ck`
 lists the 13 approved record seed keys.
 
-## 8. Owner-only reads
+## 8. Restore hardening (migration 0008)
+
+Migration `0008_restore_hardening.sql` covers four database protections:
+
+- canonical seed keys are constrained to their approved record types;
+- record data is validated strictly by record type, including required
+  nullable keys and canonical seed relationships;
+- an existing record's stored `record_type` cannot be changed by an update;
+- archive restore payloads are fully preflighted before current records or
+  links are deleted, with failed restores rolled back and `app_metadata`
+  preserved.
+
+Expected: the migration is applied, `restore_user_archive` rejects malformed,
+inconsistent, duplicate, cross-user, self-linked, or non-resolving payloads
+without deleting the current archive, and valid restores replace only the
+caller's records and links.
+
+## 9. Owner-only reads
 
 Sign in as the owner, then in the browser console:
 
@@ -123,12 +141,12 @@ console.log({ data, error });
 Expected: rows returned only for `user_id = auth.uid()`; unauthenticated
 requests return `[]` or an RLS-enforced empty response.
 
-## 9. Second-user isolation
+## 10. Second-user isolation
 
 If a second test account is available, sign in as that user and repeat
 the query above. Expected: none of the first user's rows appear.
 
-## 10. Absence of frontend secrets
+## 11. Absence of frontend secrets
 
 ```
 grep -RIn "SERVICE_ROLE\|service_role\|SUPABASE_JWT_SECRET\|SMTP_\|DATABASE_URL" src .env.example
@@ -143,7 +161,8 @@ Expected: no matches.
 | migrations created                          | Migration created   |
 | migrations actually applied                 | Migration applied   |
 | owner account created                       | Manually configured |
-| owner magic-link delivery works             | Verified            |
+| owner password login works                  | Verified            |
+| magic-link fallback production login        | Not tested          |
 | `shouldCreateUser: false` works             | Verified            |
 | public signup disabled                      | Manually configured |
 | redirect URLs configured                    | Manually configured |
@@ -151,6 +170,16 @@ Expected: no matches.
 | RPC privileges inspected                    | Verified            |
 | second-user isolation tested where possible | Not tested          |
 | no Lovable Cloud backend exists             | Verified            |
+| GitHub main synchronized to Lovable         | Verified            |
+| production deployment succeeded             | Verified            |
+| desktop production use succeeded            | Verified            |
+| Windows standalone app installation         | Verified            |
+| iPhone production use succeeded             | Verified            |
+| iPhone Home Screen installation             | Verified            |
+| TypeScript passed                           | Verified            |
+| production build passed twice               | Verified            |
+| lint passed                                 | Verified            |
+| `git diff --check` passed                   | Verified            |
 
 ## Verification evidence notes
 
@@ -167,3 +196,19 @@ Expected: no matches.
 - All public functions use an explicit empty `search_path`
 - Composite `record_links` ownership foreign keys verified
 - Seed identity constraints verified
+
+## Production verification evidence
+
+- GitHub main synchronized to Lovable
+- Production deployment succeeded
+- Production password login succeeded
+- Desktop production use succeeded
+- Windows standalone app installation succeeded
+- iPhone production use succeeded
+- iPhone Home Screen installation succeeded
+- TypeScript passed
+- Production build passed twice
+- Lint passed with 0 errors and 8 existing warnings
+- `git diff --check` passed
+
+Second-user isolation and magic-link production login remain Not tested.
