@@ -12,12 +12,78 @@ type ConnectivityState =
   | { kind: "ok" }
   | { kind: "error"; message: string };
 
+type InitState =
+  | { kind: "idle" }
+  | { kind: "running" }
+  | {
+      kind: "done";
+      rpcData: unknown;
+      rpcError: string | null;
+      counts: {
+        records: number | null;
+        links: number | null;
+        metadata: number | null;
+      };
+      countErrors: {
+        records: string | null;
+        links: string | null;
+        metadata: string | null;
+      };
+    };
+
 function Index() {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [session, setSession] = useState<null | { email: string | null }>(null);
   const [conn, setConn] = useState<ConnectivityState>({ kind: "checking" });
+  const [init, setInit] = useState<InitState>({ kind: "idle" });
+
+  async function onInitialize() {
+    setInit({ kind: "running" });
+    const localDate = new Date().toISOString().slice(0, 10);
+    const { data: rpcData, error: rpcError } = await supabase.rpc(
+      "initialize_user_archive",
+      { local_date: localDate },
+    );
+
+    let recordsCount: number | null = null;
+    let linksCount: number | null = null;
+    let metadataCount: number | null = null;
+    let recordsErr: string | null = null;
+    let linksErr: string | null = null;
+    let metadataErr: string | null = null;
+
+    if (!rpcError) {
+      const [r, l, m] = await Promise.all([
+        supabase.from("records").select("*", { count: "exact", head: true }),
+        supabase.from("record_links").select("*", { count: "exact", head: true }),
+        supabase.from("app_metadata").select("*", { count: "exact", head: true }),
+      ]);
+      recordsCount = r.count ?? null;
+      linksCount = l.count ?? null;
+      metadataCount = m.count ?? null;
+      recordsErr = r.error?.message ?? null;
+      linksErr = l.error?.message ?? null;
+      metadataErr = m.error?.message ?? null;
+    }
+
+    setInit({
+      kind: "done",
+      rpcData: rpcData ?? null,
+      rpcError: rpcError?.message ?? null,
+      counts: {
+        records: recordsCount,
+        links: linksCount,
+        metadata: metadataCount,
+      },
+      countErrors: {
+        records: recordsErr,
+        links: linksErr,
+        metadata: metadataErr,
+      },
+    });
+  }
 
   useEffect(() => {
     let mounted = true;
@@ -170,6 +236,62 @@ function Index() {
               <dd>{session ? "authenticated" : "signed out"}</dd>
             </div>
           </dl>
+          {session ? (
+            <div className="mt-4 border-t border-border pt-3">
+              <button
+                onClick={onInitialize}
+                disabled={init.kind === "running"}
+                className="inline-flex items-center rounded-md border border-input bg-background px-3 py-1.5 text-xs text-foreground hover:bg-accent disabled:opacity-60"
+              >
+                {init.kind === "running" ? "Initializing…" : "Initialize archive"}
+              </button>
+              {init.kind === "done" ? (
+                <div className="mt-3 space-y-2">
+                  <div>
+                    <div className="font-medium text-foreground">RPC result</div>
+                    {init.rpcError ? (
+                      <pre className="mt-1 whitespace-pre-wrap break-words rounded bg-muted p-2 font-mono text-[11px] text-destructive">
+                        {init.rpcError}
+                      </pre>
+                    ) : (
+                      <pre className="mt-1 whitespace-pre-wrap break-words rounded bg-muted p-2 font-mono text-[11px] text-foreground">
+                        {JSON.stringify(init.rpcData, null, 2)}
+                      </pre>
+                    )}
+                  </div>
+                  <div>
+                    <div className="font-medium text-foreground">Counts</div>
+                    <dl className="mt-1 space-y-1">
+                      <div className="flex justify-between gap-2">
+                        <dt>records</dt>
+                        <dd className="font-mono">
+                          {init.countErrors.records
+                            ? `error: ${init.countErrors.records}`
+                            : (init.counts.records ?? "—")}
+                        </dd>
+                      </div>
+                      <div className="flex justify-between gap-2">
+                        <dt>record_links</dt>
+                        <dd className="font-mono">
+                          {init.countErrors.links
+                            ? `error: ${init.countErrors.links}`
+                            : (init.counts.links ?? "—")}
+                        </dd>
+                      </div>
+                      <div className="flex justify-between gap-2">
+                        <dt>app_metadata</dt>
+                        <dd className="font-mono">
+                          {init.countErrors.metadata
+                            ? `error: ${init.countErrors.metadata}`
+                            : (init.counts.metadata ?? "—")}
+                        </dd>
+                      </div>
+                    </dl>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <p className="mt-3 text-muted-foreground">
             Phase A foundation. Product interface stops here until the manual
             verification gate is recorded.
