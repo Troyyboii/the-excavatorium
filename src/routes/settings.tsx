@@ -1,5 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+
 import { useSession } from "@/lib/session";
 import {
   useArchive,
@@ -11,14 +13,20 @@ import {
   useRestoreExamples,
 } from "@/lib/archive";
 import { PageHeader, Banner, Toast } from "@/components/page-parts";
-import { backupFilename, buildBackup, download, validateBackup, type BackupCounts } from "@/lib/format";
+import {
+  backupFilename,
+  buildBackup,
+  download,
+  validateBackup,
+  type BackupCounts,
+} from "@/lib/format";
 import { supabase, SUPABASE_URL } from "@/lib/supabase";
 
 export const Route = createFileRoute("/settings")({ component: Page, ssr: false });
 
 function Page() {
   const session = useSession();
-  const email = session.status === "signed-in" ? session.session.user.email ?? null : null;
+  const email = session.status === "signed-in" ? (session.session.user.email ?? null) : null;
   const q = useArchive(true);
   const meta = useAppMetadata(true);
   const [toast, setToast] = useState<string | null>(null);
@@ -29,7 +37,9 @@ function Page() {
       <PageHeader title="Settings" />
       {error ? (
         <div className="mb-4">
-          <Banner kind="error" title="Something went wrong">{error}</Banner>
+          <Banner kind="error" title="Something went wrong">
+            {error}
+          </Banner>
         </div>
       ) : null}
 
@@ -39,7 +49,12 @@ function Page() {
         <ExampleSection setToast={setToast} setError={setError} />
         <StorageSection />
         <DestructiveSection setToast={setToast} setError={setError} />
-        <DiagnosticsSection email={email} meta={meta.data ?? null} qCount={q.data?.records.length ?? null} lCount={q.data?.links.length ?? null} />
+        <DiagnosticsSection
+          email={email}
+          meta={meta.data ?? null}
+          qCount={q.data?.records.length ?? null}
+          lCount={q.data?.links.length ?? null}
+        />
       </div>
 
       {toast ? <Toast message={toast} onClose={() => setToast(null)} /> : null}
@@ -65,14 +80,23 @@ function AccountSection({
   setToast: (m: string) => void;
   setError: (m: string | null) => void;
 }) {
+  const qc = useQueryClient();
   async function onSignOut() {
     try {
+      // Cancel in-flight archive/metadata reads so they can't 401 into the
+      // cache after signOut clears the session.
+      await qc.cancelQueries();
+      // Drop cached protected data BEFORE signOut so no stale render can
+      // happen mid-teardown. AuthGate also clears on the user-id transition
+      // that follows.
+      qc.removeQueries();
       await supabase.auth.signOut();
       setToast("Signed out");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Sign out failed.");
     }
   }
+
   return (
     <Card title="Account">
       <div className="text-sm text-muted-foreground">
@@ -100,16 +124,30 @@ function BackupSection({
 }) {
   const restore = useRestoreArchive();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [pendingRestore, setPendingRestore] = useState<
-    | { counts: BackupCounts; payload: ReturnType<typeof buildBackup> }
-    | null
-  >(null);
+  const [pendingRestore, setPendingRestore] = useState<{
+    counts: BackupCounts;
+    payload: ReturnType<typeof buildBackup>;
+  } | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
+
+  // Backup is only safe to generate when the complete paginated archive
+  // has loaded successfully. A pending or errored archive must not become
+  // an empty "backup" on disk.
+  const archiveReady = q.isSuccess && !!q.data;
+  const archiveError = q.isError
+    ? q.error instanceof Error
+      ? q.error.message
+      : String(q.error)
+    : null;
 
   function onExport() {
     setError(null);
+    if (!archiveReady || !q.data) {
+      setError("Backup unavailable: the current archive has not finished loading.");
+      return;
+    }
     try {
-      const data = buildBackup(q.data?.records ?? [], q.data?.links ?? []);
+      const data = buildBackup(q.data.records, q.data.links);
       // Validate the freshly built backup before offering it for download.
       const check = validateBackup(data);
       if (!check.ok) {
@@ -148,6 +186,10 @@ function BackupSection({
 
   async function onConfirmRestore() {
     if (!pendingRestore) return;
+    if (!archiveReady) {
+      setError("Cannot confirm restore while the current archive state is unknown.");
+      return;
+    }
     try {
       await restore.mutateAsync(pendingRestore.payload);
       setPendingRestore(null);
@@ -160,20 +202,36 @@ function BackupSection({
 
   return (
     <Card title="Backup and restore">
+      {archiveError ? (
+        <Banner kind="error" title="Archive failed to load">
+          Backup and restore are disabled until the archive loads. {archiveError}
+        </Banner>
+      ) : null}
+      {!archiveReady && !archiveError ? (
+        <p className="text-sm text-muted-foreground">
+          Loading the complete archive… Backup and restore will enable once it is ready.
+        </p>
+      ) : null}
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
           onClick={onExport}
-          className="inline-flex min-h-11 items-center rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground hover:bg-[color:var(--record-hover)]"
+          disabled={!archiveReady}
+          className="inline-flex min-h-11 items-center rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground hover:bg-[color:var(--record-hover)] disabled:cursor-not-allowed disabled:opacity-60"
         >
           Export JSON backup
         </button>
-        <label className="inline-flex min-h-11 cursor-pointer items-center rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground hover:bg-[color:var(--record-hover)]">
+        <label
+          className={`inline-flex min-h-11 items-center rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground hover:bg-[color:var(--record-hover)] ${
+            archiveReady ? "cursor-pointer" : "cursor-not-allowed opacity-60"
+          }`}
+        >
           Import JSON backup
           <input
             ref={fileRef}
             type="file"
             accept="application/json,.json"
+            disabled={!archiveReady}
             className="sr-only"
             onChange={(e) => {
               const f = e.target.files?.[0];
@@ -182,6 +240,7 @@ function BackupSection({
           />
         </label>
       </div>
+
       {parseError ? (
         <Banner kind="error" title="Backup rejected">
           {parseError}. Nothing was imported.
@@ -189,37 +248,49 @@ function BackupSection({
       ) : null}
       {pendingRestore ? (
         <div className="rounded-md border border-[color:var(--warning)]/60 bg-[color:var(--warning)]/10 p-3 text-sm">
-          <div className="font-medium text-foreground">Replace current archive with imported file?</div>
+          <div className="font-medium text-foreground">
+            Replace current archive with imported file?
+          </div>
           <p className="mt-1 text-muted-foreground">
-            This deletes every current record and link and installs the imported archive
-            atomically. It is strongly recommended to Export JSON backup first.
+            This deletes every current record and link and installs the imported archive atomically.
+            It is strongly recommended to Export JSON backup first.
           </p>
           <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-            <dt className="text-muted-foreground">Schema version</dt><dd>{pendingRestore.counts.schemaVersion}</dd>
-            <dt className="text-muted-foreground">Total records</dt><dd>{pendingRestore.counts.totalRecords}</dd>
-            <dt className="text-muted-foreground">Tools</dt><dd>{pendingRestore.counts.tool}</dd>
-            <dt className="text-muted-foreground">Repositories</dt><dd>{pendingRestore.counts.repository}</dd>
-            <dt className="text-muted-foreground">Conversations</dt><dd>{pendingRestore.counts.conversation}</dd>
-            <dt className="text-muted-foreground">Decisions</dt><dd>{pendingRestore.counts.decision}</dd>
-            <dt className="text-muted-foreground">Links</dt><dd>{pendingRestore.counts.links}</dd>
-            <dt className="text-muted-foreground">Example records</dt><dd>{pendingRestore.counts.examples}</dd>
+            <dt className="text-muted-foreground">Schema version</dt>
+            <dd>{pendingRestore.counts.schemaVersion}</dd>
+            <dt className="text-muted-foreground">Total records</dt>
+            <dd>{pendingRestore.counts.totalRecords}</dd>
+            <dt className="text-muted-foreground">Tools</dt>
+            <dd>{pendingRestore.counts.tool}</dd>
+            <dt className="text-muted-foreground">Repositories</dt>
+            <dd>{pendingRestore.counts.repository}</dd>
+            <dt className="text-muted-foreground">Conversations</dt>
+            <dd>{pendingRestore.counts.conversation}</dd>
+            <dt className="text-muted-foreground">Decisions</dt>
+            <dd>{pendingRestore.counts.decision}</dd>
+            <dt className="text-muted-foreground">Links</dt>
+            <dd>{pendingRestore.counts.links}</dd>
+            <dt className="text-muted-foreground">Example records</dt>
+            <dd>{pendingRestore.counts.examples}</dd>
           </dl>
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               type="button"
               onClick={onExport}
-              className="inline-flex min-h-11 items-center rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              disabled={!archiveReady}
+              className="inline-flex min-h-11 items-center rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-60"
             >
               Download current backup first
             </button>
             <button
               type="button"
               onClick={onConfirmRestore}
-              disabled={restore.isPending}
+              disabled={restore.isPending || !archiveReady}
               className="inline-flex min-h-11 items-center rounded-md bg-[color:var(--destructive)] px-3 py-2 text-sm font-medium text-[color:var(--destructive-foreground)] disabled:opacity-60"
             >
               {restore.isPending ? "Restoring…" : "Confirm replace"}
             </button>
+
             <button
               type="button"
               onClick={() => setPendingRestore(null)}
@@ -305,12 +376,11 @@ function StorageSection() {
   return (
     <Card title="Storage and privacy">
       <p className="text-sm text-muted-foreground">
-        Your archive is stored in your private Supabase database and synchronized
-        across devices where you sign in.
+        Your archive is stored in your private Supabase database and synchronized across devices
+        where you sign in.
       </p>
       <p className="text-sm text-muted-foreground">
-        The archive is not public. Export JSON backups for independent recovery and
-        portability.
+        The archive is not public. Export JSON backups for independent recovery and portability.
       </p>
     </Card>
   );
@@ -339,7 +409,8 @@ function DestructiveSection({
       ) : (
         <div className="space-y-3">
           <p className="text-sm text-foreground">
-            This deletes every record and link owned by your account. Type <span className="font-mono">DELETE</span> to confirm.
+            This deletes every record and link owned by your account. Type{" "}
+            <span className="font-mono">DELETE</span> to confirm.
           </p>
           <input
             value={confirmText}
@@ -367,7 +438,10 @@ function DestructiveSection({
             </button>
             <button
               type="button"
-              onClick={() => { setOpen(false); setConfirmText(""); }}
+              onClick={() => {
+                setOpen(false);
+                setConfirmText("");
+              }}
               className="inline-flex min-h-11 items-center rounded-md px-3 py-2 text-sm text-muted-foreground"
             >
               Cancel
@@ -386,20 +460,37 @@ function DiagnosticsSection({
   lCount,
 }: {
   email: string | null;
-  meta: null | { schema_version: number; seed_lifecycle_initialized: boolean; created_at: string; updated_at: string };
+  meta: null | {
+    schema_version: number;
+    seed_lifecycle_initialized: boolean;
+    created_at: string;
+    updated_at: string;
+  };
   qCount: number | null;
   lCount: number | null;
 }) {
-  const host = useMemo(() => { try { return new URL(SUPABASE_URL).host; } catch { return SUPABASE_URL; } }, []);
+  const host = useMemo(() => {
+    try {
+      return new URL(SUPABASE_URL).host;
+    } catch {
+      return SUPABASE_URL;
+    }
+  }, []);
   return (
     <Card title="Diagnostics">
       <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-        <dt className="text-muted-foreground">Supabase host</dt><dd className="font-mono">{host}</dd>
-        <dt className="text-muted-foreground">Signed-in email</dt><dd className="font-mono truncate">{email ?? "—"}</dd>
-        <dt className="text-muted-foreground">Schema version</dt><dd>{meta?.schema_version ?? "—"}</dd>
-        <dt className="text-muted-foreground">Lifecycle initialized</dt><dd>{meta ? String(meta.seed_lifecycle_initialized) : "—"}</dd>
-        <dt className="text-muted-foreground">Records loaded</dt><dd>{qCount ?? "—"}</dd>
-        <dt className="text-muted-foreground">Links loaded</dt><dd>{lCount ?? "—"}</dd>
+        <dt className="text-muted-foreground">Supabase host</dt>
+        <dd className="font-mono">{host}</dd>
+        <dt className="text-muted-foreground">Signed-in email</dt>
+        <dd className="font-mono truncate">{email ?? "—"}</dd>
+        <dt className="text-muted-foreground">Schema version</dt>
+        <dd>{meta?.schema_version ?? "—"}</dd>
+        <dt className="text-muted-foreground">Lifecycle initialized</dt>
+        <dd>{meta ? String(meta.seed_lifecycle_initialized) : "—"}</dd>
+        <dt className="text-muted-foreground">Records loaded</dt>
+        <dd>{qCount ?? "—"}</dd>
+        <dt className="text-muted-foreground">Links loaded</dt>
+        <dd>{lCount ?? "—"}</dd>
       </dl>
     </Card>
   );
