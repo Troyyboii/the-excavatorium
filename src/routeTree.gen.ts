@@ -9,6 +9,8 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SearchRouteImport } from './routes/search'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ToolsIndexRouteImport } from './routes/tools.index'
 import { Route as RepositoriesIndexRouteImport } from './routes/repositories.index'
@@ -27,6 +29,16 @@ import { Route as RepositoriesIdEditRouteImport } from './routes/repositories.$i
 import { Route as DecisionsIdEditRouteImport } from './routes/decisions.$id.edit'
 import { Route as ConversationsIdEditRouteImport } from './routes/conversations.$id.edit'
 
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SearchRoute = SearchRouteImport.update({
+  id: '/search',
+  path: '/search',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -115,6 +127,8 @@ const ConversationsIdEditRoute = ConversationsIdEditRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/search': typeof SearchRoute
+  '/settings': typeof SettingsRoute
   '/conversations/new': typeof ConversationsNewRoute
   '/decisions/new': typeof DecisionsNewRoute
   '/repositories/new': typeof RepositoriesNewRoute
@@ -134,6 +148,8 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/search': typeof SearchRoute
+  '/settings': typeof SettingsRoute
   '/conversations/new': typeof ConversationsNewRoute
   '/decisions/new': typeof DecisionsNewRoute
   '/repositories/new': typeof RepositoriesNewRoute
@@ -154,6 +170,8 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/search': typeof SearchRoute
+  '/settings': typeof SettingsRoute
   '/conversations/new': typeof ConversationsNewRoute
   '/decisions/new': typeof DecisionsNewRoute
   '/repositories/new': typeof RepositoriesNewRoute
@@ -175,6 +193,8 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/search'
+    | '/settings'
     | '/conversations/new'
     | '/decisions/new'
     | '/repositories/new'
@@ -194,6 +214,8 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/search'
+    | '/settings'
     | '/conversations/new'
     | '/decisions/new'
     | '/repositories/new'
@@ -213,6 +235,8 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/search'
+    | '/settings'
     | '/conversations/new'
     | '/decisions/new'
     | '/repositories/new'
@@ -233,6 +257,8 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  SearchRoute: typeof SearchRoute
+  SettingsRoute: typeof SettingsRoute
   ConversationsNewRoute: typeof ConversationsNewRoute
   DecisionsNewRoute: typeof DecisionsNewRoute
   RepositoriesNewRoute: typeof RepositoriesNewRoute
@@ -253,6 +279,20 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/search': {
+      id: '/search'
+      path: '/search'
+      fullPath: '/search'
+      preLoaderRoute: typeof SearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -377,6 +417,8 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  SearchRoute: SearchRoute,
+  SettingsRoute: SettingsRoute,
   ConversationsNewRoute: ConversationsNewRoute,
   DecisionsNewRoute: DecisionsNewRoute,
   RepositoriesNewRoute: RepositoriesNewRoute,
