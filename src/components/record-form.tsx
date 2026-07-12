@@ -191,7 +191,7 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
         />
       </Section>
 
-      <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-3 border-t border-border bg-background/95 py-3 backdrop-blur">
+      <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-3 border-t border-border bg-background py-3">
         <div className="flex gap-2">
           <button
             type="submit"
