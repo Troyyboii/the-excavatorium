@@ -244,8 +244,11 @@ export function validateBackup(raw: unknown): ValidationResult {
 
   const recordIds = new Set<string>();
   const seedKeys = new Set<string>();
+  const seedKeyToId = new Map<string, string>();
   const linkIds = new Set<string>();
+  const linkSeedKeys = new Set<string>();
   const linkPairs = new Set<string>();
+
   const counts: BackupCounts = {
     schemaVersion: 1,
     totalRecords: 0,
