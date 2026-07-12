@@ -58,10 +58,7 @@ export function LoginScreen() {
             Sign in with the authorized email and password.
           </p>
         </header>
-        <form
-          onSubmit={onPasswordSubmit}
-          className="rounded-lg border border-border bg-card p-6"
-        >
+        <form onSubmit={onPasswordSubmit} className="rounded-lg border border-border bg-card p-6">
           <label htmlFor="email" className="block text-sm text-foreground">
             Email
           </label>
@@ -90,28 +87,21 @@ export function LoginScreen() {
 
           <button
             type="submit"
-            disabled={
-              pwSubmitting || email.trim().length === 0 || password.length === 0
-            }
+            disabled={pwSubmitting || email.trim().length === 0 || password.length === 0}
             className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-[color:var(--primary)]/90 disabled:opacity-60"
           >
             {pwSubmitting ? "Signing in…" : "Sign in"}
           </button>
 
           {pwError ? (
-            <p
-              role="alert"
-              className="mt-3 text-sm text-[color:var(--destructive-foreground)]"
-            >
+            <p role="alert" className="mt-3 text-sm text-[color:var(--destructive-foreground)]">
               {pwError}
             </p>
           ) : null}
         </form>
 
         <div className="mt-6 rounded-lg border border-border bg-card p-6">
-          <h2 className="font-serif text-base text-foreground">
-            Trouble signing in?
-          </h2>
+          <h2 className="font-serif text-base text-foreground">Trouble signing in?</h2>
           <p className="mt-2 text-sm text-muted-foreground">
             Send a one-time sign-in link to the authorized email as a fallback.
           </p>
