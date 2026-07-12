@@ -1,38 +1,57 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useLayoutEffect, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/lib/session";
 import { LoginScreen } from "./login-screen";
 import { AppShell } from "./app-shell";
 
+/**
+ * Render-safe account-transition gate.
+ *
+ * The single centralized Supabase auth subscription lives in
+ * src/lib/session.ts. This component observes the derived session and
+ * gates rendering so that:
+ *
+ *   - null → user, user → null, and user → different-user transitions
+ *     never let previous-user data flash on screen;
+ *   - cache mutations (cancel + remove of archive / app_metadata queries)
+ *     happen in a layout effect, never during render;
+ *   - the signed-in shell only mounts after the previous user's user-scoped
+ *     queries have been evicted.
+ */
 export function AuthGate({ children }: { children: ReactNode }) {
   const s = useSession();
   const qc = useQueryClient();
-  const prevUserRef = useRef<string | null>(null);
 
   const currentUserId = s.status === "signed-in" ? s.session.user.id : null;
 
-  // Clear every cached query whenever the authenticated user id changes
-  // (including sign-in from null, sign-out to null, and switching between
-  // accounts). This runs before children render new data, so previous-user
-  // rows cannot flash on screen.
-  //
-  // A single subscriber is enough: the session store in src/lib/session.ts
-  // ensures useSession re-renders on every real auth transition.
-  if (prevUserRef.current !== currentUserId) {
-    qc.removeQueries();
-    prevUserRef.current = currentUserId;
-  }
+  // acknowledgedUserId lags currentUserId by one layout-effect tick whenever
+  // the authenticated identity changes. While they disagree, we render a
+  // neutral transition screen instead of the old-user shell so no stale
+  // rows can paint.
+  const [acknowledgedUserId, setAcknowledgedUserId] = useState<string | null>(
+    currentUserId,
+  );
 
-  // Belt-and-braces: if the auth listener fires between paints, guarantee
-  // the cache is empty for the newly authenticated user before their data
-  // is fetched.
-  useEffect(() => {
-    return () => {
-      // No cleanup needed; the ref+removeQueries above owns the transition.
-    };
-  }, [currentUserId]);
+  const transitioning =
+    s.status !== "loading" && acknowledgedUserId !== currentUserId;
 
-  if (s.status === "loading") {
+  useLayoutEffect(() => {
+    if (s.status === "loading") return;
+    if (acknowledgedUserId === currentUserId) return;
+
+    // Evict the previous account's user-scoped caches BEFORE the new
+    // shell can mount and issue fetches. Only archive- and
+    // app_metadata-scoped keys are user-owned; unrelated caches (routing,
+    // static config) are left alone.
+    void qc.cancelQueries({ queryKey: ["archive"] });
+    void qc.cancelQueries({ queryKey: ["app_metadata"] });
+    qc.removeQueries({ queryKey: ["archive"] });
+    qc.removeQueries({ queryKey: ["app_metadata"] });
+
+    setAcknowledgedUserId(currentUserId);
+  }, [s.status, currentUserId, acknowledgedUserId, qc]);
+
+  if (s.status === "loading" || transitioning) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background text-sm text-muted-foreground">
         Loading…
