@@ -33,20 +33,15 @@ create policy app_metadata_select_own on public.app_metadata
   to authenticated
   using (user_id = auth.uid());
 
--- Revoke direct mutation privileges from every non-owner role.
-revoke insert, update, delete on public.profiles from public, anon, authenticated;
-revoke insert, update, delete on public.records from public, anon, authenticated;
-revoke insert, update, delete on public.record_links from public, anon, authenticated;
-revoke insert, update, delete on public.app_metadata from public, anon, authenticated;
+-- Reset table privileges to the minimum required surface. All roles except
+-- the table owner start with no privileges; only authenticated receives
+-- owner-scoped SELECT (enforced by RLS policies above).
+revoke all privileges on public.profiles from public, anon, authenticated;
+revoke all privileges on public.records from public, anon, authenticated;
+revoke all privileges on public.record_links from public, anon, authenticated;
+revoke all privileges on public.app_metadata from public, anon, authenticated;
 
--- Grant only the owner-scoped SELECT surface to authenticated. Anon has
--- no access to archive data.
 grant select on public.profiles to authenticated;
 grant select on public.records to authenticated;
 grant select on public.record_links to authenticated;
 grant select on public.app_metadata to authenticated;
-
-revoke all on public.profiles from anon;
-revoke all on public.records from anon;
-revoke all on public.record_links from anon;
-revoke all on public.app_metadata from anon;
