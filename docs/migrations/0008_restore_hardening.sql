@@ -58,18 +58,20 @@ alter table public.records
 --
 --    SECURITY INVOKER: This function performs pure structural validation.
 --    It is called internally by SECURITY DEFINER RPCs. Execution is
---    revoked from PUBLIC and anon and granted only to authenticated to
---    match the surrounding call sites.
+--    revoked from PUBLIC, anon, and authenticated. It remains available
+--    for internal calls from the enclosing SECURITY DEFINER RPCs.
 -- ----------------------------------------------------------------------
 create or replace function public.assert_record_data_valid(
-  rec_type text,
-  data jsonb
+  p_record_type text,
+  p_record_data jsonb
 ) returns void
 language plpgsql
 security invoker
 set search_path = ''
 as $$
 declare
+  rec_type text := p_record_type;
+  data jsonb := p_record_data;
   s text;
   key text;
   string_fields text[];
