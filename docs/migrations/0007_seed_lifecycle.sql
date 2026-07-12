@@ -257,7 +257,8 @@ set search_path = ''
 as $$
 declare
   caller_id uuid := auth.uid();
-  meta_row public.app_metadata%rowtype;
+  metadata_present boolean;
+  metadata_initialized boolean;
   has_records boolean;
   result_status text;
 begin
@@ -272,26 +273,48 @@ begin
     pg_catalog.hashtextextended(caller_id::text, 0)
   );
 
-  select * into meta_row from public.app_metadata where user_id = caller_id;
-  select exists(select 1 from public.records where user_id = caller_id) into has_records;
+  -- Capture metadata presence explicitly, BEFORE any subsequent SQL,
+  -- so it never depends on the FOUND flag of a later statement.
+  select true, am.seed_lifecycle_initialized
+    into metadata_present, metadata_initialized
+    from public.app_metadata am
+   where am.user_id = caller_id;
+  if metadata_present is null then
+    metadata_present := false;
+  end if;
 
-  if found and meta_row.seed_lifecycle_initialized then
+  select exists(
+    select 1 from public.records where user_id = caller_id
+  ) into has_records;
+
+  if metadata_present and metadata_initialized then
+    -- Case 1: fully initialized. Never re-install examples.
     result_status := 'already_initialized';
-  elsif (not found) and has_records then
-    -- missing metadata, existing archive: repair metadata, do NOT install examples
+
+  elsif (not metadata_present) and has_records then
+    -- Case 2: metadata missing but caller already has an archive.
+    -- Repair metadata, mark initialized, do NOT install examples.
     insert into public.app_metadata (user_id, schema_version, seed_lifecycle_initialized)
       values (caller_id, 1, true);
     result_status := 'repaired_existing_archive';
-  elsif (not found) and (not has_records) then
+
+  elsif (not metadata_present) and (not has_records) then
+    -- Case 3: fresh caller. Create metadata and install canonical
+    -- examples once.
     insert into public.app_metadata (user_id, schema_version, seed_lifecycle_initialized)
       values (caller_id, 1, true);
     perform public.install_canonical_seeds(caller_id, local_date);
     result_status := 'installed';
+
   else
-    -- metadata exists but not initialized
-    perform public.install_canonical_seeds(caller_id, local_date);
-    update public.app_metadata set seed_lifecycle_initialized = true
-      where user_id = caller_id;
+    -- Case 4: metadata exists but seed_lifecycle_initialized is false.
+    -- Use the collision-safe partial restore so existing canonical
+    -- rows (if any) are preserved and only missing ones are inserted.
+    perform public.restore_missing_examples(local_date);
+    update public.app_metadata
+       set seed_lifecycle_initialized = true,
+           updated_at = now()
+     where user_id = caller_id;
     result_status := 'installed';
   end if;
 
