@@ -33,7 +33,7 @@ export function TombstoneIfBuried({ r }: { r: ArchiveRecord }) {
       title={s}
       className="inline-flex items-center text-[color:var(--muted-foreground)]"
     >
-      <Tombstone size={16} weight="fill" />
+      <Cross size={16} weight="fill" />
     </span>
   );
 }
