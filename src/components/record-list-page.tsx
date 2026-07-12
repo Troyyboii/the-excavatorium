@@ -132,7 +132,7 @@ export function RecordListPage({
                 onChange={(v) => setF({ ...f, convRoute: v as ProjectRoute | "" })}
                 options={PROJECT_ROUTES}
               />
-              <label className="inline-flex min-h-11 items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground">
+              <label className="inline-flex min-h-11 w-full items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground sm:w-auto">
                 <input
                   type="checkbox"
                   checked={!!f.convHasLoops}
