@@ -279,11 +279,25 @@ export function validateBackup(raw: unknown): ValidationResult {
       return { ok: false, error: `records[${i}].isExample must be boolean` };
     if (rec.seedKey !== null && typeof rec.seedKey !== "string")
       return { ok: false, error: `records[${i}].seedKey must be string or null` };
+    // Example identity: isExample and seedKey must move together.
+    if (rec.isExample === true && rec.seedKey === null)
+      return { ok: false, error: `records[${i}] is marked isExample=true but has no seedKey` };
+    if (rec.isExample === false && rec.seedKey !== null)
+      return { ok: false, error: `records[${i}] has a seedKey but isExample=false` };
     if (typeof rec.seedKey === "string") {
       if (seedKeys.has(rec.seedKey))
-        return { ok: false, error: `records[${i}].seedKey is duplicated` };
+        return { ok: false, error: `records[${i}].seedKey "${rec.seedKey}" is duplicated` };
       seedKeys.add(rec.seedKey);
+      const approved = APPROVED_RECORD_SEED_KEYS[rec.seedKey];
+      if (!approved)
+        return { ok: false, error: `records[${i}].seedKey "${rec.seedKey}" is not an approved canonical seed key` };
+      if (approved !== rec.recordType)
+        return {
+          ok: false,
+          error: `records[${i}].seedKey "${rec.seedKey}" belongs to recordType "${approved}", not "${rec.recordType}"`,
+        };
     }
+
     if (typeof rec.createdAt !== "string" || !ISO_TS_RE.test(rec.createdAt))
       return { ok: false, error: `records[${i}].createdAt is malformed` };
     if (typeof rec.updatedAt !== "string" || !ISO_TS_RE.test(rec.updatedAt))
