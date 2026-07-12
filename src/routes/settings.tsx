@@ -114,6 +114,95 @@ function AccountSection({
   );
 }
 
+function PasswordSection() {
+  const [newPw, setNewPw] = useState("");
+  const [confirmPw, setConfirmPw] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setMsg(null);
+    if (newPw.length < 8) {
+      setMsg({ kind: "err", text: "Password must be at least 8 characters." });
+      return;
+    }
+    if (newPw !== confirmPw) {
+      setMsg({ kind: "err", text: "Passwords do not match." });
+      return;
+    }
+    setSaving(true);
+    const { error } = await supabase.auth.updateUser({ password: newPw });
+    setSaving(false);
+    if (error) {
+      setMsg({ kind: "err", text: error.message });
+      return;
+    }
+    setNewPw("");
+    setConfirmPw("");
+    setMsg({ kind: "ok", text: "Password updated." });
+  }
+
+  return (
+    <Card title="Set or change password">
+      <p className="text-sm text-muted-foreground">
+        Sets or replaces the password for your currently signed-in account.
+      </p>
+      <form onSubmit={onSubmit} className="space-y-3" autoComplete="off">
+        <div>
+          <label htmlFor="new-password" className="block text-sm text-foreground">
+            New password
+          </label>
+          <input
+            id="new-password"
+            type="password"
+            autoComplete="new-password"
+            minLength={8}
+            required
+            value={newPw}
+            onChange={(e) => setNewPw(e.target.value)}
+            className="mt-2 w-full min-h-11 rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-ring"
+          />
+        </div>
+        <div>
+          <label htmlFor="confirm-password" className="block text-sm text-foreground">
+            Confirm new password
+          </label>
+          <input
+            id="confirm-password"
+            type="password"
+            autoComplete="new-password"
+            minLength={8}
+            required
+            value={confirmPw}
+            onChange={(e) => setConfirmPw(e.target.value)}
+            className="mt-2 w-full min-h-11 rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-ring"
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={saving || newPw.length === 0 || confirmPw.length === 0}
+          className="inline-flex min-h-11 items-center rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60"
+        >
+          {saving ? "Saving…" : "Save password"}
+        </button>
+        {msg ? (
+          <p
+            role={msg.kind === "err" ? "alert" : "status"}
+            className={
+              msg.kind === "err"
+                ? "text-sm text-[color:var(--destructive-foreground)]"
+                : "text-sm text-muted-foreground"
+            }
+          >
+            {msg.text}
+          </p>
+        ) : null}
+      </form>
+    </Card>
+  );
+}
+
 function BackupSection({
   q,
   setToast,
