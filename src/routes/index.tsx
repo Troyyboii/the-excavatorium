@@ -71,11 +71,11 @@ function Dashboard() {
 
 function Section({ title, items, moreTo }: { title: string; items: ArchiveRecord[]; moreTo: string | null }) {
   return (
-    <section className="rounded-lg border border-border bg-card">
-      <div className="flex items-center justify-between border-b border-border px-4 py-2">
-        <h2 className="font-serif text-base text-foreground">{title}</h2>
+    <section className="min-w-0 overflow-hidden rounded-lg border border-border bg-card">
+      <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2">
+        <h2 className="min-w-0 flex-1 break-words font-serif text-base text-foreground">{title}</h2>
         {moreTo ? (
-          <Link to={moreTo} className="text-xs text-muted-foreground hover:text-foreground">
+          <Link to={moreTo} className="shrink-0 text-xs text-muted-foreground hover:text-foreground">
             View all
           </Link>
         ) : null}
