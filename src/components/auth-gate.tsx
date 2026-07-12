@@ -28,12 +28,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
   // the authenticated identity changes. While they disagree, we render a
   // neutral transition screen instead of the old-user shell so no stale
   // rows can paint.
-  const [acknowledgedUserId, setAcknowledgedUserId] = useState<string | null>(
-    currentUserId,
-  );
+  const [acknowledgedUserId, setAcknowledgedUserId] = useState<string | null>(currentUserId);
 
-  const transitioning =
-    s.status !== "loading" && acknowledgedUserId !== currentUserId;
+  const transitioning = s.status !== "loading" && acknowledgedUserId !== currentUserId;
 
   useLayoutEffect(() => {
     if (s.status === "loading") return;
