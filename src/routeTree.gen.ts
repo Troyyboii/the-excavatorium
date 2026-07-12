@@ -9,38 +9,290 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SearchRouteImport } from './routes/search'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ToolsIndexRouteImport } from './routes/tools.index'
+import { Route as RepositoriesIndexRouteImport } from './routes/repositories.index'
+import { Route as DecisionsIndexRouteImport } from './routes/decisions.index'
+import { Route as ConversationsIndexRouteImport } from './routes/conversations.index'
+import { Route as ToolsNewRouteImport } from './routes/tools.new'
+import { Route as RepositoriesNewRouteImport } from './routes/repositories.new'
+import { Route as DecisionsNewRouteImport } from './routes/decisions.new'
+import { Route as ConversationsNewRouteImport } from './routes/conversations.new'
+import { Route as ToolsIdIndexRouteImport } from './routes/tools.$id.index'
+import { Route as RepositoriesIdIndexRouteImport } from './routes/repositories.$id.index'
+import { Route as DecisionsIdIndexRouteImport } from './routes/decisions.$id.index'
+import { Route as ConversationsIdIndexRouteImport } from './routes/conversations.$id.index'
+import { Route as ToolsIdEditRouteImport } from './routes/tools.$id.edit'
+import { Route as RepositoriesIdEditRouteImport } from './routes/repositories.$id.edit'
+import { Route as DecisionsIdEditRouteImport } from './routes/decisions.$id.edit'
+import { Route as ConversationsIdEditRouteImport } from './routes/conversations.$id.edit'
 
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SearchRoute = SearchRouteImport.update({
+  id: '/search',
+  path: '/search',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ToolsIndexRoute = ToolsIndexRouteImport.update({
+  id: '/tools/',
+  path: '/tools/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RepositoriesIndexRoute = RepositoriesIndexRouteImport.update({
+  id: '/repositories/',
+  path: '/repositories/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DecisionsIndexRoute = DecisionsIndexRouteImport.update({
+  id: '/decisions/',
+  path: '/decisions/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConversationsIndexRoute = ConversationsIndexRouteImport.update({
+  id: '/conversations/',
+  path: '/conversations/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ToolsNewRoute = ToolsNewRouteImport.update({
+  id: '/tools/new',
+  path: '/tools/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RepositoriesNewRoute = RepositoriesNewRouteImport.update({
+  id: '/repositories/new',
+  path: '/repositories/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DecisionsNewRoute = DecisionsNewRouteImport.update({
+  id: '/decisions/new',
+  path: '/decisions/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConversationsNewRoute = ConversationsNewRouteImport.update({
+  id: '/conversations/new',
+  path: '/conversations/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ToolsIdIndexRoute = ToolsIdIndexRouteImport.update({
+  id: '/tools/$id/',
+  path: '/tools/$id/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RepositoriesIdIndexRoute = RepositoriesIdIndexRouteImport.update({
+  id: '/repositories/$id/',
+  path: '/repositories/$id/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DecisionsIdIndexRoute = DecisionsIdIndexRouteImport.update({
+  id: '/decisions/$id/',
+  path: '/decisions/$id/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConversationsIdIndexRoute = ConversationsIdIndexRouteImport.update({
+  id: '/conversations/$id/',
+  path: '/conversations/$id/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ToolsIdEditRoute = ToolsIdEditRouteImport.update({
+  id: '/tools/$id/edit',
+  path: '/tools/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RepositoriesIdEditRoute = RepositoriesIdEditRouteImport.update({
+  id: '/repositories/$id/edit',
+  path: '/repositories/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DecisionsIdEditRoute = DecisionsIdEditRouteImport.update({
+  id: '/decisions/$id/edit',
+  path: '/decisions/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConversationsIdEditRoute = ConversationsIdEditRouteImport.update({
+  id: '/conversations/$id/edit',
+  path: '/conversations/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/search': typeof SearchRoute
+  '/settings': typeof SettingsRoute
+  '/conversations/new': typeof ConversationsNewRoute
+  '/decisions/new': typeof DecisionsNewRoute
+  '/repositories/new': typeof RepositoriesNewRoute
+  '/tools/new': typeof ToolsNewRoute
+  '/conversations/': typeof ConversationsIndexRoute
+  '/decisions/': typeof DecisionsIndexRoute
+  '/repositories/': typeof RepositoriesIndexRoute
+  '/tools/': typeof ToolsIndexRoute
+  '/conversations/$id/edit': typeof ConversationsIdEditRoute
+  '/decisions/$id/edit': typeof DecisionsIdEditRoute
+  '/repositories/$id/edit': typeof RepositoriesIdEditRoute
+  '/tools/$id/edit': typeof ToolsIdEditRoute
+  '/conversations/$id/': typeof ConversationsIdIndexRoute
+  '/decisions/$id/': typeof DecisionsIdIndexRoute
+  '/repositories/$id/': typeof RepositoriesIdIndexRoute
+  '/tools/$id/': typeof ToolsIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/search': typeof SearchRoute
+  '/settings': typeof SettingsRoute
+  '/conversations/new': typeof ConversationsNewRoute
+  '/decisions/new': typeof DecisionsNewRoute
+  '/repositories/new': typeof RepositoriesNewRoute
+  '/tools/new': typeof ToolsNewRoute
+  '/conversations': typeof ConversationsIndexRoute
+  '/decisions': typeof DecisionsIndexRoute
+  '/repositories': typeof RepositoriesIndexRoute
+  '/tools': typeof ToolsIndexRoute
+  '/conversations/$id/edit': typeof ConversationsIdEditRoute
+  '/decisions/$id/edit': typeof DecisionsIdEditRoute
+  '/repositories/$id/edit': typeof RepositoriesIdEditRoute
+  '/tools/$id/edit': typeof ToolsIdEditRoute
+  '/conversations/$id': typeof ConversationsIdIndexRoute
+  '/decisions/$id': typeof DecisionsIdIndexRoute
+  '/repositories/$id': typeof RepositoriesIdIndexRoute
+  '/tools/$id': typeof ToolsIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/search': typeof SearchRoute
+  '/settings': typeof SettingsRoute
+  '/conversations/new': typeof ConversationsNewRoute
+  '/decisions/new': typeof DecisionsNewRoute
+  '/repositories/new': typeof RepositoriesNewRoute
+  '/tools/new': typeof ToolsNewRoute
+  '/conversations/': typeof ConversationsIndexRoute
+  '/decisions/': typeof DecisionsIndexRoute
+  '/repositories/': typeof RepositoriesIndexRoute
+  '/tools/': typeof ToolsIndexRoute
+  '/conversations/$id/edit': typeof ConversationsIdEditRoute
+  '/decisions/$id/edit': typeof DecisionsIdEditRoute
+  '/repositories/$id/edit': typeof RepositoriesIdEditRoute
+  '/tools/$id/edit': typeof ToolsIdEditRoute
+  '/conversations/$id/': typeof ConversationsIdIndexRoute
+  '/decisions/$id/': typeof DecisionsIdIndexRoute
+  '/repositories/$id/': typeof RepositoriesIdIndexRoute
+  '/tools/$id/': typeof ToolsIdIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/search'
+    | '/settings'
+    | '/conversations/new'
+    | '/decisions/new'
+    | '/repositories/new'
+    | '/tools/new'
+    | '/conversations/'
+    | '/decisions/'
+    | '/repositories/'
+    | '/tools/'
+    | '/conversations/$id/edit'
+    | '/decisions/$id/edit'
+    | '/repositories/$id/edit'
+    | '/tools/$id/edit'
+    | '/conversations/$id/'
+    | '/decisions/$id/'
+    | '/repositories/$id/'
+    | '/tools/$id/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/search'
+    | '/settings'
+    | '/conversations/new'
+    | '/decisions/new'
+    | '/repositories/new'
+    | '/tools/new'
+    | '/conversations'
+    | '/decisions'
+    | '/repositories'
+    | '/tools'
+    | '/conversations/$id/edit'
+    | '/decisions/$id/edit'
+    | '/repositories/$id/edit'
+    | '/tools/$id/edit'
+    | '/conversations/$id'
+    | '/decisions/$id'
+    | '/repositories/$id'
+    | '/tools/$id'
+  id:
+    | '__root__'
+    | '/'
+    | '/search'
+    | '/settings'
+    | '/conversations/new'
+    | '/decisions/new'
+    | '/repositories/new'
+    | '/tools/new'
+    | '/conversations/'
+    | '/decisions/'
+    | '/repositories/'
+    | '/tools/'
+    | '/conversations/$id/edit'
+    | '/decisions/$id/edit'
+    | '/repositories/$id/edit'
+    | '/tools/$id/edit'
+    | '/conversations/$id/'
+    | '/decisions/$id/'
+    | '/repositories/$id/'
+    | '/tools/$id/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  SearchRoute: typeof SearchRoute
+  SettingsRoute: typeof SettingsRoute
+  ConversationsNewRoute: typeof ConversationsNewRoute
+  DecisionsNewRoute: typeof DecisionsNewRoute
+  RepositoriesNewRoute: typeof RepositoriesNewRoute
+  ToolsNewRoute: typeof ToolsNewRoute
+  ConversationsIndexRoute: typeof ConversationsIndexRoute
+  DecisionsIndexRoute: typeof DecisionsIndexRoute
+  RepositoriesIndexRoute: typeof RepositoriesIndexRoute
+  ToolsIndexRoute: typeof ToolsIndexRoute
+  ConversationsIdEditRoute: typeof ConversationsIdEditRoute
+  DecisionsIdEditRoute: typeof DecisionsIdEditRoute
+  RepositoriesIdEditRoute: typeof RepositoriesIdEditRoute
+  ToolsIdEditRoute: typeof ToolsIdEditRoute
+  ConversationsIdIndexRoute: typeof ConversationsIdIndexRoute
+  DecisionsIdIndexRoute: typeof DecisionsIdIndexRoute
+  RepositoriesIdIndexRoute: typeof RepositoriesIdIndexRoute
+  ToolsIdIndexRoute: typeof ToolsIdIndexRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/search': {
+      id: '/search'
+      path: '/search'
+      fullPath: '/search'
+      preLoaderRoute: typeof SearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,12 +300,152 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/tools/': {
+      id: '/tools/'
+      path: '/tools'
+      fullPath: '/tools/'
+      preLoaderRoute: typeof ToolsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/repositories/': {
+      id: '/repositories/'
+      path: '/repositories'
+      fullPath: '/repositories/'
+      preLoaderRoute: typeof RepositoriesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/decisions/': {
+      id: '/decisions/'
+      path: '/decisions'
+      fullPath: '/decisions/'
+      preLoaderRoute: typeof DecisionsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/conversations/': {
+      id: '/conversations/'
+      path: '/conversations'
+      fullPath: '/conversations/'
+      preLoaderRoute: typeof ConversationsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tools/new': {
+      id: '/tools/new'
+      path: '/tools/new'
+      fullPath: '/tools/new'
+      preLoaderRoute: typeof ToolsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/repositories/new': {
+      id: '/repositories/new'
+      path: '/repositories/new'
+      fullPath: '/repositories/new'
+      preLoaderRoute: typeof RepositoriesNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/decisions/new': {
+      id: '/decisions/new'
+      path: '/decisions/new'
+      fullPath: '/decisions/new'
+      preLoaderRoute: typeof DecisionsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/conversations/new': {
+      id: '/conversations/new'
+      path: '/conversations/new'
+      fullPath: '/conversations/new'
+      preLoaderRoute: typeof ConversationsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tools/$id/': {
+      id: '/tools/$id/'
+      path: '/tools/$id'
+      fullPath: '/tools/$id/'
+      preLoaderRoute: typeof ToolsIdIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/repositories/$id/': {
+      id: '/repositories/$id/'
+      path: '/repositories/$id'
+      fullPath: '/repositories/$id/'
+      preLoaderRoute: typeof RepositoriesIdIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/decisions/$id/': {
+      id: '/decisions/$id/'
+      path: '/decisions/$id'
+      fullPath: '/decisions/$id/'
+      preLoaderRoute: typeof DecisionsIdIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/conversations/$id/': {
+      id: '/conversations/$id/'
+      path: '/conversations/$id'
+      fullPath: '/conversations/$id/'
+      preLoaderRoute: typeof ConversationsIdIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tools/$id/edit': {
+      id: '/tools/$id/edit'
+      path: '/tools/$id/edit'
+      fullPath: '/tools/$id/edit'
+      preLoaderRoute: typeof ToolsIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/repositories/$id/edit': {
+      id: '/repositories/$id/edit'
+      path: '/repositories/$id/edit'
+      fullPath: '/repositories/$id/edit'
+      preLoaderRoute: typeof RepositoriesIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/decisions/$id/edit': {
+      id: '/decisions/$id/edit'
+      path: '/decisions/$id/edit'
+      fullPath: '/decisions/$id/edit'
+      preLoaderRoute: typeof DecisionsIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/conversations/$id/edit': {
+      id: '/conversations/$id/edit'
+      path: '/conversations/$id/edit'
+      fullPath: '/conversations/$id/edit'
+      preLoaderRoute: typeof ConversationsIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  SearchRoute: SearchRoute,
+  SettingsRoute: SettingsRoute,
+  ConversationsNewRoute: ConversationsNewRoute,
+  DecisionsNewRoute: DecisionsNewRoute,
+  RepositoriesNewRoute: RepositoriesNewRoute,
+  ToolsNewRoute: ToolsNewRoute,
+  ConversationsIndexRoute: ConversationsIndexRoute,
+  DecisionsIndexRoute: DecisionsIndexRoute,
+  RepositoriesIndexRoute: RepositoriesIndexRoute,
+  ToolsIndexRoute: ToolsIndexRoute,
+  ConversationsIdEditRoute: ConversationsIdEditRoute,
+  DecisionsIdEditRoute: DecisionsIdEditRoute,
+  RepositoriesIdEditRoute: RepositoriesIdEditRoute,
+  ToolsIdEditRoute: ToolsIdEditRoute,
+  ConversationsIdIndexRoute: ConversationsIdIndexRoute,
+  DecisionsIdIndexRoute: DecisionsIdIndexRoute,
+  RepositoriesIdIndexRoute: RepositoriesIdIndexRoute,
+  ToolsIdIndexRoute: ToolsIdIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

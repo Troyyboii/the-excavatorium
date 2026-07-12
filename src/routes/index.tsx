@@ -1,303 +1,107 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState, type FormEvent } from "react";
-import { supabase, SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from "@/lib/supabase";
+import { Link } from "@tanstack/react-router";
+import { useArchive } from "@/lib/archive";
+import { PageHeader } from "@/components/page-parts";
+import { RecordList, plural, recordHref } from "@/components/record-list";
+import type { ArchiveRecord } from "@/lib/types";
+import { RECORD_TYPE_LABEL } from "@/lib/types";
 
 export const Route = createFileRoute("/")({
-  component: Index,
+  component: Dashboard,
   ssr: false,
 });
 
-type ConnectivityState =
-  | { kind: "checking" }
-  | { kind: "ok" }
-  | { kind: "error"; message: string };
+function Dashboard() {
+  const q = useArchive(true);
 
-type InitState =
-  | { kind: "idle" }
-  | { kind: "running" }
-  | {
-      kind: "done";
-      rpcData: unknown;
-      rpcError: string | null;
-      counts: {
-        records: number | null;
-        links: number | null;
-        metadata: number | null;
-      };
-      countErrors: {
-        records: string | null;
-        links: string | null;
-        metadata: string | null;
-      };
-    };
-
-function Index() {
-  const [email, setEmail] = useState("");
-  const [status, setStatus] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
-  const [session, setSession] = useState<null | { email: string | null }>(null);
-  const [conn, setConn] = useState<ConnectivityState>({ kind: "checking" });
-  const [init, setInit] = useState<InitState>({ kind: "idle" });
-
-  async function onInitialize() {
-    setInit({ kind: "running" });
-    const localDate = new Date().toISOString().slice(0, 10);
-    const { data: rpcData, error: rpcError } = await supabase.rpc(
-      "initialize_user_archive",
-      { local_date: localDate },
+  if (q.isPending) return <PageHeader title="Dashboard" description="Loading archive…" />;
+  if (q.error)
+    return (
+      <div>
+        <PageHeader title="Dashboard" />
+        <div className="rounded-md border border-[color:var(--destructive)]/60 bg-[color:var(--destructive)]/10 p-4 text-sm text-foreground">
+          <div className="font-medium">Archive could not load</div>
+          <div className="mt-1 text-muted-foreground">
+            {q.error.message}. Existing data was not changed. Retry the page or check the connection.
+          </div>
+        </div>
+      </div>
     );
-
-    let recordsCount: number | null = null;
-    let linksCount: number | null = null;
-    let metadataCount: number | null = null;
-    let recordsErr: string | null = null;
-    let linksErr: string | null = null;
-    let metadataErr: string | null = null;
-
-    if (!rpcError) {
-      const [r, l, m] = await Promise.all([
-        supabase.from("records").select("*", { count: "exact", head: true }),
-        supabase.from("record_links").select("*", { count: "exact", head: true }),
-        supabase.from("app_metadata").select("*", { count: "exact", head: true }),
-      ]);
-      recordsCount = r.count ?? null;
-      linksCount = l.count ?? null;
-      metadataCount = m.count ?? null;
-      recordsErr = r.error?.message ?? null;
-      linksErr = l.error?.message ?? null;
-      metadataErr = m.error?.message ?? null;
-    }
-
-    setInit({
-      kind: "done",
-      rpcData: rpcData ?? null,
-      rpcError: rpcError?.message ?? null,
-      counts: {
-        records: recordsCount,
-        links: linksCount,
-        metadata: metadataCount,
-      },
-      countErrors: {
-        records: recordsErr,
-        links: linksErr,
-        metadata: metadataErr,
-      },
-    });
-  }
-
-  useEffect(() => {
-    let mounted = true;
-    supabase.auth.getSession().then(({ data }) => {
-      if (!mounted) return;
-      setSession(data.session ? { email: data.session.user.email ?? null } : null);
-    });
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(s ? { email: s.user.email ?? null } : null);
-    });
-
-    // Minimal read-only connectivity probe: hit the Supabase Auth
-    // settings endpoint using the publishable key. Success proves the
-    // browser can reach the configured project. No archive tables are
-    // read here.
-    fetch(`${SUPABASE_URL}/auth/v1/settings`, {
-      headers: {
-        apikey: SUPABASE_PUBLISHABLE_KEY,
-      },
-    })
-      .then((r) => {
-        if (!mounted) return;
-        if (r.ok) setConn({ kind: "ok" });
-        else setConn({ kind: "error", message: `HTTP ${r.status}` });
-      })
-      .catch((e: unknown) => {
-        if (!mounted) return;
-        setConn({
-          kind: "error",
-          message: e instanceof Error ? e.message : "Network error",
-        });
-      });
-
-    return () => {
-      mounted = false;
-      sub.subscription.unsubscribe();
-    };
-  }, []);
-
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    setSending(true);
-    setStatus(null);
-    const emailRedirectTo =
-      typeof window !== "undefined" ? window.location.origin : undefined;
-    const { error } = await supabase.auth.signInWithOtp({
-      email: email.trim(),
-      options: {
-        shouldCreateUser: false,
-        emailRedirectTo,
-      },
-    });
-    // Neutral copy regardless of outcome to avoid revealing whether
-    // the address exists. Real errors (network, misconfiguration) are
-    // logged for the operator only.
-    if (error) console.warn("signInWithOtp error", error);
-    setStatus("If this address is authorized, a sign-in link has been sent.");
-    setSending(false);
-  }
-
-  async function onSignOut() {
-    await supabase.auth.signOut();
-    setSession(null);
-  }
+  const records = q.data!.records;
+  const recentAdditions = [...records]
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.updatedAt.localeCompare(a.updatedAt))
+    .slice(0, 5);
+  const recentDecisions = records
+    .filter((r): r is ArchiveRecord & { recordType: "decision" } => r.recordType === "decision")
+    .sort((a, b) => b.recordData.decisionDate.localeCompare(a.recordData.decisionDate) || b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 5);
+  const activeTools = records
+    .filter((r): r is ArchiveRecord & { recordType: "tool" } => r.recordType === "tool" && r.recordData.status === "Active")
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.title.localeCompare(b.title))
+    .slice(0, 5);
+  const buriedTools = records
+    .filter((r): r is ArchiveRecord & { recordType: "tool" } =>
+      r.recordType === "tool" && (r.recordData.status === "Buried" || r.recordData.status === "Grok-tier cursed"))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.title.localeCompare(b.title))
+    .slice(0, 5);
+  const awaitingRepos = records
+    .filter((r): r is ArchiveRecord & { recordType: "repository" } => r.recordType === "repository" && r.recordData.recommendedAction === null)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.title.localeCompare(b.title))
+    .slice(0, 5);
+  const openLoopsConvs = records
+    .filter((r): r is ArchiveRecord & { recordType: "conversation" } =>
+      r.recordType === "conversation" && r.recordData.openLoops.trim() !== "")
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.title.localeCompare(b.title))
+    .slice(0, 5);
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-background px-6 py-12">
-      <div className="w-full max-w-md">
-        <header className="mb-8 text-center">
-          <h1 className="text-3xl font-semibold tracking-tight text-foreground">
-            The Excavatorium
-          </h1>
-          <p className="mt-3 text-sm text-muted-foreground">
-            Private technical judgment archive.
-          </p>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Enter the authorized email address to receive a secure sign-in link.
-          </p>
-        </header>
-
-        {session ? (
-          <section className="rounded-md border border-border bg-card p-6">
-            <p className="text-sm text-foreground">
-              Signed in as{" "}
-              <span className="font-mono">{session.email ?? "(no email)"}</span>
-            </p>
-            <button
-              onClick={onSignOut}
-              className="mt-4 inline-flex items-center rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground hover:bg-accent"
-            >
-              Sign out
-            </button>
-          </section>
-        ) : (
-          <form
-            onSubmit={onSubmit}
-            className="rounded-md border border-border bg-card p-6"
-          >
-            <label
-              htmlFor="email"
-              className="block text-sm font-medium text-foreground"
-            >
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              required
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-ring"
-            />
-            <button
-              type="submit"
-              disabled={sending || email.trim().length === 0}
-              className="mt-4 inline-flex w-full items-center justify-center rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60"
-            >
-              {sending ? "Sending…" : "Send sign-in link"}
-            </button>
-            {status ? (
-              <p className="mt-3 text-sm text-muted-foreground">{status}</p>
-            ) : null}
-          </form>
-        )}
-
-        <section className="mt-8 rounded-md border border-border bg-card/50 p-4 text-xs">
-          <h2 className="mb-2 font-medium text-foreground">
-            Foundation status
-          </h2>
-          <dl className="space-y-1 text-muted-foreground">
-            <div className="flex justify-between gap-2">
-              <dt>Supabase project</dt>
-              <dd className="font-mono truncate max-w-[60%]" title={SUPABASE_URL}>
-                {new URL(SUPABASE_URL).host}
-              </dd>
-            </div>
-            <div className="flex justify-between gap-2">
-              <dt>Auth reachability</dt>
-              <dd>
-                {conn.kind === "checking"
-                  ? "checking…"
-                  : conn.kind === "ok"
-                    ? "reachable"
-                    : `unreachable (${conn.message})`}
-              </dd>
-            </div>
-            <div className="flex justify-between gap-2">
-              <dt>Session</dt>
-              <dd>{session ? "authenticated" : "signed out"}</dd>
-            </div>
-          </dl>
-          {session ? (
-            <div className="mt-4 border-t border-border pt-3">
-              <button
-                onClick={onInitialize}
-                disabled={init.kind === "running"}
-                className="inline-flex items-center rounded-md border border-input bg-background px-3 py-1.5 text-xs text-foreground hover:bg-accent disabled:opacity-60"
-              >
-                {init.kind === "running" ? "Initializing…" : "Initialize archive"}
-              </button>
-              {init.kind === "done" ? (
-                <div className="mt-3 space-y-2">
-                  <div>
-                    <div className="font-medium text-foreground">RPC result</div>
-                    {init.rpcError ? (
-                      <pre className="mt-1 whitespace-pre-wrap break-words rounded bg-muted p-2 font-mono text-[11px] text-destructive">
-                        {init.rpcError}
-                      </pre>
-                    ) : (
-                      <pre className="mt-1 whitespace-pre-wrap break-words rounded bg-muted p-2 font-mono text-[11px] text-foreground">
-                        {JSON.stringify(init.rpcData, null, 2)}
-                      </pre>
-                    )}
-                  </div>
-                  <div>
-                    <div className="font-medium text-foreground">Counts</div>
-                    <dl className="mt-1 space-y-1">
-                      <div className="flex justify-between gap-2">
-                        <dt>records</dt>
-                        <dd className="font-mono">
-                          {init.countErrors.records
-                            ? `error: ${init.countErrors.records}`
-                            : (init.counts.records ?? "—")}
-                        </dd>
-                      </div>
-                      <div className="flex justify-between gap-2">
-                        <dt>record_links</dt>
-                        <dd className="font-mono">
-                          {init.countErrors.links
-                            ? `error: ${init.countErrors.links}`
-                            : (init.counts.links ?? "—")}
-                        </dd>
-                      </div>
-                      <div className="flex justify-between gap-2">
-                        <dt>app_metadata</dt>
-                        <dd className="font-mono">
-                          {init.countErrors.metadata
-                            ? `error: ${init.countErrors.metadata}`
-                            : (init.counts.metadata ?? "—")}
-                        </dd>
-                      </div>
-                    </dl>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-          <p className="mt-3 text-muted-foreground">
-            Phase A foundation. Product interface stops here until the manual
-            verification gate is recorded.
-          </p>
-        </section>
+    <div>
+      <PageHeader title="Dashboard" description="Recent activity across the archive." />
+      <div className="grid gap-6 md:grid-cols-2">
+        <Section title="Recent additions" items={recentAdditions} moreTo={null} />
+        <Section title="Recent decisions" items={recentDecisions} moreTo="/decisions" />
+        <Section title="Active tools" items={activeTools} moreTo="/tools" />
+        <Section title="Buried tools" items={buriedTools} moreTo="/tools" />
+        <Section title="Repositories awaiting verdict" items={awaitingRepos} moreTo="/repositories" />
+        <Section title="Conversations with open loops" items={openLoopsConvs} moreTo="/conversations" />
       </div>
-    </main>
+    </div>
   );
 }
+
+function Section({ title, items, moreTo }: { title: string; items: ArchiveRecord[]; moreTo: string | null }) {
+  return (
+    <section className="rounded-lg border border-border bg-card">
+      <div className="flex items-center justify-between border-b border-border px-4 py-2">
+        <h2 className="font-serif text-base text-foreground">{title}</h2>
+        {moreTo ? (
+          <Link to={moreTo} className="text-xs text-muted-foreground hover:text-foreground">
+            View all
+          </Link>
+        ) : null}
+      </div>
+      {items.length === 0 ? (
+        <div className="px-4 py-6 text-center text-xs text-muted-foreground">Nothing here yet.</div>
+      ) : (
+        <ul>
+          {items.map((r) => (
+            <li key={r.id}>
+              <Link
+                to={recordHref(r)}
+                className="flex items-center justify-between gap-3 border-b border-border px-4 py-2 text-sm last:border-0 hover:bg-[color:var(--record-hover)]"
+              >
+                <span className="min-w-0 flex-1 truncate text-foreground">{r.title}</span>
+                <span className="font-mono text-[10px] uppercase text-muted-foreground">
+                  {RECORD_TYPE_LABEL[r.recordType]}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+// keep unused import friendly to typecheck (plural referenced elsewhere)
+void plural;

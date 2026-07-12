@@ -11,6 +11,7 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { AuthGate } from "../components/auth-gate";
 
 function NotFoundComponent() {
   return (
@@ -78,12 +79,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "The Excavatorium" },
-      { name: "description", content: "Foundation awaiting direct Supabase connection." },
+      { name: "description", content: "Private technical judgment archive." },
       { name: "author", content: "The Excavatorium" },
+      { name: "robots", content: "noindex, nofollow" },
       { property: "og:title", content: "The Excavatorium" },
-      { property: "og:description", content: "Foundation awaiting direct Supabase connection." },
+      { property: "og:description", content: "Private technical judgment archive." },
       { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:card", content: "summary" },
     ],
     links: [
       {
@@ -118,8 +120,9 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
+      <AuthGate>
+        <Outlet />
+      </AuthGate>
     </QueryClientProvider>
   );
 }
