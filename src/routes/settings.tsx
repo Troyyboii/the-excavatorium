@@ -65,14 +65,23 @@ function AccountSection({
   setToast: (m: string) => void;
   setError: (m: string | null) => void;
 }) {
+  const qc = useQueryClient();
   async function onSignOut() {
     try {
+      // Cancel in-flight archive/metadata reads so they can't 401 into the
+      // cache after signOut clears the session.
+      await qc.cancelQueries();
+      // Drop cached protected data BEFORE signOut so no stale render can
+      // happen mid-teardown. AuthGate also clears on the user-id transition
+      // that follows.
+      qc.removeQueries();
       await supabase.auth.signOut();
       setToast("Signed out");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Sign out failed.");
     }
   }
+
   return (
     <Card title="Account">
       <div className="text-sm text-muted-foreground">
