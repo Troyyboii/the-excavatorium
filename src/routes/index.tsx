@@ -12,12 +12,78 @@ type ConnectivityState =
   | { kind: "ok" }
   | { kind: "error"; message: string };
 
+type InitState =
+  | { kind: "idle" }
+  | { kind: "running" }
+  | {
+      kind: "done";
+      rpcData: unknown;
+      rpcError: string | null;
+      counts: {
+        records: number | null;
+        links: number | null;
+        metadata: number | null;
+      };
+      countErrors: {
+        records: string | null;
+        links: string | null;
+        metadata: string | null;
+      };
+    };
+
 function Index() {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [session, setSession] = useState<null | { email: string | null }>(null);
   const [conn, setConn] = useState<ConnectivityState>({ kind: "checking" });
+  const [init, setInit] = useState<InitState>({ kind: "idle" });
+
+  async function onInitialize() {
+    setInit({ kind: "running" });
+    const localDate = new Date().toISOString().slice(0, 10);
+    const { data: rpcData, error: rpcError } = await supabase.rpc(
+      "initialize_user_archive",
+      { local_date: localDate },
+    );
+
+    let recordsCount: number | null = null;
+    let linksCount: number | null = null;
+    let metadataCount: number | null = null;
+    let recordsErr: string | null = null;
+    let linksErr: string | null = null;
+    let metadataErr: string | null = null;
+
+    if (!rpcError) {
+      const [r, l, m] = await Promise.all([
+        supabase.from("records").select("*", { count: "exact", head: true }),
+        supabase.from("record_links").select("*", { count: "exact", head: true }),
+        supabase.from("app_metadata").select("*", { count: "exact", head: true }),
+      ]);
+      recordsCount = r.count ?? null;
+      linksCount = l.count ?? null;
+      metadataCount = m.count ?? null;
+      recordsErr = r.error?.message ?? null;
+      linksErr = l.error?.message ?? null;
+      metadataErr = m.error?.message ?? null;
+    }
+
+    setInit({
+      kind: "done",
+      rpcData: rpcData ?? null,
+      rpcError: rpcError?.message ?? null,
+      counts: {
+        records: recordsCount,
+        links: linksCount,
+        metadata: metadataCount,
+      },
+      countErrors: {
+        records: recordsErr,
+        links: linksErr,
+        metadata: metadataErr,
+      },
+    });
+  }
 
   useEffect(() => {
     let mounted = true;
