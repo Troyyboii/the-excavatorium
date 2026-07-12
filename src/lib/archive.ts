@@ -64,8 +64,8 @@ function toRecord(row: RecordRow): ArchiveRecord {
     tags: row.tags ?? [],
     isExample: row.is_example,
     seedKey: row.seed_key,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    createdAt: normalizeTimestamp(row.created_at),
+    updatedAt: normalizeTimestamp(row.updated_at),
   };
   switch (row.record_type) {
     case "tool":
