@@ -79,12 +79,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "The Excavatorium" },
-      { name: "description", content: "Foundation awaiting direct Supabase connection." },
+      { name: "description", content: "Private technical judgment archive." },
       { name: "author", content: "The Excavatorium" },
+      { name: "robots", content: "noindex, nofollow" },
       { property: "og:title", content: "The Excavatorium" },
-      { property: "og:description", content: "Foundation awaiting direct Supabase connection." },
+      { property: "og:description", content: "Private technical judgment archive." },
       { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:card", content: "summary" },
     ],
     links: [
       {
