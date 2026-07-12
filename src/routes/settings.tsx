@@ -45,6 +45,7 @@ function Page() {
 
       <div className="space-y-6">
         <AccountSection email={email} setToast={setToast} setError={setError} />
+        <PasswordSection />
         <BackupSection q={q} setToast={setToast} setError={setError} />
         <ExampleSection setToast={setToast} setError={setError} />
         <StorageSection />
