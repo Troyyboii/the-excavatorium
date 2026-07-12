@@ -203,12 +203,12 @@ function FilterSelect({
   labels?: Record<string, string>;
 }) {
   return (
-    <label className="inline-flex min-h-11 items-center gap-2 rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground">
-      <span className="text-xs text-muted-foreground">{label}</span>
+    <label className="inline-flex min-h-11 w-full min-w-0 items-center gap-2 rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground sm:w-auto">
+      <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="bg-transparent py-1 pr-2 text-sm outline-none"
+        className="min-w-0 flex-1 bg-transparent py-1 pr-2 text-sm outline-none"
       >
         <option value="">All</option>
         {options.map((o) => (
