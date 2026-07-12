@@ -508,20 +508,38 @@ begin
   end if;
 
   -- ---- Preflight links ----------------------------------------------
+  -- Every field is required with an explicit JSON type. Missing seedKey
+  -- (i.e. key absent from the object) is rejected rather than defaulted
+  -- to null; callers must send JSON null explicitly.
   for lnk in select * from pg_catalog.jsonb_array_elements(archive_payload -> 'links') loop
     if pg_catalog.jsonb_typeof(lnk) <> 'object' then
       raise exception 'links[] entry is not an object' using errcode = '22023';
     end if;
+
+    -- id: required UUID string
+    if pg_catalog.jsonb_typeof(lnk -> 'id') <> 'string' then
+      raise exception 'link.id is required and must be a string' using errcode = '22023';
+    end if;
     lnk_id_txt := lnk ->> 'id';
-    if lnk_id_txt is null or lnk_id_txt !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
-      raise exception 'link.id is not a UUID: %', coalesce(lnk_id_txt,'(null)') using errcode = '22023';
+    if lnk_id_txt !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+      raise exception 'link.id is not a UUID: %', lnk_id_txt using errcode = '22023';
     end if;
     lnk_id := lnk_id_txt::uuid;
 
+    -- sourceId / targetId: required UUID strings
+    if pg_catalog.jsonb_typeof(lnk -> 'sourceId') <> 'string' then
+      raise exception 'link.sourceId is required and must be a string (id %)', lnk_id using errcode = '22023';
+    end if;
+    if pg_catalog.jsonb_typeof(lnk -> 'targetId') <> 'string' then
+      raise exception 'link.targetId is required and must be a string (id %)', lnk_id using errcode = '22023';
+    end if;
     src_txt := lnk ->> 'sourceId';
     tgt_txt := lnk ->> 'targetId';
-    if src_txt is null or tgt_txt is null then
-      raise exception 'link.sourceId and link.targetId are required (id %)', lnk_id using errcode = '22023';
+    if src_txt !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+      raise exception 'link.sourceId is not a UUID: % (id %)', src_txt, lnk_id using errcode = '22023';
+    end if;
+    if tgt_txt !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+      raise exception 'link.targetId is not a UUID: % (id %)', tgt_txt, lnk_id using errcode = '22023';
     end if;
     src_id := src_txt::uuid;
     tgt_id := tgt_txt::uuid;
@@ -535,12 +553,31 @@ begin
       raise exception 'link.targetId % does not reference an archive record', tgt_id using errcode = '22023';
     end if;
 
+    -- createdAt: required UTC ISO-8601 string
+    if pg_catalog.jsonb_typeof(lnk -> 'createdAt') <> 'string' then
+      raise exception 'link.createdAt is required and must be a string (id %)', lnk_id using errcode = '22023';
+    end if;
     lnk_created := lnk ->> 'createdAt';
-    if lnk_created is null or lnk_created !~ '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$' then
+    if lnk_created !~ '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$' then
       raise exception 'link.createdAt malformed (id %)', lnk_id using errcode = '22023';
     end if;
 
-    lnk_seed := nullif(lnk ->> 'seedKey','');
+    -- seedKey: required key, must be JSON null or JSON string.
+    if not (lnk ? 'seedKey') then
+      raise exception 'link.seedKey is required (use null when absent) (id %)', lnk_id using errcode = '22023';
+    end if;
+    if pg_catalog.jsonb_typeof(lnk -> 'seedKey') not in ('null','string') then
+      raise exception 'link.seedKey must be null or a string (id %)', lnk_id using errcode = '22023';
+    end if;
+    if pg_catalog.jsonb_typeof(lnk -> 'seedKey') = 'string' then
+      lnk_seed := lnk ->> 'seedKey';
+      if lnk_seed = '' then
+        raise exception 'link.seedKey must be null or a non-empty string (id %)', lnk_id using errcode = '22023';
+      end if;
+    else
+      lnk_seed := null;
+    end if;
+
     if lnk_seed is not null then
       case lnk_seed
         when 'example-link-conversation-chatgpt' then
