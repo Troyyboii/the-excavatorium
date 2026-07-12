@@ -135,10 +135,20 @@ export type ArchiveSnapshot = {
   byId: Map<string, ArchiveRecord>;
 };
 
+// User-scoped query keys. Passing a null user id yields a sentinel key that
+// is never enabled, keeping the pre-signed-in state from colliding.
+export function archiveKey(userId: string | null): QueryKey {
+  return ["archive", userId ?? "__anonymous__"];
+}
+export function appMetadataKey(userId: string | null): QueryKey {
+  return ["app_metadata", userId ?? "__anonymous__"];
+}
+
 export function useArchive(enabled: boolean) {
+  const userId = useCurrentUserId();
   return useQuery<ArchiveSnapshot>({
-    queryKey: ["archive"],
-    enabled,
+    queryKey: archiveKey(userId),
+    enabled: enabled && userId !== null,
     staleTime: 30_000,
     queryFn: async () => {
       const [records, links] = await Promise.all([
@@ -153,9 +163,10 @@ export function useArchive(enabled: boolean) {
 }
 
 export function useAppMetadata(enabled: boolean) {
+  const userId = useCurrentUserId();
   return useQuery({
-    queryKey: ["app_metadata"],
-    enabled,
+    queryKey: appMetadataKey(userId),
+    enabled: enabled && userId !== null,
     staleTime: 60_000,
     queryFn: async () => {
       const { data, error } = await supabase
@@ -184,6 +195,14 @@ function todayLocal(): string {
   return `${y}-${m}-${dd}`;
 }
 
+function invalidateArchive(qc: ReturnType<typeof useQueryClient>, userId: string | null) {
+  qc.invalidateQueries({ queryKey: archiveKey(userId) });
+}
+function invalidateArchiveAndMeta(qc: ReturnType<typeof useQueryClient>, userId: string | null) {
+  qc.invalidateQueries({ queryKey: archiveKey(userId) });
+  qc.invalidateQueries({ queryKey: appMetadataKey(userId) });
+}
+
 export type SaveRecordInput = {
   id: string | null;
   recordType: RecordType;
@@ -196,6 +215,7 @@ export type SaveRecordInput = {
 
 export function useSaveRecord() {
   const qc = useQueryClient();
+  const userId = useCurrentUserId();
   return useMutation({
     mutationFn: async (input: SaveRecordInput) => {
       const payload: Record<string, unknown> = {
@@ -213,12 +233,13 @@ export function useSaveRecord() {
       if (error) throw new Error(error.message);
       return data as { id: string; isNew: boolean };
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["archive"] }),
+    onSuccess: () => invalidateArchive(qc, userId),
   });
 }
 
 export function useDeleteRecord() {
   const qc = useQueryClient();
+  const userId = useCurrentUserId();
   return useMutation({
     mutationFn: async (recordId: string) => {
       const { data, error } = await supabase.rpc("delete_record_safely", {
@@ -227,12 +248,13 @@ export function useDeleteRecord() {
       if (error) throw new Error(error.message);
       return data as { removedLinkCount?: number };
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["archive"] }),
+    onSuccess: () => invalidateArchive(qc, userId),
   });
 }
 
 export function useInitializeArchive() {
   const qc = useQueryClient();
+  const userId = useCurrentUserId();
   return useMutation({
     mutationFn: async () => {
       const { data, error } = await supabase.rpc("initialize_user_archive", {
@@ -241,27 +263,26 @@ export function useInitializeArchive() {
       if (error) throw new Error(error.message);
       return data;
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["archive"] });
-      qc.invalidateQueries({ queryKey: ["app_metadata"] });
-    },
+    onSuccess: () => invalidateArchiveAndMeta(qc, userId),
   });
 }
 
 export function useRemoveExamples() {
   const qc = useQueryClient();
+  const userId = useCurrentUserId();
   return useMutation({
     mutationFn: async () => {
       const { data, error } = await supabase.rpc("remove_example_data");
       if (error) throw new Error(error.message);
       return data;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["archive"] }),
+    onSuccess: () => invalidateArchive(qc, userId),
   });
 }
 
 export function useRestoreExamples() {
   const qc = useQueryClient();
+  const userId = useCurrentUserId();
   return useMutation({
     mutationFn: async () => {
       const { data, error } = await supabase.rpc("restore_missing_examples", {
@@ -270,27 +291,26 @@ export function useRestoreExamples() {
       if (error) throw new Error(error.message);
       return data;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["archive"] }),
+    onSuccess: () => invalidateArchive(qc, userId),
   });
 }
 
 export function useResetArchive() {
   const qc = useQueryClient();
+  const userId = useCurrentUserId();
   return useMutation({
     mutationFn: async () => {
       const { data, error } = await supabase.rpc("reset_user_archive");
       if (error) throw new Error(error.message);
       return data;
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["archive"] });
-      qc.invalidateQueries({ queryKey: ["app_metadata"] });
-    },
+    onSuccess: () => invalidateArchiveAndMeta(qc, userId),
   });
 }
 
 export function useRestoreArchive() {
   const qc = useQueryClient();
+  const userId = useCurrentUserId();
   return useMutation({
     mutationFn: async (payload: ArchiveExport) => {
       const { data, error } = await supabase.rpc("restore_user_archive", {
@@ -299,9 +319,7 @@ export function useRestoreArchive() {
       if (error) throw new Error(error.message);
       return data;
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["archive"] });
-      qc.invalidateQueries({ queryKey: ["app_metadata"] });
-    },
+    onSuccess: () => invalidateArchiveAndMeta(qc, userId),
   });
 }
+
