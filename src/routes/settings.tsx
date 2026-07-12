@@ -106,10 +106,20 @@ function BackupSection({
   >(null);
   const [parseError, setParseError] = useState<string | null>(null);
 
+  // Backup is only safe to generate when the complete paginated archive
+  // has loaded successfully. A pending or errored archive must not become
+  // an empty "backup" on disk.
+  const archiveReady = q.isSuccess && !!q.data;
+  const archiveError = q.isError ? (q.error instanceof Error ? q.error.message : String(q.error)) : null;
+
   function onExport() {
     setError(null);
+    if (!archiveReady || !q.data) {
+      setError("Backup unavailable: the current archive has not finished loading.");
+      return;
+    }
     try {
-      const data = buildBackup(q.data?.records ?? [], q.data?.links ?? []);
+      const data = buildBackup(q.data.records, q.data.links);
       // Validate the freshly built backup before offering it for download.
       const check = validateBackup(data);
       if (!check.ok) {
@@ -148,6 +158,10 @@ function BackupSection({
 
   async function onConfirmRestore() {
     if (!pendingRestore) return;
+    if (!archiveReady) {
+      setError("Cannot confirm restore while the current archive state is unknown.");
+      return;
+    }
     try {
       await restore.mutateAsync(pendingRestore.payload);
       setPendingRestore(null);
@@ -160,20 +174,36 @@ function BackupSection({
 
   return (
     <Card title="Backup and restore">
+      {archiveError ? (
+        <Banner kind="error" title="Archive failed to load">
+          Backup and restore are disabled until the archive loads. {archiveError}
+        </Banner>
+      ) : null}
+      {!archiveReady && !archiveError ? (
+        <p className="text-sm text-muted-foreground">
+          Loading the complete archive… Backup and restore will enable once it is ready.
+        </p>
+      ) : null}
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
           onClick={onExport}
-          className="inline-flex min-h-11 items-center rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground hover:bg-[color:var(--record-hover)]"
+          disabled={!archiveReady}
+          className="inline-flex min-h-11 items-center rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground hover:bg-[color:var(--record-hover)] disabled:cursor-not-allowed disabled:opacity-60"
         >
           Export JSON backup
         </button>
-        <label className="inline-flex min-h-11 cursor-pointer items-center rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground hover:bg-[color:var(--record-hover)]">
+        <label
+          className={`inline-flex min-h-11 items-center rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground hover:bg-[color:var(--record-hover)] ${
+            archiveReady ? "cursor-pointer" : "cursor-not-allowed opacity-60"
+          }`}
+        >
           Import JSON backup
           <input
             ref={fileRef}
             type="file"
             accept="application/json,.json"
+            disabled={!archiveReady}
             className="sr-only"
             onChange={(e) => {
               const f = e.target.files?.[0];
@@ -182,6 +212,7 @@ function BackupSection({
           />
         </label>
       </div>
+
       {parseError ? (
         <Banner kind="error" title="Backup rejected">
           {parseError}. Nothing was imported.
