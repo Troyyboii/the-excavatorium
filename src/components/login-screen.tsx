@@ -52,12 +52,8 @@ export function LoginScreen() {
     <main className="flex min-h-screen items-center justify-center bg-background px-6 py-12">
       <div className="w-full max-w-md">
         <header className="mb-8 text-center">
-          <h1 className="font-serif text-4xl tracking-tight text-foreground">
-            The Excavatorium
-          </h1>
-          <p className="mt-4 text-sm text-muted-foreground">
-            Private technical judgment archive.
-          </p>
+          <h1 className="font-serif text-4xl tracking-tight text-foreground">The Excavatorium</h1>
+          <p className="mt-4 text-sm text-muted-foreground">Private technical judgment archive.</p>
           <p className="mt-2 text-sm text-muted-foreground">
             Sign in with the authorized email and password.
           </p>
