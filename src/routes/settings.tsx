@@ -1,5 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+
 import { useSession } from "@/lib/session";
 import {
   useArchive,
