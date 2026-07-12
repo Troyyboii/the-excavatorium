@@ -231,6 +231,12 @@ export function validateBackup(raw: unknown): ValidationResult {
     return { ok: false, error: "Wrong application name" };
   if (o.schemaVersion !== 1)
     return { ok: false, error: "Unsupported schemaVersion (expected 1)" };
+  if (typeof o.exportedAt !== "string" || !ISO_TS_RE.test(o.exportedAt))
+    return { ok: false, error: "exportedAt must be an ISO-8601 UTC timestamp" };
+  // ISO_TS_RE already anchors to Z (UTC). Additionally require a valid parse.
+  if (Number.isNaN(Date.parse(o.exportedAt)))
+    return { ok: false, error: "exportedAt is not a real UTC timestamp" };
+
   if (!Array.isArray(o.records))
     return { ok: false, error: "Missing records array" };
   if (!Array.isArray(o.links))
