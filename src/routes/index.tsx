@@ -88,10 +88,10 @@ function Section({ title, items, moreTo }: { title: string; items: ArchiveRecord
             <li key={r.id}>
               <Link
                 to={recordHref(r)}
-                className="flex items-center justify-between gap-3 border-b border-border px-4 py-2 text-sm last:border-0 hover:bg-[color:var(--record-hover)]"
+                className="flex flex-col gap-1 border-b border-border px-4 py-2 text-sm last:border-0 hover:bg-[color:var(--record-hover)] sm:flex-row sm:items-center sm:justify-between sm:gap-3"
               >
-                <span className="min-w-0 flex-1 truncate text-foreground">{r.title}</span>
-                <span className="font-mono text-[10px] uppercase text-muted-foreground">
+                <span className="min-w-0 flex-1 break-words text-foreground line-clamp-2 sm:truncate">{r.title}</span>
+                <span className="shrink-0 font-mono text-[10px] uppercase text-muted-foreground">
                   {RECORD_TYPE_LABEL[r.recordType]}
                 </span>
               </Link>
