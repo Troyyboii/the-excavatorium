@@ -675,7 +675,21 @@ begin
       on s.user_id = caller_id and s.seed_key = p.source_seed
     join public.records t
       on t.user_id = caller_id and t.seed_key = p.target_seed
-  on conflict (user_id, seed_key) do nothing;
+   where not exists (
+     -- canonical seed_key already installed for this caller
+     select 1 from public.record_links existing
+      where existing.user_id = caller_id
+        and existing.seed_key = p.seed_key
+   )
+     and not exists (
+       -- some link (canonical or user-created) already connects the
+       -- exact unordered endpoint pair for this caller; do not
+       -- rename, overwrite, or duplicate it.
+       select 1 from public.record_links existing
+        where existing.user_id = caller_id
+          and existing.record_low_id = pg_catalog.least(s.id, t.id)
+          and existing.record_high_id = pg_catalog.greatest(s.id, t.id)
+     );
   get diagnostics n = row_count;
   inserted_links := inserted_links + n;
 
