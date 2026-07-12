@@ -90,18 +90,18 @@ export function AppShell({
           <button
             type="button"
             aria-label="Open navigation"
-            className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-border bg-card text-foreground"
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-border bg-card text-foreground"
             onClick={() => setMobileOpen(true)}
           >
             <List size={20} />
           </button>
-          <span className="font-serif text-lg tracking-tight">
+          <span className="min-w-0 truncate font-serif text-lg tracking-tight">
             The Excavatorium
           </span>
         </header>
 
-        <main className="min-w-0 flex-1 px-4 py-6 md:px-8 md:py-10">
-          <div className="mx-auto w-full max-w-5xl">{children}</div>
+        <main className="min-w-0 max-w-full flex-1 px-4 py-6 md:px-8 md:py-10">
+          <div className="mx-auto w-full max-w-5xl min-w-0">{children}</div>
         </main>
       </div>
     </div>
