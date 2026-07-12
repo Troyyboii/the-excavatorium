@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Wrench, BookOpen, ChatCenteredDots, Scales, Tombstone } from "@phosphor-icons/react";
+import { Wrench, BookOpen, ChatCenteredDots, Scales, Cross } from "@phosphor-icons/react";
 import type { ArchiveRecord, RecordType } from "@/lib/types";
 import { RECORD_TYPE_LABEL } from "@/lib/types";
 
