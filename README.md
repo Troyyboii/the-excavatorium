@@ -5,11 +5,9 @@ GitHub repositories, long AI conversations, and technical decisions —
 what attracted you, what was promised, what actually happened, and the
 final verdict.
 
-**Status: Phase A foundation.** Only the Supabase foundation, magic-link
-login shell, and connectivity page are implemented. The product interface
-(Dashboard, Tools, Repositories, Conversations, Decisions, Search,
-Settings) is Phase B and stops here until the manual verification gate
-is recorded.
+**Status: Phase B is implemented.** Password login with a magic-link
+fallback, the product interface, and the GitHub connection are available.
+The project is not yet published.
 
 ## Stack
 
@@ -17,7 +15,7 @@ is recorded.
 - Tailwind CSS + shadcn/ui (kept from the template)
 - TanStack Start / Router
 - Direct Supabase for authentication and PostgreSQL storage
-- **No Lovable Cloud.** **No second backend.** **No GitHub connection.**
+- **No Lovable Cloud.** **No second backend.**
 - **No deployment.**
 
 ## Local development
@@ -49,15 +47,15 @@ browser code or committed files.
 
 Ordered SQL lives under [`docs/migrations/`](./docs/migrations/):
 
-| File | Purpose |
-| --- | --- |
-| `0001_tables.sql` | `profiles`, `records`, `record_links`, `app_metadata`; constraints; composite ownership keys; approved seed-key lists |
-| `0002_indexes_triggers.sql` | Useful indexes; reusable `updated_at` trigger |
-| `0003_rls_privileges.sql` | RLS enable + owner-only `SELECT` policies; revoke direct mutations; grant `SELECT` to `authenticated` |
-| `0004_profile_trigger.sql` | Auto-create `profiles` row on `auth.users` insert |
-| `0005_validation_helpers.sql` | Internal four-branch `assert_record_data_valid` |
-| `0006_write_rpcs.sql` | `save_record_with_links`, `delete_record_safely` |
-| `0007_seed_lifecycle.sql` | `initialize_user_archive`, `remove_example_data`, `restore_missing_examples`, `reset_user_archive`, `restore_user_archive` |
+| File                          | Purpose                                                                                                                    |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `0001_tables.sql`             | `profiles`, `records`, `record_links`, `app_metadata`; constraints; composite ownership keys; approved seed-key lists      |
+| `0002_indexes_triggers.sql`   | Useful indexes; reusable `updated_at` trigger                                                                              |
+| `0003_rls_privileges.sql`     | RLS enable + owner-only `SELECT` policies; revoke direct mutations; grant `SELECT` to `authenticated`                      |
+| `0004_profile_trigger.sql`    | Auto-create `profiles` row on `auth.users` insert                                                                          |
+| `0005_validation_helpers.sql` | Internal four-branch `assert_record_data_valid`                                                                            |
+| `0006_write_rpcs.sql`         | `save_record_with_links`, `delete_record_safely`                                                                           |
+| `0007_seed_lifecycle.sql`     | `initialize_user_archive`, `remove_example_data`, `restore_missing_examples`, `reset_user_archive`, `restore_user_archive` |
 
 Apply them in numeric order via the Supabase SQL editor or the Supabase
 CLI (`supabase db execute`). They have not been applied automatically
@@ -86,15 +84,4 @@ bun run dev         # local development
 bun run build       # production build
 ```
 
-There are no automated tests in Phase A.
-
-## What is NOT in Phase A
-
-- Dashboard, module lists, forms, filters, search
-- JSON export/import UI
-- Markdown export
-- Example lifecycle UI
-- Full visual system
-
-These are Phase B, and only start after the manual verification gate in
-[`docs/supabase-verification.md`](./docs/supabase-verification.md).
+There are no automated tests in this repository.

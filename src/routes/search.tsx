@@ -16,28 +16,42 @@ function toSearchableText(r: ArchiveRecord): string {
   if (r.recordType === "tool") {
     parts.push(r.recordData.category, r.recordData.status);
     parts.push(
-      r.recordData.whatCaughtMyEye, r.recordData.whatItPromised,
-      r.recordData.whatActuallyHappened, r.recordData.whatWorked,
-      r.recordData.whatFailed, r.recordData.whyIKeptOrStoppedUsingIt,
-      r.recordData.revisitCondition, r.recordData.finalVerdict,
+      r.recordData.whatCaughtMyEye,
+      r.recordData.whatItPromised,
+      r.recordData.whatActuallyHappened,
+      r.recordData.whatWorked,
+      r.recordData.whatFailed,
+      r.recordData.whyIKeptOrStoppedUsingIt,
+      r.recordData.revisitCondition,
+      r.recordData.finalVerdict,
     );
   } else if (r.recordType === "repository") {
     parts.push(
-      r.recordData.githubUrl, r.recordData.whatCaughtMyEye, r.recordData.whatItClaims,
-      r.recordData.whatItActuallyDoes, r.recordData.maintenanceImpression, r.recordData.finalVerdict,
+      r.recordData.githubUrl,
+      r.recordData.whatCaughtMyEye,
+      r.recordData.whatItClaims,
+      r.recordData.whatItActuallyDoes,
+      r.recordData.maintenanceImpression,
+      r.recordData.finalVerdict,
       r.recordData.recommendedAction ?? "",
     );
   } else if (r.recordType === "conversation") {
     parts.push(
       r.recordData.projectRoute,
-      r.recordData.highSignalFindings, r.recordData.decisionsMade,
-      r.recordData.openLoops, r.recordData.reusablePrompts,
-      r.recordData.memoryCandidates, r.recordData.rawConversationText,
+      r.recordData.highSignalFindings,
+      r.recordData.decisionsMade,
+      r.recordData.openLoops,
+      r.recordData.reusablePrompts,
+      r.recordData.memoryCandidates,
+      r.recordData.rawConversationText,
     );
   } else if (r.recordType === "decision") {
     parts.push(
-      r.recordData.reason, r.recordData.trigger, r.recordData.whatWouldChangeMyMind,
-      r.recordData.status, r.recordData.confidence,
+      r.recordData.reason,
+      r.recordData.trigger,
+      r.recordData.whatWouldChangeMyMind,
+      r.recordData.status,
+      r.recordData.confidence,
     );
   }
   void d;
@@ -68,7 +82,10 @@ function Page() {
 
   return (
     <div>
-      <PageHeader title="Search" description="Case-insensitive partial text across every user-entered field." />
+      <PageHeader
+        title="Search"
+        description="Case-insensitive partial text across every user-entered field."
+      />
       <input
         autoFocus
         value={text}
@@ -88,7 +105,8 @@ function Page() {
             return (
               <section key={t}>
                 <h2 className="mb-2 font-serif text-lg text-foreground">
-                  {RECORD_TYPE_PLURAL[t]} <span className="text-xs text-muted-foreground">({items.length})</span>
+                  {RECORD_TYPE_PLURAL[t]}{" "}
+                  <span className="text-xs text-muted-foreground">({items.length})</span>
                 </h2>
                 <RecordList items={items} />
               </section>

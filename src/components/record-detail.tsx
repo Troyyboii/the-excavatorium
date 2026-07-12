@@ -7,6 +7,19 @@ import { plural, recordHref, TypeIcon, TombstoneIfBuried } from "./record-list";
 import { PageHeader, Toast } from "./page-parts";
 import { download, toMarkdown } from "@/lib/format";
 
+function editRoute(record: ArchiveRecord) {
+  switch (record.recordType) {
+    case "tool":
+      return { to: "/tools/$id/edit" as const, params: { id: record.id } };
+    case "repository":
+      return { to: "/repositories/$id/edit" as const, params: { id: record.id } };
+    case "conversation":
+      return { to: "/conversations/$id/edit" as const, params: { id: record.id } };
+    case "decision":
+      return { to: "/decisions/$id/edit" as const, params: { id: record.id } };
+  }
+}
+
 export function RecordDetail({
   record,
   allRecords,
@@ -50,7 +63,7 @@ export function RecordDetail({
               <DownloadSimple size={16} /> Export as Markdown
             </button>
             <Link
-              to={`/${plural(record.recordType)}/${record.id}/edit`}
+              {...editRoute(record)}
               className="inline-flex min-h-11 items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-[color:var(--primary)]/90"
             >
               <PencilSimple size={16} /> Edit
@@ -74,7 +87,10 @@ export function RecordDetail({
       {record.tags.length ? (
         <div className="mb-4 flex flex-wrap gap-1">
           {record.tags.map((t) => (
-            <span key={t} className="rounded-sm bg-[color:var(--secondary)] px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+            <span
+              key={t}
+              className="rounded-sm bg-[color:var(--secondary)] px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground"
+            >
               #{t}
             </span>
           ))}
@@ -88,7 +104,9 @@ export function RecordDetail({
       <div className="space-y-6">
         {record.recordType === "tool" ? <ToolDetail r={record} byId={byId} /> : null}
         {record.recordType === "repository" ? <RepositoryDetail r={record} /> : null}
-        {record.recordType === "conversation" ? <ConversationDetail r={record} onToast={setToast} /> : null}
+        {record.recordType === "conversation" ? (
+          <ConversationDetail r={record} onToast={setToast} />
+        ) : null}
         {record.recordType === "decision" ? <DecisionDetail r={record} byId={byId} /> : null}
 
         <LinkedSection title="Linked records" items={linked} />
@@ -100,7 +118,13 @@ export function RecordDetail({
   );
 }
 
-function DlSection({ heading, entries }: { heading: string; entries: [string, string | null | undefined][] }) {
+function DlSection({
+  heading,
+  entries,
+}: {
+  heading: string;
+  entries: [string, string | null | undefined][];
+}) {
   const visible = entries.filter(([, v]) => v && v.toString().trim() !== "");
   if (visible.length === 0) return null;
   return (
@@ -118,7 +142,13 @@ function DlSection({ heading, entries }: { heading: string; entries: [string, st
   );
 }
 
-function ToolDetail({ r, byId }: { r: ArchiveRecord & { recordType: "tool" }; byId: Map<string, ArchiveRecord> }) {
+function ToolDetail({
+  r,
+  byId,
+}: {
+  r: ArchiveRecord & { recordType: "tool" };
+  byId: Map<string, ArchiveRecord>;
+}) {
   const d = r.recordData;
   const replacement = d.replacementToolId ? byId.get(d.replacementToolId) : null;
   return (
@@ -250,7 +280,13 @@ function ConversationDetail({
   );
 }
 
-function DecisionDetail({ r, byId }: { r: ArchiveRecord & { recordType: "decision" }; byId: Map<string, ArchiveRecord> }) {
+function DecisionDetail({
+  r,
+  byId,
+}: {
+  r: ArchiveRecord & { recordType: "decision" };
+  byId: Map<string, ArchiveRecord>;
+}) {
   const d = r.recordData;
   const supersedes = d.supersedesDecisionId ? byId.get(d.supersedesDecisionId) : null;
   return (

@@ -53,7 +53,9 @@ export function RecordPicker({
         >
           <option value="all">All types</option>
           {RECORD_TYPES.map((t) => (
-            <option key={t} value={t}>{RECORD_TYPE_LABEL[t]}</option>
+            <option key={t} value={t}>
+              {RECORD_TYPE_LABEL[t]}
+            </option>
           ))}
         </select>
       </div>
@@ -96,9 +98,7 @@ export function RecordPicker({
                     className="h-4 w-4 accent-[color:var(--primary)]"
                   />
                   <TypeIcon type={r.recordType} />
-                  <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-                    {r.title}
-                  </span>
+                  <span className="min-w-0 flex-1 truncate text-sm text-foreground">{r.title}</span>
                   <span className="font-mono text-[10px] uppercase text-muted-foreground">
                     {r.recordType}
                   </span>

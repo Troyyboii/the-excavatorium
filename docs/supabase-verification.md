@@ -116,8 +116,7 @@ lists the 13 approved record seed keys.
 Sign in as the owner, then in the browser console:
 
 ```js
-const { data, error } = await window.supabase
-  .from('records').select('id, user_id').limit(5);
+const { data, error } = await window.supabase.from("records").select("id, user_id").limit(5);
 console.log({ data, error });
 ```
 
@@ -139,19 +138,19 @@ Expected: no matches.
 
 ## Gate record
 
-| Item | Status |
-| --- | --- |
-| migrations created | Migration created |
-| migrations actually applied | Migration applied |
-| owner account created | Manually configured |
-| owner magic-link delivery works | Verified |
-| `shouldCreateUser: false` works | Verified |
-| public signup disabled | Manually configured |
-| redirect URLs configured | Manually configured |
-| RLS inspected | Verified |
-| RPC privileges inspected | Verified |
-| second-user isolation tested where possible | Not tested |
-| no Lovable Cloud backend exists | Verified |
+| Item                                        | Status              |
+| ------------------------------------------- | ------------------- |
+| migrations created                          | Migration created   |
+| migrations actually applied                 | Migration applied   |
+| owner account created                       | Manually configured |
+| owner magic-link delivery works             | Verified            |
+| `shouldCreateUser: false` works             | Verified            |
+| public signup disabled                      | Manually configured |
+| redirect URLs configured                    | Manually configured |
+| RLS inspected                               | Verified            |
+| RPC privileges inspected                    | Verified            |
+| second-user isolation tested where possible | Not tested          |
+| no Lovable Cloud backend exists             | Verified            |
 
 ## Verification evidence notes
 

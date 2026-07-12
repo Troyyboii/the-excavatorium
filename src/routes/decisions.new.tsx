@@ -9,7 +9,12 @@ function Page() {
   return (
     <div>
       <PageHeader title="New decision" />
-      <RecordForm recordType="decision" existing={null} allRecords={q.data?.records ?? []} allLinks={q.data?.links ?? []} />
+      <RecordForm
+        recordType="decision"
+        existing={null}
+        allRecords={q.data?.records ?? []}
+        allLinks={q.data?.links ?? []}
+      />
     </div>
   );
 }

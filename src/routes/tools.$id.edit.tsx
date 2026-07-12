@@ -10,12 +10,22 @@ function Page() {
   if (q.isPending) return <PageHeader title="Loading…" />;
   const rec = q.data?.byId.get(id);
   if (!rec || rec.recordType !== "tool") {
-    return (<div><PageHeader title="Record not found" /><EmptyState title="No tool matches this ID." /></div>);
+    return (
+      <div>
+        <PageHeader title="Record not found" />
+        <EmptyState title="No tool matches this ID." />
+      </div>
+    );
   }
   return (
     <div>
       <PageHeader title={`Edit ${rec.title}`} />
-      <RecordForm recordType="tool" existing={rec} allRecords={q.data!.records} allLinks={q.data!.links} />
+      <RecordForm
+        recordType="tool"
+        existing={rec}
+        allRecords={q.data!.records}
+        allLinks={q.data!.links}
+      />
     </div>
   );
 }

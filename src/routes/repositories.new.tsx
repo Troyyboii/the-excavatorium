@@ -9,7 +9,12 @@ function Page() {
   return (
     <div>
       <PageHeader title="New repository" />
-      <RecordForm recordType="repository" existing={null} allRecords={q.data?.records ?? []} allLinks={q.data?.links ?? []} />
+      <RecordForm
+        recordType="repository"
+        existing={null}
+        allRecords={q.data?.records ?? []}
+        allLinks={q.data?.links ?? []}
+      />
     </div>
   );
 }
