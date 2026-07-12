@@ -91,7 +91,7 @@ export function RecordListPage({
       />
 
       <div className="mb-4 rounded-md border border-border bg-card p-3">
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           {type === "tool" ? (
             <>
               <FilterSelect
@@ -132,7 +132,7 @@ export function RecordListPage({
                 onChange={(v) => setF({ ...f, convRoute: v as ProjectRoute | "" })}
                 options={PROJECT_ROUTES}
               />
-              <label className="inline-flex min-h-11 items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground">
+              <label className="inline-flex min-h-11 w-full items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground sm:w-auto">
                 <input
                   type="checkbox"
                   checked={!!f.convHasLoops}
@@ -169,7 +169,7 @@ export function RecordListPage({
             <button
               type="button"
               onClick={() => setF({})}
-              className="ml-auto inline-flex min-h-11 items-center rounded-md border border-input bg-background px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
+              className="inline-flex min-h-11 w-full items-center justify-center rounded-md border border-input bg-background px-3 py-2 text-sm text-muted-foreground hover:text-foreground sm:ml-auto sm:w-auto sm:justify-start"
             >
               Reset filters
             </button>
@@ -203,12 +203,12 @@ function FilterSelect({
   labels?: Record<string, string>;
 }) {
   return (
-    <label className="inline-flex min-h-11 items-center gap-2 rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground">
-      <span className="text-xs text-muted-foreground">{label}</span>
+    <label className="inline-flex min-h-11 w-full min-w-0 items-center gap-2 rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground sm:w-auto">
+      <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="bg-transparent py-1 pr-2 text-sm outline-none"
+        className="min-w-0 flex-1 bg-transparent py-1 pr-2 text-sm outline-none"
       >
         <option value="">All</option>
         {options.map((o) => (
@@ -229,12 +229,12 @@ function FilterInput({
   onChange: (v: string) => void;
 }) {
   return (
-    <label className="inline-flex min-h-11 items-center gap-2 rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground">
-      <span className="text-xs text-muted-foreground">{label}</span>
+    <label className="inline-flex min-h-11 w-full min-w-0 items-center gap-2 rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground sm:w-auto">
+      <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="bg-transparent py-1 text-sm outline-none"
+        className="min-w-0 flex-1 bg-transparent py-1 text-sm outline-none"
       />
     </label>
   );

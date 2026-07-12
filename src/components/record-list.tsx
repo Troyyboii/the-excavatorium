@@ -45,17 +45,17 @@ export function RecordRow({ r, showType }: { r: ArchiveRecord; showType?: boolea
       className="block border-b border-border px-3 py-3 transition-colors last:border-0 hover:bg-[color:var(--record-hover)]"
     >
       <div className="flex items-start gap-3">
-        <div className="pt-0.5">
+        <div className="shrink-0 pt-0.5">
           <TypeIcon type={r.recordType} />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <div className="truncate text-sm font-medium text-foreground">
+          <div className="flex items-start gap-2">
+            <div className="min-w-0 flex-1 text-sm font-medium text-foreground line-clamp-2 sm:truncate">
               {r.title}
             </div>
-            <TombstoneIfBuried r={r} />
+            <span className="shrink-0"><TombstoneIfBuried r={r} /></span>
             {r.isExample ? (
-              <span className="rounded-sm border border-[color:var(--brass-muted)] px-1 font-mono text-[10px] uppercase tracking-wide text-[color:var(--brass)]">
+              <span className="shrink-0 rounded-sm border border-[color:var(--brass-muted)] px-1 font-mono text-[10px] uppercase tracking-wide text-[color:var(--brass)]">
                 seed
               </span>
             ) : null}
@@ -66,7 +66,7 @@ export function RecordRow({ r, showType }: { r: ArchiveRecord; showType?: boolea
             </div>
           ) : null}
           {r.summary ? (
-            <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+            <div className="mt-1 line-clamp-2 text-xs text-muted-foreground break-words">
               {r.summary}
             </div>
           ) : null}
@@ -75,7 +75,7 @@ export function RecordRow({ r, showType }: { r: ArchiveRecord; showType?: boolea
               {r.tags.map((t) => (
                 <span
                   key={t}
-                  className="rounded-sm bg-[color:var(--secondary)] px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
+                  className="rounded-sm bg-[color:var(--secondary)] px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground break-all"
                 >
                   #{t}
                 </span>

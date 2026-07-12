@@ -149,7 +149,7 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
   );
 
   return (
-    <form onSubmit={onSubmit} className="space-y-5">
+    <form onSubmit={onSubmit} className="space-y-5 pb-40 sm:pb-24">
       {error ? (
         <Banner kind="error" title="Could not save this record">
           {error}. Existing data was not changed. You can safely retry.
@@ -225,7 +225,7 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
         />
       </Section>
 
-      <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-3 border-t border-border bg-background py-3">
+      <div className="sticky bottom-0 z-20 -mx-4 flex flex-col gap-3 border-t border-border bg-background px-4 py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] sm:mx-0 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:px-0">
         <div className="flex gap-2">
           <button
             type="submit"

@@ -110,7 +110,7 @@ function DlSection({ heading, entries }: { heading: string; entries: [string, st
         {visible.map(([k, v]) => (
           <div key={k}>
             <dt className="text-xs uppercase tracking-wide text-muted-foreground">{k}</dt>
-            <dd className="mt-1 whitespace-pre-wrap text-sm text-foreground">{v}</dd>
+            <dd className="mt-1 whitespace-pre-wrap break-words text-sm text-foreground">{v}</dd>
           </div>
         ))}
       </dl>

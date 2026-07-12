@@ -12,16 +12,20 @@ export function PageHeader({
   action?: ReactNode;
 }) {
   return (
-    <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
-      <div>
-        <h1 className="font-serif text-2xl tracking-tight text-foreground md:text-3xl">
+    <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between sm:gap-4">
+      <div className="min-w-0 flex-1">
+        <h1 className="font-serif text-2xl tracking-tight text-foreground break-words md:text-3xl">
           {title}
         </h1>
         {description ? (
-          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+          <p className="mt-1 text-sm text-muted-foreground break-words">{description}</p>
         ) : null}
       </div>
-      {action ? <div className="flex gap-2">{action}</div> : null}
+      {action ? (
+        <div className="flex flex-wrap gap-2 sm:shrink-0 [&>*]:flex-1 sm:[&>*]:flex-none">
+          {action}
+        </div>
+      ) : null}
     </header>
   );
 }
@@ -30,7 +34,7 @@ export function NewRecordButton({ to, label }: { to: string; label: string }) {
   return (
     <Link
       to={to}
-      className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[color:var(--brass-muted)] bg-[color:var(--burgundy-muted)] px-3 py-2 text-sm text-foreground transition-colors hover:bg-[color:var(--record-hover)]"
+      className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[color:var(--brass-muted)] bg-[color:var(--burgundy-muted)] px-3 py-2 text-sm text-foreground transition-colors hover:bg-[color:var(--record-hover)]"
     >
       <Plus size={16} weight="bold" />
       {label}
