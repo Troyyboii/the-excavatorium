@@ -364,9 +364,32 @@ export function validateBackup(raw: unknown): ValidationResult {
     linkPairs.add(pair);
     if (link.seedKey !== null && typeof link.seedKey !== "string")
       return { ok: false, error: `links[${i}].seedKey must be string or null` };
+    if (typeof link.seedKey === "string") {
+      if (linkSeedKeys.has(link.seedKey))
+        return { ok: false, error: `links[${i}].seedKey "${link.seedKey}" is duplicated` };
+      linkSeedKeys.add(link.seedKey);
+      const approved = APPROVED_LINK_SEED_KEYS[link.seedKey];
+      if (!approved)
+        return { ok: false, error: `links[${i}].seedKey "${link.seedKey}" is not an approved canonical link seed key` };
+      const expectedSourceId = seedKeyToId.get(approved.source);
+      const expectedTargetId = seedKeyToId.get(approved.target);
+      if (!expectedSourceId || !expectedTargetId)
+        return {
+          ok: false,
+          error: `links[${i}].seedKey "${link.seedKey}" requires records with seedKeys "${approved.source}" and "${approved.target}" to also be imported`,
+        };
+      // Canonical links are oriented (source → target). Reject both a wrong
+      // orientation and any mapping to different endpoints.
+      if (link.sourceId !== expectedSourceId || link.targetId !== expectedTargetId)
+        return {
+          ok: false,
+          error: `links[${i}].seedKey "${link.seedKey}" endpoints do not match canonical (source="${approved.source}", target="${approved.target}")`,
+        };
+    }
     if (typeof link.createdAt !== "string" || !ISO_TS_RE.test(link.createdAt))
       return { ok: false, error: `links[${i}].createdAt is malformed` };
     counts.links += 1;
+
   }
 
   return { ok: true, export: o as unknown as ArchiveExport, counts };
