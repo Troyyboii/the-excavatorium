@@ -5,9 +5,16 @@ GitHub repositories, long AI conversations, and technical decisions —
 what attracted you, what was promised, what actually happened, and the
 final verdict.
 
-**Status: Phase B is implemented.** Password login with a magic-link
-fallback, the product interface, and the GitHub connection are available.
-The project is not yet published.
+**Status: Phase B is implemented and deployed.** Password login with a
+magic-link fallback, the product interface, and the GitHub connection are
+available in production.
+
+## Live app
+
+[https://the-excavatorium.lovable.app](https://the-excavatorium.lovable.app)
+
+The application is publicly reachable, but archive access is restricted to
+the authorized Supabase owner account.
 
 ## Stack
 
@@ -16,7 +23,7 @@ The project is not yet published.
 - TanStack Start / Router
 - Direct Supabase for authentication and PostgreSQL storage
 - **No Lovable Cloud.** **No second backend.**
-- **No deployment.**
+- Deployed with Lovable at `the-excavatorium.lovable.app`.
 
 ## Local development
 
@@ -74,7 +81,7 @@ by this repository.
    only rejects new addresses.
 4. In Authentication → URL Configuration, add the approved redirect
    URLs: the current Lovable preview URL, `http://localhost:8080`, and
-   the future hosted URL when configured.
+   `https://the-excavatorium.lovable.app`.
 
 ## Build and test commands
 
