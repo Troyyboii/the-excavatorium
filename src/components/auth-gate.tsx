@@ -9,8 +9,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
   const prevUserRef = useRef<string | null>(null);
 
-  const currentUserId =
-    s.status === "signed-in" ? s.session.user.id : null;
+  const currentUserId = s.status === "signed-in" ? s.session.user.id : null;
 
   // Clear every cached query whenever the authenticated user id changes
   // (including sign-in from null, sign-out to null, and switching between

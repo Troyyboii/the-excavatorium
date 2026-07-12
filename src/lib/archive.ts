@@ -7,16 +7,10 @@
 // signed-in user changes (including sign-out) the AuthGate clears the whole
 // React Query cache before rendering.
 
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-  type QueryKey,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { supabase } from "./supabase";
 import { useCurrentUserId } from "./session";
 import type {
-
   ArchiveExport,
   ArchiveLink,
   ArchiveRecord,
@@ -69,11 +63,23 @@ function toRecord(row: RecordRow): ArchiveRecord {
     case "tool":
       return { ...base, recordType: "tool", recordData: row.record_data as unknown as ToolData };
     case "repository":
-      return { ...base, recordType: "repository", recordData: row.record_data as unknown as RepositoryData };
+      return {
+        ...base,
+        recordType: "repository",
+        recordData: row.record_data as unknown as RepositoryData,
+      };
     case "conversation":
-      return { ...base, recordType: "conversation", recordData: row.record_data as unknown as ConversationData };
+      return {
+        ...base,
+        recordType: "conversation",
+        recordData: row.record_data as unknown as ConversationData,
+      };
     case "decision":
-      return { ...base, recordType: "decision", recordData: row.record_data as unknown as DecisionData };
+      return {
+        ...base,
+        recordType: "decision",
+        recordData: row.record_data as unknown as DecisionData,
+      };
   }
 }
 
@@ -115,9 +121,7 @@ async function fetchAllLinks(): Promise<ArchiveLink[]> {
     const to = from + PAGE_SIZE - 1;
     const { data, error } = await supabase
       .from("record_links")
-      .select(
-        "id,user_id,source_record_id,target_record_id,seed_key,created_at",
-      )
+      .select("id,user_id,source_record_id,target_record_id,seed_key,created_at")
       .order("id", { ascending: true })
       .range(from, to);
     if (error) throw new Error(error.message);
@@ -151,10 +155,7 @@ export function useArchive(enabled: boolean) {
     enabled: enabled && userId !== null,
     staleTime: 30_000,
     queryFn: async () => {
-      const [records, links] = await Promise.all([
-        fetchAllRecords(),
-        fetchAllLinks(),
-      ]);
+      const [records, links] = await Promise.all([fetchAllRecords(), fetchAllLinks()]);
       const byId = new Map<string, ArchiveRecord>();
       for (const r of records) byId.set(r.id, r);
       return { records, links, byId };
@@ -322,4 +323,3 @@ export function useRestoreArchive() {
     onSuccess: () => invalidateArchiveAndMeta(qc, userId),
   });
 }
-

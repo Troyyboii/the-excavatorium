@@ -38,47 +38,45 @@ export const APPROVED_RECORD_SEED_KEYS: Readonly<Record<string, RecordType>> = {
   "example-decision-obsidian-vault": "decision",
 };
 
-export const APPROVED_LINK_SEED_KEYS: Readonly<
-  Record<string, { source: string; target: string }>
-> = {
-  "example-link-conversation-chatgpt": {
-    source: "example-conversation-excavatorium-origin",
-    target: "example-tool-chatgpt",
-  },
-  "example-link-conversation-grok": {
-    source: "example-conversation-excavatorium-origin",
-    target: "example-tool-grok",
-  },
-  "example-link-conversation-mem0": {
-    source: "example-conversation-excavatorium-origin",
-    target: "example-tool-mem0",
-  },
-  "example-link-conversation-repository-mem0": {
-    source: "example-conversation-excavatorium-origin",
-    target: "example-repository-mem0",
-  },
-  "example-link-conversation-decision-no-mem0": {
-    source: "example-conversation-excavatorium-origin",
-    target: "example-decision-no-mem0",
-  },
-  "example-link-conversation-decision-grok-media": {
-    source: "example-conversation-excavatorium-origin",
-    target: "example-decision-grok-media",
-  },
-  "example-link-mem0-repository": {
-    source: "example-tool-mem0",
-    target: "example-repository-mem0",
-  },
-  "example-link-decision-chatgpt-tool": {
-    source: "example-decision-chatgpt-primary",
-    target: "example-tool-chatgpt",
-  },
-  "example-link-decision-obsidian-tool": {
-    source: "example-decision-obsidian-vault",
-    target: "example-tool-obsidian",
-  },
-};
-
+export const APPROVED_LINK_SEED_KEYS: Readonly<Record<string, { source: string; target: string }>> =
+  {
+    "example-link-conversation-chatgpt": {
+      source: "example-conversation-excavatorium-origin",
+      target: "example-tool-chatgpt",
+    },
+    "example-link-conversation-grok": {
+      source: "example-conversation-excavatorium-origin",
+      target: "example-tool-grok",
+    },
+    "example-link-conversation-mem0": {
+      source: "example-conversation-excavatorium-origin",
+      target: "example-tool-mem0",
+    },
+    "example-link-conversation-repository-mem0": {
+      source: "example-conversation-excavatorium-origin",
+      target: "example-repository-mem0",
+    },
+    "example-link-conversation-decision-no-mem0": {
+      source: "example-conversation-excavatorium-origin",
+      target: "example-decision-no-mem0",
+    },
+    "example-link-conversation-decision-grok-media": {
+      source: "example-conversation-excavatorium-origin",
+      target: "example-decision-grok-media",
+    },
+    "example-link-mem0-repository": {
+      source: "example-tool-mem0",
+      target: "example-repository-mem0",
+    },
+    "example-link-decision-chatgpt-tool": {
+      source: "example-decision-chatgpt-primary",
+      target: "example-tool-chatgpt",
+    },
+    "example-link-decision-obsidian-tool": {
+      source: "example-decision-obsidian-vault",
+      target: "example-tool-obsidian",
+    },
+  };
 
 // ---------- Tag normalization (spec §8) ----------
 export function normalizeTags(input: string[]): string[] {
@@ -103,10 +101,7 @@ export function backupFilename(now = new Date()): string {
 }
 
 // ---------- Backup builder (spec §19) ----------
-export function buildBackup(
-  records: ArchiveRecord[],
-  links: ArchiveLink[],
-): ArchiveExport {
+export function buildBackup(records: ArchiveRecord[], links: ArchiveLink[]): ArchiveExport {
   const sortedRecords = [...records].sort((a, b) => a.id.localeCompare(b.id));
   const sortedLinks = [...links].sort((a, b) => a.id.localeCompare(b.id));
   return {
@@ -141,14 +136,10 @@ function isRating(v: unknown): boolean {
   return typeof v === "string" && (RATING_LEVELS as string[]).includes(v);
 }
 
-function validateRecordData(
-  type: RecordType,
-  d: unknown,
-): string | null {
+function validateRecordData(type: RecordType, d: unknown): string | null {
   if (!d || typeof d !== "object" || Array.isArray(d)) return "recordData must be an object";
   const rd = d as Record<string, unknown>;
-  const req = (k: string, cond: boolean) =>
-    cond ? null : `missing or invalid field ${k}`;
+  const req = (k: string, cond: boolean) => (cond ? null : `missing or invalid field ${k}`);
 
   if (type === "tool") {
     const t = rd as unknown as ToolData;
@@ -161,10 +152,18 @@ function validateRecordData(
       req("whatWorked", typeof t.whatWorked === "string"),
       req("whatFailed", typeof t.whatFailed === "string"),
       req("whyIKeptOrStoppedUsingIt", typeof t.whyIKeptOrStoppedUsingIt === "string"),
-      req("replacementToolId", t.replacementToolId === null || (typeof t.replacementToolId === "string" && UUID_RE.test(t.replacementToolId))),
+      req(
+        "replacementToolId",
+        t.replacementToolId === null ||
+          (typeof t.replacementToolId === "string" && UUID_RE.test(t.replacementToolId)),
+      ),
       req("revisitCondition", typeof t.revisitCondition === "string"),
       req("finalVerdict", typeof t.finalVerdict === "string"),
-      req("lastReviewed", t.lastReviewed === null || (typeof t.lastReviewed === "string" && ISO_DATE_RE.test(t.lastReviewed))),
+      req(
+        "lastReviewed",
+        t.lastReviewed === null ||
+          (typeof t.lastReviewed === "string" && ISO_DATE_RE.test(t.lastReviewed)),
+      ),
     ];
     return errs.find(Boolean) ?? null;
   }
@@ -188,15 +187,26 @@ function validateRecordData(
             (REPOSITORY_ACTIONS as string[]).includes(r.recommendedAction)),
       ),
       req("finalVerdict", typeof r.finalVerdict === "string"),
-      req("lastReviewed", r.lastReviewed === null || (typeof r.lastReviewed === "string" && ISO_DATE_RE.test(r.lastReviewed))),
+      req(
+        "lastReviewed",
+        r.lastReviewed === null ||
+          (typeof r.lastReviewed === "string" && ISO_DATE_RE.test(r.lastReviewed)),
+      ),
     ];
     return errs.find(Boolean) ?? null;
   }
   if (type === "conversation") {
     const c = rd as unknown as ConversationData;
     const errs = [
-      req("conversationDate", c.conversationDate === null || (typeof c.conversationDate === "string" && ISO_DATE_RE.test(c.conversationDate))),
-      req("projectRoute", typeof c.projectRoute === "string" && (PROJECT_ROUTES as string[]).includes(c.projectRoute)),
+      req(
+        "conversationDate",
+        c.conversationDate === null ||
+          (typeof c.conversationDate === "string" && ISO_DATE_RE.test(c.conversationDate)),
+      ),
+      req(
+        "projectRoute",
+        typeof c.projectRoute === "string" && (PROJECT_ROUTES as string[]).includes(c.projectRoute),
+      ),
       req("highSignalFindings", typeof c.highSignalFindings === "string"),
       req("decisionsMade", typeof c.decisionsMade === "string"),
       req("openLoops", typeof c.openLoops === "string"),
@@ -212,8 +222,14 @@ function validateRecordData(
     req("trigger", typeof dd.trigger === "string"),
     req("whatWouldChangeMyMind", typeof dd.whatWouldChangeMyMind === "string"),
     req("decisionDate", typeof dd.decisionDate === "string" && ISO_DATE_RE.test(dd.decisionDate)),
-    req("status", typeof dd.status === "string" && (DECISION_STATUSES as string[]).includes(dd.status)),
-    req("confidence", typeof dd.confidence === "string" && (CONFIDENCE_LEVELS as string[]).includes(dd.confidence)),
+    req(
+      "status",
+      typeof dd.status === "string" && (DECISION_STATUSES as string[]).includes(dd.status),
+    ),
+    req(
+      "confidence",
+      typeof dd.confidence === "string" && (CONFIDENCE_LEVELS as string[]).includes(dd.confidence),
+    ),
     req(
       "supersedesDecisionId",
       dd.supersedesDecisionId === null ||
@@ -227,20 +243,16 @@ export function validateBackup(raw: unknown): ValidationResult {
   if (!raw || typeof raw !== "object" || Array.isArray(raw))
     return { ok: false, error: "Backup is not a JSON object" };
   const o = raw as Record<string, unknown>;
-  if (o.application !== "The Excavatorium")
-    return { ok: false, error: "Wrong application name" };
-  if (o.schemaVersion !== 1)
-    return { ok: false, error: "Unsupported schemaVersion (expected 1)" };
+  if (o.application !== "The Excavatorium") return { ok: false, error: "Wrong application name" };
+  if (o.schemaVersion !== 1) return { ok: false, error: "Unsupported schemaVersion (expected 1)" };
   if (typeof o.exportedAt !== "string" || !ISO_TS_RE.test(o.exportedAt))
     return { ok: false, error: "exportedAt must be an ISO-8601 UTC timestamp" };
   // ISO_TS_RE already anchors to Z (UTC). Additionally require a valid parse.
   if (Number.isNaN(Date.parse(o.exportedAt)))
     return { ok: false, error: "exportedAt is not a real UTC timestamp" };
 
-  if (!Array.isArray(o.records))
-    return { ok: false, error: "Missing records array" };
-  if (!Array.isArray(o.links))
-    return { ok: false, error: "Missing links array" };
+  if (!Array.isArray(o.records)) return { ok: false, error: "Missing records array" };
+  if (!Array.isArray(o.links)) return { ok: false, error: "Missing links array" };
 
   const recordIds = new Set<string>();
   const seedKeys = new Set<string>();
@@ -261,16 +273,16 @@ export function validateBackup(raw: unknown): ValidationResult {
   };
 
   for (const [i, r] of (o.records as unknown[]).entries()) {
-    if (!r || typeof r !== "object")
-      return { ok: false, error: `records[${i}] is not an object` };
+    if (!r || typeof r !== "object") return { ok: false, error: `records[${i}] is not an object` };
     const rec = r as Record<string, unknown>;
     if (typeof rec.id !== "string" || !UUID_RE.test(rec.id))
       return { ok: false, error: `records[${i}].id is not a UUID` };
-    if (recordIds.has(rec.id))
-      return { ok: false, error: `records[${i}].id is a duplicate` };
+    if (recordIds.has(rec.id)) return { ok: false, error: `records[${i}].id is a duplicate` };
     recordIds.add(rec.id);
-    if (typeof rec.recordType !== "string" ||
-        !["tool", "repository", "conversation", "decision"].includes(rec.recordType))
+    if (
+      typeof rec.recordType !== "string" ||
+      !["tool", "repository", "conversation", "decision"].includes(rec.recordType)
+    )
       return { ok: false, error: `records[${i}].recordType is invalid` };
     if (typeof rec.title !== "string" || rec.title.trim() === "")
       return { ok: false, error: `records[${i}].title is required` };
@@ -293,7 +305,10 @@ export function validateBackup(raw: unknown): ValidationResult {
       seedKeys.add(rec.seedKey);
       const approved = APPROVED_RECORD_SEED_KEYS[rec.seedKey];
       if (!approved)
-        return { ok: false, error: `records[${i}].seedKey "${rec.seedKey}" is not an approved canonical seed key` };
+        return {
+          ok: false,
+          error: `records[${i}].seedKey "${rec.seedKey}" is not an approved canonical seed key`,
+        };
       if (approved !== rec.recordType)
         return {
           ok: false,
@@ -301,7 +316,6 @@ export function validateBackup(raw: unknown): ValidationResult {
         };
       seedKeyToId.set(rec.seedKey, rec.id as string);
     }
-
 
     if (typeof rec.createdAt !== "string" || !ISO_TS_RE.test(rec.createdAt))
       return { ok: false, error: `records[${i}].createdAt is malformed` };
@@ -325,7 +339,10 @@ export function validateBackup(raw: unknown): ValidationResult {
         | { recordType?: string; id?: string }
         | undefined;
       if (!targ || targ.recordType !== "tool")
-        return { ok: false, error: `records[${i}].replacementToolId must reference an imported Tool` };
+        return {
+          ok: false,
+          error: `records[${i}].replacementToolId must reference an imported Tool`,
+        };
       if (targ.id === rec.id)
         return { ok: false, error: `records[${i}].replacementToolId cannot reference itself` };
     }
@@ -335,27 +352,27 @@ export function validateBackup(raw: unknown): ValidationResult {
         | { recordType?: string; id?: string }
         | undefined;
       if (!targ || targ.recordType !== "decision")
-        return { ok: false, error: `records[${i}].supersedesDecisionId must reference an imported Decision` };
+        return {
+          ok: false,
+          error: `records[${i}].supersedesDecisionId must reference an imported Decision`,
+        };
       if (targ.id === rec.id)
         return { ok: false, error: `records[${i}].supersedesDecisionId cannot reference itself` };
     }
   }
 
   for (const [i, l] of (o.links as unknown[]).entries()) {
-    if (!l || typeof l !== "object")
-      return { ok: false, error: `links[${i}] is not an object` };
+    if (!l || typeof l !== "object") return { ok: false, error: `links[${i}] is not an object` };
     const link = l as Record<string, unknown>;
     if (typeof link.id !== "string" || !UUID_RE.test(link.id))
       return { ok: false, error: `links[${i}].id is not a UUID` };
-    if (linkIds.has(link.id))
-      return { ok: false, error: `links[${i}].id is a duplicate` };
+    if (linkIds.has(link.id)) return { ok: false, error: `links[${i}].id is a duplicate` };
     linkIds.add(link.id);
     if (typeof link.sourceId !== "string" || !recordIds.has(link.sourceId))
       return { ok: false, error: `links[${i}].sourceId does not reference an imported record` };
     if (typeof link.targetId !== "string" || !recordIds.has(link.targetId))
       return { ok: false, error: `links[${i}].targetId does not reference an imported record` };
-    if (link.sourceId === link.targetId)
-      return { ok: false, error: `links[${i}] is a self-link` };
+    if (link.sourceId === link.targetId) return { ok: false, error: `links[${i}] is a self-link` };
     const low = link.sourceId < link.targetId ? link.sourceId : link.targetId;
     const high = link.sourceId < link.targetId ? link.targetId : link.sourceId;
     const pair = `${low}::${high}`;
@@ -370,7 +387,10 @@ export function validateBackup(raw: unknown): ValidationResult {
       linkSeedKeys.add(link.seedKey);
       const approved = APPROVED_LINK_SEED_KEYS[link.seedKey];
       if (!approved)
-        return { ok: false, error: `links[${i}].seedKey "${link.seedKey}" is not an approved canonical link seed key` };
+        return {
+          ok: false,
+          error: `links[${i}].seedKey "${link.seedKey}" is not an approved canonical link seed key`,
+        };
       const expectedSourceId = seedKeyToId.get(approved.source);
       const expectedTargetId = seedKeyToId.get(approved.target);
       if (!expectedSourceId || !expectedTargetId)
@@ -389,7 +409,6 @@ export function validateBackup(raw: unknown): ValidationResult {
     if (typeof link.createdAt !== "string" || !ISO_TS_RE.test(link.createdAt))
       return { ok: false, error: `links[${i}].createdAt is malformed` };
     counts.links += 1;
-
   }
 
   return { ok: true, export: o as unknown as ArchiveExport, counts };
@@ -401,8 +420,7 @@ function yaml(scalar: unknown): string {
   if (typeof scalar === "number" || typeof scalar === "boolean") return String(scalar);
   const s = String(scalar);
   if (s === "") return '""';
-  if (/[:#\-\[\]{},&*!|>'"%@`\n]/.test(s) || /^\s|\s$/.test(s))
-    return JSON.stringify(s);
+  if (/[:#\-\[\]{},&*!|>'"%@`\n]/.test(s) || /^\s|\s$/.test(s)) return JSON.stringify(s);
   return s;
 }
 

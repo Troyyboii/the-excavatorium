@@ -156,12 +156,21 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
         </Banner>
       ) : null}
 
-      <Section title={existing ? `Edit ${RECORD_TYPE_LABEL[recordType]}` : `New ${RECORD_TYPE_LABEL[recordType]}`}>
+      <Section
+        title={
+          existing
+            ? `Edit ${RECORD_TYPE_LABEL[recordType]}`
+            : `New ${RECORD_TYPE_LABEL[recordType]}`
+        }
+      >
         <Field label="Title" htmlFor="title" required>
           <TextInput
             id="title"
             value={title}
-            onChange={(e) => { setTitle(e.target.value); setDirty(true); }}
+            onChange={(e) => {
+              setTitle(e.target.value);
+              setDirty(true);
+            }}
             required
           />
         </Field>
@@ -169,25 +178,50 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
           <TextArea
             id="summary"
             value={summary}
-            onChange={(e) => { setSummary(e.target.value); setDirty(true); }}
+            onChange={(e) => {
+              setSummary(e.target.value);
+              setDirty(true);
+            }}
           />
         </Field>
         <Field label="Tags" htmlFor="tags">
-          <TagInput id="tags" value={tags} onChange={(v) => { setTags(v); setDirty(true); }} />
+          <TagInput
+            id="tags"
+            value={tags}
+            onChange={(v) => {
+              setTags(v);
+              setDirty(true);
+            }}
+          />
         </Field>
       </Section>
 
-      {recordType === "tool" ? <ToolFields data={data as ToolData} patch={patch as never} choices={toolChoices} /> : null}
-      {recordType === "repository" ? <RepositoryFields data={data as RepositoryData} patch={patch as never} /> : null}
-      {recordType === "conversation" ? <ConversationFields data={data as ConversationData} patch={patch as never} /> : null}
-      {recordType === "decision" ? <DecisionFields data={data as DecisionData} patch={patch as never} choices={decisionChoices} /> : null}
+      {recordType === "tool" ? (
+        <ToolFields data={data as ToolData} patch={patch as never} choices={toolChoices} />
+      ) : null}
+      {recordType === "repository" ? (
+        <RepositoryFields data={data as RepositoryData} patch={patch as never} />
+      ) : null}
+      {recordType === "conversation" ? (
+        <ConversationFields data={data as ConversationData} patch={patch as never} />
+      ) : null}
+      {recordType === "decision" ? (
+        <DecisionFields
+          data={data as DecisionData}
+          patch={patch as never}
+          choices={decisionChoices}
+        />
+      ) : null}
 
       <Section title="Connected records">
         <RecordPicker
           all={allRecords}
           currentId={existing?.id ?? null}
           value={selectedLinks}
-          onChange={(v) => { setSelectedLinks(v); setDirty(true); }}
+          onChange={(v) => {
+            setSelectedLinks(v);
+            setDirty(true);
+          }}
         />
       </Section>
 
@@ -204,7 +238,9 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
             type="button"
             onClick={() => {
               if (dirty && !window.confirm("Discard unsaved changes?")) return;
-              navigate({ to: existing ? `/${plural(recordType)}/${existing.id}` : `/${plural(recordType)}` });
+              navigate({
+                to: existing ? `/${plural(recordType)}/${existing.id}` : `/${plural(recordType)}`,
+              });
             }}
             className="inline-flex min-h-11 items-center rounded-md border border-input bg-background px-4 py-2 text-sm text-foreground transition-colors hover:bg-[color:var(--record-hover)]"
           >
@@ -264,24 +300,42 @@ function ToolFields({
   return (
     <Section title="Tool details">
       <Field label="Category" required>
-        <TextInput value={data.category} onChange={(e) => patch("category", e.target.value)} required />
+        <TextInput
+          value={data.category}
+          onChange={(e) => patch("category", e.target.value)}
+          required
+        />
       </Field>
       <Field label="Status" required>
-        <Select value={data.status} onChange={(e) => patch("status", e.target.value as ToolData["status"])}>
+        <Select
+          value={data.status}
+          onChange={(e) => patch("status", e.target.value as ToolData["status"])}
+        >
           {TOOL_STATUSES.map((s) => (
-            <option key={s} value={s}>{s}</option>
+            <option key={s} value={s}>
+              {s}
+            </option>
           ))}
         </Select>
       </Field>
       <div className="grid gap-4 md:grid-cols-2">
         <Field label="What caught my eye">
-          <TextArea value={data.whatCaughtMyEye} onChange={(e) => patch("whatCaughtMyEye", e.target.value)} />
+          <TextArea
+            value={data.whatCaughtMyEye}
+            onChange={(e) => patch("whatCaughtMyEye", e.target.value)}
+          />
         </Field>
         <Field label="What it promised">
-          <TextArea value={data.whatItPromised} onChange={(e) => patch("whatItPromised", e.target.value)} />
+          <TextArea
+            value={data.whatItPromised}
+            onChange={(e) => patch("whatItPromised", e.target.value)}
+          />
         </Field>
         <Field label="What actually happened">
-          <TextArea value={data.whatActuallyHappened} onChange={(e) => patch("whatActuallyHappened", e.target.value)} />
+          <TextArea
+            value={data.whatActuallyHappened}
+            onChange={(e) => patch("whatActuallyHappened", e.target.value)}
+          />
         </Field>
         <Field label="What worked">
           <TextArea value={data.whatWorked} onChange={(e) => patch("whatWorked", e.target.value)} />
@@ -290,7 +344,10 @@ function ToolFields({
           <TextArea value={data.whatFailed} onChange={(e) => patch("whatFailed", e.target.value)} />
         </Field>
         <Field label="Why I kept or stopped using it">
-          <TextArea value={data.whyIKeptOrStoppedUsingIt} onChange={(e) => patch("whyIKeptOrStoppedUsingIt", e.target.value)} />
+          <TextArea
+            value={data.whyIKeptOrStoppedUsingIt}
+            onChange={(e) => patch("whyIKeptOrStoppedUsingIt", e.target.value)}
+          />
         </Field>
       </div>
       <Field label="Replacement tool" hint="Must reference another of your Tools.">
@@ -300,15 +357,23 @@ function ToolFields({
         >
           <option value="">— None —</option>
           {choices.map((r) => (
-            <option key={r.id} value={r.id}>{r.title}</option>
+            <option key={r.id} value={r.id}>
+              {r.title}
+            </option>
           ))}
         </Select>
       </Field>
       <Field label="Revisit condition">
-        <TextArea value={data.revisitCondition} onChange={(e) => patch("revisitCondition", e.target.value)} />
+        <TextArea
+          value={data.revisitCondition}
+          onChange={(e) => patch("revisitCondition", e.target.value)}
+        />
       </Field>
       <Field label="Final verdict">
-        <TextArea value={data.finalVerdict} onChange={(e) => patch("finalVerdict", e.target.value)} />
+        <TextArea
+          value={data.finalVerdict}
+          onChange={(e) => patch("finalVerdict", e.target.value)}
+        />
       </Field>
       <Field label="Last reviewed">
         <TextInput
@@ -330,35 +395,63 @@ function RepositoryFields({
 }) {
   return (
     <Section title="Repository details">
-      <Field label="GitHub URL" required hint="Only the URL is stored. No GitHub API calls are made.">
-        <TextInput type="url" value={data.githubUrl} onChange={(e) => patch("githubUrl", e.target.value)} required />
+      <Field
+        label="GitHub URL"
+        required
+        hint="Only the URL is stored. No GitHub API calls are made."
+      >
+        <TextInput
+          type="url"
+          value={data.githubUrl}
+          onChange={(e) => patch("githubUrl", e.target.value)}
+          required
+        />
       </Field>
       <div className="grid gap-4 md:grid-cols-2">
         <Field label="What caught my eye">
-          <TextArea value={data.whatCaughtMyEye} onChange={(e) => patch("whatCaughtMyEye", e.target.value)} />
+          <TextArea
+            value={data.whatCaughtMyEye}
+            onChange={(e) => patch("whatCaughtMyEye", e.target.value)}
+          />
         </Field>
         <Field label="What it claims">
-          <TextArea value={data.whatItClaims} onChange={(e) => patch("whatItClaims", e.target.value)} />
+          <TextArea
+            value={data.whatItClaims}
+            onChange={(e) => patch("whatItClaims", e.target.value)}
+          />
         </Field>
         <Field label="What it actually does">
-          <TextArea value={data.whatItActuallyDoes} onChange={(e) => patch("whatItActuallyDoes", e.target.value)} />
+          <TextArea
+            value={data.whatItActuallyDoes}
+            onChange={(e) => patch("whatItActuallyDoes", e.target.value)}
+          />
         </Field>
         <Field label="Maintenance impression">
-          <TextArea value={data.maintenanceImpression} onChange={(e) => patch("maintenanceImpression", e.target.value)} />
+          <TextArea
+            value={data.maintenanceImpression}
+            onChange={(e) => patch("maintenanceImpression", e.target.value)}
+          />
         </Field>
       </div>
       <div className="grid gap-4 md:grid-cols-5">
-        {([
-          ["Complexity", "complexity"],
-          ["Risk", "risk"],
-          ["Integration cost", "integrationCost"],
-          ["Immediate usefulness", "immediateUsefulness"],
-          ["Long-term value", "longTermValue"],
-        ] as const).map(([label, key]) => (
+        {(
+          [
+            ["Complexity", "complexity"],
+            ["Risk", "risk"],
+            ["Integration cost", "integrationCost"],
+            ["Immediate usefulness", "immediateUsefulness"],
+            ["Long-term value", "longTermValue"],
+          ] as const
+        ).map(([label, key]) => (
           <Field key={key} label={label}>
-            <Select value={data[key]} onChange={(e) => patch(key, e.target.value as RepositoryData[typeof key])}>
+            <Select
+              value={data[key]}
+              onChange={(e) => patch(key, e.target.value as RepositoryData[typeof key])}
+            >
               {RATING_LEVELS.map((r) => (
-                <option key={r} value={r}>{r}</option>
+                <option key={r} value={r}>
+                  {r}
+                </option>
               ))}
             </Select>
           </Field>
@@ -367,16 +460,26 @@ function RepositoryFields({
       <Field label="Recommended action">
         <Select
           value={data.recommendedAction ?? ""}
-          onChange={(e) => patch("recommendedAction", (e.target.value || null) as RepositoryData["recommendedAction"])}
+          onChange={(e) =>
+            patch(
+              "recommendedAction",
+              (e.target.value || null) as RepositoryData["recommendedAction"],
+            )
+          }
         >
           <option value="">— Awaiting verdict —</option>
           {REPOSITORY_ACTIONS.map((a) => (
-            <option key={a} value={a}>{a}</option>
+            <option key={a} value={a}>
+              {a}
+            </option>
           ))}
         </Select>
       </Field>
       <Field label="Final verdict">
-        <TextArea value={data.finalVerdict} onChange={(e) => patch("finalVerdict", e.target.value)} />
+        <TextArea
+          value={data.finalVerdict}
+          onChange={(e) => patch("finalVerdict", e.target.value)}
+        />
       </Field>
       <Field label="Last reviewed">
         <TextInput
@@ -408,27 +511,46 @@ function ConversationFields({
           />
         </Field>
         <Field label="Project route" required>
-          <Select value={data.projectRoute} onChange={(e) => patch("projectRoute", e.target.value as ConversationData["projectRoute"])}>
+          <Select
+            value={data.projectRoute}
+            onChange={(e) =>
+              patch("projectRoute", e.target.value as ConversationData["projectRoute"])
+            }
+          >
             {PROJECT_ROUTES.map((r) => (
-              <option key={r} value={r}>{r}</option>
+              <option key={r} value={r}>
+                {r}
+              </option>
             ))}
           </Select>
         </Field>
       </div>
       <Field label="High-signal findings">
-        <TextArea value={data.highSignalFindings} onChange={(e) => patch("highSignalFindings", e.target.value)} />
+        <TextArea
+          value={data.highSignalFindings}
+          onChange={(e) => patch("highSignalFindings", e.target.value)}
+        />
       </Field>
       <Field label="Decisions made">
-        <TextArea value={data.decisionsMade} onChange={(e) => patch("decisionsMade", e.target.value)} />
+        <TextArea
+          value={data.decisionsMade}
+          onChange={(e) => patch("decisionsMade", e.target.value)}
+        />
       </Field>
       <Field label="Open loops">
         <TextArea value={data.openLoops} onChange={(e) => patch("openLoops", e.target.value)} />
       </Field>
       <Field label="Reusable prompts">
-        <TextArea value={data.reusablePrompts} onChange={(e) => patch("reusablePrompts", e.target.value)} />
+        <TextArea
+          value={data.reusablePrompts}
+          onChange={(e) => patch("reusablePrompts", e.target.value)}
+        />
       </Field>
       <Field label="Memory candidates">
-        <TextArea value={data.memoryCandidates} onChange={(e) => patch("memoryCandidates", e.target.value)} />
+        <TextArea
+          value={data.memoryCandidates}
+          onChange={(e) => patch("memoryCandidates", e.target.value)}
+        />
       </Field>
       <Field
         label="Raw conversation text"
@@ -472,7 +594,10 @@ function DecisionFields({
         <TextArea value={data.trigger} onChange={(e) => patch("trigger", e.target.value)} />
       </Field>
       <Field label="What would change my mind">
-        <TextArea value={data.whatWouldChangeMyMind} onChange={(e) => patch("whatWouldChangeMyMind", e.target.value)} />
+        <TextArea
+          value={data.whatWouldChangeMyMind}
+          onChange={(e) => patch("whatWouldChangeMyMind", e.target.value)}
+        />
       </Field>
       <div className="grid gap-4 md:grid-cols-3">
         <Field label="Decision date" required>
@@ -484,16 +609,26 @@ function DecisionFields({
           />
         </Field>
         <Field label="Status" required>
-          <Select value={data.status} onChange={(e) => patch("status", e.target.value as DecisionData["status"])}>
+          <Select
+            value={data.status}
+            onChange={(e) => patch("status", e.target.value as DecisionData["status"])}
+          >
             {DECISION_STATUSES.map((s) => (
-              <option key={s} value={s}>{s}</option>
+              <option key={s} value={s}>
+                {s}
+              </option>
             ))}
           </Select>
         </Field>
         <Field label="Confidence" required>
-          <Select value={data.confidence} onChange={(e) => patch("confidence", e.target.value as DecisionData["confidence"])}>
+          <Select
+            value={data.confidence}
+            onChange={(e) => patch("confidence", e.target.value as DecisionData["confidence"])}
+          >
             {CONFIDENCE_LEVELS.map((c) => (
-              <option key={c} value={c}>{c}</option>
+              <option key={c} value={c}>
+                {c}
+              </option>
             ))}
           </Select>
         </Field>
@@ -505,7 +640,9 @@ function DecisionFields({
         >
           <option value="">— None —</option>
           {choices.map((r) => (
-            <option key={r.id} value={r.id}>{r.title}</option>
+            <option key={r.id} value={r.id}>
+              {r.title}
+            </option>
           ))}
         </Select>
       </Field>

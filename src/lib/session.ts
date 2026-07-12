@@ -25,10 +25,8 @@ function setState(next: SessionState) {
     prev.status === next.status &&
     (prev.status !== "signed-in" ||
       (next.status === "signed-in" &&
-        prev.session.user.id ===
-          (next as { session: Session }).session.user.id &&
-        prev.session.access_token ===
-          (next as { session: Session }).session.access_token))
+        prev.session.user.id === (next as { session: Session }).session.user.id &&
+        prev.session.access_token === (next as { session: Session }).session.access_token))
   ) {
     return;
   }
@@ -41,15 +39,11 @@ function ensureStarted() {
   started = true;
   supabase.auth.getSession().then(({ data }) => {
     setState(
-      data.session
-        ? { status: "signed-in", session: data.session }
-        : { status: "signed-out" },
+      data.session ? { status: "signed-in", session: data.session } : { status: "signed-out" },
     );
   });
   supabase.auth.onAuthStateChange((_evt, session) => {
-    setState(
-      session ? { status: "signed-in", session } : { status: "signed-out" },
-    );
+    setState(session ? { status: "signed-in", session } : { status: "signed-out" });
   });
 }
 

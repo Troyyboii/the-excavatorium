@@ -13,14 +13,20 @@ import {
   useRestoreExamples,
 } from "@/lib/archive";
 import { PageHeader, Banner, Toast } from "@/components/page-parts";
-import { backupFilename, buildBackup, download, validateBackup, type BackupCounts } from "@/lib/format";
+import {
+  backupFilename,
+  buildBackup,
+  download,
+  validateBackup,
+  type BackupCounts,
+} from "@/lib/format";
 import { supabase, SUPABASE_URL } from "@/lib/supabase";
 
 export const Route = createFileRoute("/settings")({ component: Page, ssr: false });
 
 function Page() {
   const session = useSession();
-  const email = session.status === "signed-in" ? session.session.user.email ?? null : null;
+  const email = session.status === "signed-in" ? (session.session.user.email ?? null) : null;
   const q = useArchive(true);
   const meta = useAppMetadata(true);
   const [toast, setToast] = useState<string | null>(null);
@@ -31,7 +37,9 @@ function Page() {
       <PageHeader title="Settings" />
       {error ? (
         <div className="mb-4">
-          <Banner kind="error" title="Something went wrong">{error}</Banner>
+          <Banner kind="error" title="Something went wrong">
+            {error}
+          </Banner>
         </div>
       ) : null}
 
@@ -41,7 +49,12 @@ function Page() {
         <ExampleSection setToast={setToast} setError={setError} />
         <StorageSection />
         <DestructiveSection setToast={setToast} setError={setError} />
-        <DiagnosticsSection email={email} meta={meta.data ?? null} qCount={q.data?.records.length ?? null} lCount={q.data?.links.length ?? null} />
+        <DiagnosticsSection
+          email={email}
+          meta={meta.data ?? null}
+          qCount={q.data?.records.length ?? null}
+          lCount={q.data?.links.length ?? null}
+        />
       </div>
 
       {toast ? <Toast message={toast} onClose={() => setToast(null)} /> : null}
@@ -111,17 +124,21 @@ function BackupSection({
 }) {
   const restore = useRestoreArchive();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [pendingRestore, setPendingRestore] = useState<
-    | { counts: BackupCounts; payload: ReturnType<typeof buildBackup> }
-    | null
-  >(null);
+  const [pendingRestore, setPendingRestore] = useState<{
+    counts: BackupCounts;
+    payload: ReturnType<typeof buildBackup>;
+  } | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
 
   // Backup is only safe to generate when the complete paginated archive
   // has loaded successfully. A pending or errored archive must not become
   // an empty "backup" on disk.
   const archiveReady = q.isSuccess && !!q.data;
-  const archiveError = q.isError ? (q.error instanceof Error ? q.error.message : String(q.error)) : null;
+  const archiveError = q.isError
+    ? q.error instanceof Error
+      ? q.error.message
+      : String(q.error)
+    : null;
 
   function onExport() {
     setError(null);
@@ -231,20 +248,30 @@ function BackupSection({
       ) : null}
       {pendingRestore ? (
         <div className="rounded-md border border-[color:var(--warning)]/60 bg-[color:var(--warning)]/10 p-3 text-sm">
-          <div className="font-medium text-foreground">Replace current archive with imported file?</div>
+          <div className="font-medium text-foreground">
+            Replace current archive with imported file?
+          </div>
           <p className="mt-1 text-muted-foreground">
-            This deletes every current record and link and installs the imported archive
-            atomically. It is strongly recommended to Export JSON backup first.
+            This deletes every current record and link and installs the imported archive atomically.
+            It is strongly recommended to Export JSON backup first.
           </p>
           <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-            <dt className="text-muted-foreground">Schema version</dt><dd>{pendingRestore.counts.schemaVersion}</dd>
-            <dt className="text-muted-foreground">Total records</dt><dd>{pendingRestore.counts.totalRecords}</dd>
-            <dt className="text-muted-foreground">Tools</dt><dd>{pendingRestore.counts.tool}</dd>
-            <dt className="text-muted-foreground">Repositories</dt><dd>{pendingRestore.counts.repository}</dd>
-            <dt className="text-muted-foreground">Conversations</dt><dd>{pendingRestore.counts.conversation}</dd>
-            <dt className="text-muted-foreground">Decisions</dt><dd>{pendingRestore.counts.decision}</dd>
-            <dt className="text-muted-foreground">Links</dt><dd>{pendingRestore.counts.links}</dd>
-            <dt className="text-muted-foreground">Example records</dt><dd>{pendingRestore.counts.examples}</dd>
+            <dt className="text-muted-foreground">Schema version</dt>
+            <dd>{pendingRestore.counts.schemaVersion}</dd>
+            <dt className="text-muted-foreground">Total records</dt>
+            <dd>{pendingRestore.counts.totalRecords}</dd>
+            <dt className="text-muted-foreground">Tools</dt>
+            <dd>{pendingRestore.counts.tool}</dd>
+            <dt className="text-muted-foreground">Repositories</dt>
+            <dd>{pendingRestore.counts.repository}</dd>
+            <dt className="text-muted-foreground">Conversations</dt>
+            <dd>{pendingRestore.counts.conversation}</dd>
+            <dt className="text-muted-foreground">Decisions</dt>
+            <dd>{pendingRestore.counts.decision}</dd>
+            <dt className="text-muted-foreground">Links</dt>
+            <dd>{pendingRestore.counts.links}</dd>
+            <dt className="text-muted-foreground">Example records</dt>
+            <dd>{pendingRestore.counts.examples}</dd>
           </dl>
           <div className="mt-3 flex flex-wrap gap-2">
             <button
@@ -349,12 +376,11 @@ function StorageSection() {
   return (
     <Card title="Storage and privacy">
       <p className="text-sm text-muted-foreground">
-        Your archive is stored in your private Supabase database and synchronized
-        across devices where you sign in.
+        Your archive is stored in your private Supabase database and synchronized across devices
+        where you sign in.
       </p>
       <p className="text-sm text-muted-foreground">
-        The archive is not public. Export JSON backups for independent recovery and
-        portability.
+        The archive is not public. Export JSON backups for independent recovery and portability.
       </p>
     </Card>
   );
@@ -383,7 +409,8 @@ function DestructiveSection({
       ) : (
         <div className="space-y-3">
           <p className="text-sm text-foreground">
-            This deletes every record and link owned by your account. Type <span className="font-mono">DELETE</span> to confirm.
+            This deletes every record and link owned by your account. Type{" "}
+            <span className="font-mono">DELETE</span> to confirm.
           </p>
           <input
             value={confirmText}
@@ -411,7 +438,10 @@ function DestructiveSection({
             </button>
             <button
               type="button"
-              onClick={() => { setOpen(false); setConfirmText(""); }}
+              onClick={() => {
+                setOpen(false);
+                setConfirmText("");
+              }}
               className="inline-flex min-h-11 items-center rounded-md px-3 py-2 text-sm text-muted-foreground"
             >
               Cancel
@@ -430,20 +460,37 @@ function DiagnosticsSection({
   lCount,
 }: {
   email: string | null;
-  meta: null | { schema_version: number; seed_lifecycle_initialized: boolean; created_at: string; updated_at: string };
+  meta: null | {
+    schema_version: number;
+    seed_lifecycle_initialized: boolean;
+    created_at: string;
+    updated_at: string;
+  };
   qCount: number | null;
   lCount: number | null;
 }) {
-  const host = useMemo(() => { try { return new URL(SUPABASE_URL).host; } catch { return SUPABASE_URL; } }, []);
+  const host = useMemo(() => {
+    try {
+      return new URL(SUPABASE_URL).host;
+    } catch {
+      return SUPABASE_URL;
+    }
+  }, []);
   return (
     <Card title="Diagnostics">
       <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-        <dt className="text-muted-foreground">Supabase host</dt><dd className="font-mono">{host}</dd>
-        <dt className="text-muted-foreground">Signed-in email</dt><dd className="font-mono truncate">{email ?? "—"}</dd>
-        <dt className="text-muted-foreground">Schema version</dt><dd>{meta?.schema_version ?? "—"}</dd>
-        <dt className="text-muted-foreground">Lifecycle initialized</dt><dd>{meta ? String(meta.seed_lifecycle_initialized) : "—"}</dd>
-        <dt className="text-muted-foreground">Records loaded</dt><dd>{qCount ?? "—"}</dd>
-        <dt className="text-muted-foreground">Links loaded</dt><dd>{lCount ?? "—"}</dd>
+        <dt className="text-muted-foreground">Supabase host</dt>
+        <dd className="font-mono">{host}</dd>
+        <dt className="text-muted-foreground">Signed-in email</dt>
+        <dd className="font-mono truncate">{email ?? "—"}</dd>
+        <dt className="text-muted-foreground">Schema version</dt>
+        <dd>{meta?.schema_version ?? "—"}</dd>
+        <dt className="text-muted-foreground">Lifecycle initialized</dt>
+        <dd>{meta ? String(meta.seed_lifecycle_initialized) : "—"}</dd>
+        <dt className="text-muted-foreground">Records loaded</dt>
+        <dd>{qCount ?? "—"}</dd>
+        <dt className="text-muted-foreground">Links loaded</dt>
+        <dd>{lCount ?? "—"}</dd>
       </dl>
     </Card>
   );
