@@ -71,7 +71,7 @@ export function AppShell({
             aria-hidden
           />
           <aside
-            className="fixed inset-y-0 left-0 z-50 flex w-[260px] flex-col border-r border-border bg-sidebar md:hidden"
+            className="fixed inset-y-0 left-0 z-50 flex w-[min(280px,85vw)] max-w-full flex-col border-r border-border bg-sidebar md:hidden"
             role="dialog"
             aria-label="Navigation"
           >
