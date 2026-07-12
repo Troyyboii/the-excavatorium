@@ -677,13 +677,11 @@ begin
     from _restore_links;
   get diagnostics inserted_links = row_count;
 
-  -- Preserve app_metadata identity; only refresh lifecycle marker.
-  insert into public.app_metadata (user_id, schema_version, seed_lifecycle_initialized)
-    values (caller_id, 1, true)
-  on conflict (user_id) do update
-    set schema_version = 1,
-        seed_lifecycle_initialized = true,
-        updated_at = now();
+  -- app_metadata is intentionally NOT touched. Restore replaces only
+  -- caller-owned records and record_links. Authentication, profiles, and
+  -- app_metadata (schema version, seed_lifecycle_initialized, timestamps)
+  -- remain exactly as they were before the call.
+
 
   return jsonb_build_object(
     'insertedRecords', inserted_records,
