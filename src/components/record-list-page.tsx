@@ -91,7 +91,7 @@ export function RecordListPage({
       />
 
       <div className="mb-4 rounded-md border border-border bg-card p-3">
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           {type === "tool" ? (
             <>
               <FilterSelect
