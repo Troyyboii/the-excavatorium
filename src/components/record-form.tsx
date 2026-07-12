@@ -149,7 +149,7 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
   );
 
   return (
-    <form onSubmit={onSubmit} className="space-y-5">
+    <form onSubmit={onSubmit} className="space-y-5 pb-40 sm:pb-24">
       {error ? (
         <Banner kind="error" title="Could not save this record">
           {error}. Existing data was not changed. You can safely retry.
