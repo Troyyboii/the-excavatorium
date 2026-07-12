@@ -1,14 +1,22 @@
 // Deterministic paginated archive reader + React Query hooks.
 // All reads go through RLS via the publishable-key client. All writes go
 // through the approved RPC functions.
+//
+// Every query key is scoped by the authenticated user id so that data
+// belonging to one user is never rendered from cache to another. When the
+// signed-in user changes (including sign-out) the AuthGate clears the whole
+// React Query cache before rendering.
 
 import {
   useMutation,
   useQuery,
   useQueryClient,
+  type QueryKey,
 } from "@tanstack/react-query";
 import { supabase } from "./supabase";
+import { useCurrentUserId } from "./session";
 import type {
+
   ArchiveExport,
   ArchiveLink,
   ArchiveRecord,
