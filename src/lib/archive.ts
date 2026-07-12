@@ -97,7 +97,7 @@ function toLink(row: LinkRow): ArchiveLink {
     sourceId: row.source_record_id,
     targetId: row.target_record_id,
     seedKey: row.seed_key,
-    createdAt: row.created_at,
+    createdAt: normalizeTimestamp(row.created_at),
   };
 }
 
