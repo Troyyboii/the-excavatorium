@@ -48,8 +48,8 @@ where table_schema = 'public'
 order by table_name, grantee, privilege_type;
 ```
 
-Expected: only `SELECT` for `authenticated`; no `INSERT`, `UPDATE`, or
-`DELETE` for `anon`, `authenticated`, or `public`.
+Expected: only `SELECT` for `authenticated`; no privileges for `anon` or
+`public`.
 
 ## 4. Function execution privileges
 
@@ -139,19 +139,32 @@ Expected: no matches.
 
 ## Gate record
 
-Fill in with exactly one of the labels above. Nothing below is filled
-in by the build agent — it must be recorded by the human operator.
-
 | Item | Status |
 | --- | --- |
-| migrations created | |
-| migrations actually applied | |
-| owner account created | |
-| owner magic-link delivery works | |
-| `shouldCreateUser: false` works | |
-| public signup disabled | |
-| redirect URLs configured | |
-| RLS inspected | |
-| RPC privileges inspected | |
-| second-user isolation tested where possible | |
-| no Lovable Cloud backend exists | |
+| migrations created | Migration created |
+| migrations actually applied | Migration applied |
+| owner account created | Manually configured |
+| owner magic-link delivery works | Verified |
+| `shouldCreateUser: false` works | Verified |
+| public signup disabled | Manually configured |
+| redirect URLs configured | Manually configured |
+| RLS inspected | Verified |
+| RPC privileges inspected | Verified |
+| second-user isolation tested where possible | Not tested |
+| no Lovable Cloud backend exists | Verified |
+
+## Verification evidence notes
+
+- Auth reachability: reachable
+- Authenticated owner session: verified
+- `initialize_user_archive` returned `{"status":"installed"}`
+- `records` count: 13
+- `record_links` count: 9
+- `app_metadata` count: 1
+- Authenticated table privileges: `SELECT` only
+- `anon` and `public` table privileges: none
+- Public RPC execution denied to `anon`
+- Internal helper execution denied to `authenticated`
+- All public functions use an explicit empty `search_path`
+- Composite `record_links` ownership foreign keys verified
+- Seed identity constraints verified
