@@ -239,18 +239,20 @@ function BackupSection({
             <button
               type="button"
               onClick={onExport}
-              className="inline-flex min-h-11 items-center rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              disabled={!archiveReady}
+              className="inline-flex min-h-11 items-center rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-60"
             >
               Download current backup first
             </button>
             <button
               type="button"
               onClick={onConfirmRestore}
-              disabled={restore.isPending}
+              disabled={restore.isPending || !archiveReady}
               className="inline-flex min-h-11 items-center rounded-md bg-[color:var(--destructive)] px-3 py-2 text-sm font-medium text-[color:var(--destructive-foreground)] disabled:opacity-60"
             >
               {restore.isPending ? "Restoring…" : "Confirm replace"}
             </button>
+
             <button
               type="button"
               onClick={() => setPendingRestore(null)}
