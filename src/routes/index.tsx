@@ -35,9 +35,7 @@ function Index() {
     // read here.
     fetch(`${SUPABASE_URL}/auth/v1/settings`, {
       headers: {
-        apikey: (
-          import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined
-        ) ?? "",
+        apikey: SUPABASE_PUBLISHABLE_KEY,
       },
     })
       .then((r) => {
