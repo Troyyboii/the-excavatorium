@@ -34,7 +34,7 @@ export function NewRecordButton({ to, label }: { to: string; label: string }) {
   return (
     <Link
       to={to}
-      className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[color:var(--brass-muted)] bg-[color:var(--burgundy-muted)] px-3 py-2 text-sm text-foreground transition-colors hover:bg-[color:var(--record-hover)]"
+      className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[color:var(--brass-muted)] bg-[color:var(--burgundy-muted)] px-3 py-2 text-sm text-foreground transition-colors hover:bg-[color:var(--record-hover)]"
     >
       <Plus size={16} weight="bold" />
       {label}
