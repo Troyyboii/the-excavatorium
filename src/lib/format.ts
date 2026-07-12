@@ -299,7 +299,9 @@ export function validateBackup(raw: unknown): ValidationResult {
           ok: false,
           error: `records[${i}].seedKey "${rec.seedKey}" belongs to recordType "${approved}", not "${rec.recordType}"`,
         };
+      seedKeyToId.set(rec.seedKey, rec.id as string);
     }
+
 
     if (typeof rec.createdAt !== "string" || !ISO_TS_RE.test(rec.createdAt))
       return { ok: false, error: `records[${i}].createdAt is malformed` };
