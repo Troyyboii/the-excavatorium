@@ -144,3 +144,38 @@ The frontend uses only:
 
 Never place a service-role key, database password, JWT signing secret,
 SMTP credentials, OAuth secrets, or GitHub tokens in browser code.
+
+## 10. Conversation excavation Edge Function
+
+The optional Build Week Conversation Excavation feature lives in
+`supabase/functions/conversation-extract/index.ts`. It is not a migration and
+does not write to the database. Deploy it only after configuring the OpenAI key
+as a Supabase project secret:
+
+```
+supabase secrets set OPENAI_API_KEY=...
+supabase functions deploy conversation-extract
+```
+
+Set `LOVABLE_PREVIEW_ORIGIN` to the exact current HTTPS Lovable preview origin
+when preview use is required. The function otherwise permits only
+`https://the-excavatorium.lovable.app` and `http://localhost:8080`; unsupported
+browser origins receive a sanitized rejection.
+
+The browser invokes the function only after the user explicitly chooses
+**“Excavate with GPT-5.6”**. The function validates the Supabase bearer token
+server-side with `auth.getUser()`, never accepts a browser-provided user ID,
+and uses `gpt-5.6-terra` via the OpenAI Responses API with strict JSON-schema
+output. It rejects malformed and oversized requests, caps model output and
+upstream wait time, does not log transcripts, output, headers, secrets, or raw
+upstream errors, and does not persist extraction output in The Excavatorium or
+the Edge Function. The OpenAI request explicitly uses `store: false`; standard
+OpenAI API abuse-monitoring retention policies may still apply.
+
+`OPENAI_API_KEY` must exist only in Supabase Edge Function secrets. Do not put
+it in a `VITE_*` variable, `.env.example`, frontend source, Git, logs, or error
+messages. Suggested record IDs are untrusted draft values; the existing
+`save_record_with_links` RPC remains authoritative for ownership validation at
+save time. Persistent request-frequency limiting is not implemented. The
+current abuse controls are authenticated-only invocation, disabled public
+signup, bounded request/output sizes, and OpenAI API spending controls.
