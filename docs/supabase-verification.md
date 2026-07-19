@@ -181,6 +181,25 @@ Expected: no matches.
 | lint passed                                 | Verified            |
 | `git diff --check` passed                   | Verified            |
 
+## Build Week Conversation Excavation deployment checks
+
+The following checks require a deployed `conversation-extract` Edge Function,
+an `OPENAI_API_KEY` Supabase secret, and a signed-in test user. They are not
+covered by the source-only verification above.
+
+| Scenario                                    | Expected result                                                                    | Status     |
+| ------------------------------------------- | ---------------------------------------------------------------------------------- | ---------- |
+| signed-out request                          | `401`; no OpenAI call or persisted data                                            | Not tested |
+| missing `OPENAI_API_KEY` secret             | sanitized `503`; no key detail returned                                            | Not tested |
+| malformed request                           | sanitized `400`; no OpenAI call                                                    | Not tested |
+| oversized transcript                        | client blocks it; function rejects it if bypassed                                  | Not tested |
+| OpenAI timeout or invalid structured output | sanitized retryable `502`/`504`; no persisted data                                 | Not tested |
+| Cancel or discard                           | request is aborted or draft removed; form values stay unchanged                    | Not tested |
+| edited extraction save                      | only the ordinary `save_record_with_links` RPC persists edited fields              | Not tested |
+| suggested-link removal                      | removed IDs are absent from the later RPC request                                  | Not tested |
+| ordinary manual Conversation creation       | unchanged form and RPC workflow succeeds without an extraction                     | Not tested |
+| allowed browser origins                     | production, configured preview, and localhost succeed; other origins receive `403` | Not tested |
+
 ## Verification evidence notes
 
 - Auth reachability: reachable

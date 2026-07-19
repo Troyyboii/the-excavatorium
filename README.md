@@ -50,6 +50,35 @@ service-role key, database password, JWT signing secret, SMTP
 credentials, OAuth secrets, private API keys, or GitHub tokens in
 browser code or committed files.
 
+## Build Week: Conversation Excavation
+
+The existing application already supports manual Conversation records and
+persists them through the protected `save_record_with_links` RPC. The Build
+Week extension adds an optional, explicit **“Excavate with GPT-5.6”** action
+to that existing form. It sends pasted conversation text to a Supabase Edge
+Function, returns an editable local draft, and does not save anything until
+the user uses the ordinary Save control.
+
+Deploy the function separately after setting `OPENAI_API_KEY` in the Supabase
+project's Edge Function secrets. Do not add that key to `.env`, `.env.local`,
+browser variables, Git, or Lovable configuration.
+
+```
+supabase secrets set OPENAI_API_KEY=...
+supabase functions deploy conversation-extract
+```
+
+The Excavatorium and its Edge Function do not persist extraction requests or
+results. The OpenAI request uses `store: false`; standard OpenAI API
+abuse-monitoring retention policies may still apply. The function requires a
+valid signed-in Supabase user, caps request and output sizes, and returns only
+sanitized errors. Suggested links remain editable and the existing RPC remains
+the authoritative ownership check when the user eventually saves.
+
+Persistent request-frequency limiting is not implemented. Current abuse
+controls are authenticated-only invocation, disabled public signup, bounded
+request/output sizes, and OpenAI API spending controls.
+
 ## Supabase migrations
 
 Ordered SQL lives under [`docs/migrations/`](./docs/migrations/):

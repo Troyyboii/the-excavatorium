@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Field, TextInput, TextArea, Select, Section } from "./form-parts";
 import { TagInput } from "./tag-input";
@@ -25,6 +25,11 @@ import {
   emptyRecordData,
 } from "@/lib/types";
 import { normalizeTags } from "@/lib/format";
+import {
+  excavateConversation,
+  MAX_CONVERSATION_TRANSCRIPT_CHARS,
+  type ConversationExtraction,
+} from "@/lib/conversation-excavation";
 import { plural } from "./record-list";
 
 function todayLocal(): string {
@@ -148,6 +153,32 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
     [allRecords, existing?.id],
   );
 
+  function applyConversationExtraction(extraction: ConversationExtraction) {
+    setTitle(extraction.title);
+    setSummary(extraction.summary);
+    setTags(extraction.tags);
+    setData((previous) => ({
+      ...previous,
+      projectRoute: extraction.projectRoute,
+      highSignalFindings: extraction.highSignalFindings,
+      decisionsMade: extraction.decisionsMade,
+      openLoops: extraction.openLoops,
+      reusablePrompts: extraction.reusablePrompts,
+      memoryCandidates: extraction.memoryCandidates,
+    }));
+    setSelectedLinks((previous) =>
+      Array.from(
+        new Set([
+          ...previous,
+          ...extraction.suggestedRecordIds.filter(
+            (id) => id !== existing?.id && allRecords.some((r) => r.id === id),
+          ),
+        ]),
+      ),
+    );
+    setDirty(true);
+  }
+
   return (
     <form onSubmit={onSubmit} className="space-y-5 pb-40 sm:pb-24">
       {error ? (
@@ -203,7 +234,14 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
         <RepositoryFields data={data as RepositoryData} patch={patch as never} />
       ) : null}
       {recordType === "conversation" ? (
-        <ConversationFields data={data as ConversationData} patch={patch as never} />
+        <>
+          <ConversationExcavationPanel
+            rawConversationText={(data as ConversationData).rawConversationText}
+            allRecords={allRecords}
+            onApply={applyConversationExtraction}
+          />
+          <ConversationFields data={data as ConversationData} patch={patch as never} />
+        </>
       ) : null}
       {recordType === "decision" ? (
         <DecisionFields
@@ -573,6 +611,265 @@ function ConversationFields({
         )}
       </Field>
     </Section>
+  );
+}
+
+function ConversationExcavationPanel({
+  rawConversationText,
+  allRecords,
+  onApply,
+}: {
+  rawConversationText: string;
+  allRecords: ArchiveRecord[];
+  onApply: (extraction: ConversationExtraction) => void;
+}) {
+  const abortRef = useRef<AbortController | null>(null);
+  const requestIdRef = useRef(0);
+  const latestTranscriptRef = useRef(rawConversationText);
+  const [extraction, setExtraction] = useState<ConversationExtraction | null>(null);
+  const [extractionTranscript, setExtractionTranscript] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    latestTranscriptRef.current = rawConversationText;
+    if (extractionTranscript !== null && extractionTranscript !== rawConversationText) {
+      setExtraction(null);
+      setExtractionTranscript(null);
+    }
+  }, [extractionTranscript, rawConversationText]);
+
+  useEffect(
+    () => () => {
+      abortRef.current?.abort();
+    },
+    [],
+  );
+
+  async function start() {
+    const transcript = rawConversationText;
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+    abortRef.current?.abort();
+    setError(null);
+    setExtraction(null);
+    setExtractionTranscript(null);
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setIsLoading(true);
+    try {
+      const next = await excavateConversation(transcript, allRecords, controller.signal);
+      if (
+        !controller.signal.aborted &&
+        requestIdRef.current === requestId &&
+        latestTranscriptRef.current === transcript
+      ) {
+        setExtraction(next);
+        setExtractionTranscript(transcript);
+      }
+    } catch (cause) {
+      if (
+        requestIdRef.current === requestId &&
+        !(cause instanceof DOMException && cause.name === "AbortError")
+      ) {
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Excavation could not be completed. Please retry.",
+        );
+      }
+    } finally {
+      if (requestIdRef.current === requestId && abortRef.current === controller) {
+        abortRef.current = null;
+        setIsLoading(false);
+      }
+    }
+  }
+
+  function discard() {
+    requestIdRef.current += 1;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setIsLoading(false);
+    setError(null);
+    setExtraction(null);
+    setExtractionTranscript(null);
+  }
+
+  const activeExtraction = extractionTranscript === rawConversationText ? extraction : null;
+  const linkedRecords = activeExtraction
+    ? activeExtraction.suggestedRecordIds
+        .map((id) => allRecords.find((record) => record.id === id))
+        .filter((record): record is ArchiveRecord => Boolean(record))
+    : [];
+
+  return (
+    <Section title="Conversation excavation">
+      <p className="text-sm text-muted-foreground">
+        Sends the pasted conversation to OpenAI only when you start an excavation. Nothing is saved
+        automatically.
+      </p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={start}
+          disabled={
+            isLoading ||
+            rawConversationText.trim().length === 0 ||
+            rawConversationText.length > MAX_CONVERSATION_TRANSCRIPT_CHARS
+          }
+          className="inline-flex min-h-11 items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-[color:var(--primary)]/90 disabled:opacity-60"
+        >
+          {isLoading ? "Excavating…" : "Excavate with GPT-5.6"}
+        </button>
+        {isLoading || activeExtraction ? (
+          <button
+            type="button"
+            onClick={discard}
+            className="inline-flex min-h-11 items-center rounded-md border border-input bg-background px-4 py-2 text-sm text-foreground hover:bg-[color:var(--record-hover)]"
+          >
+            {isLoading ? "Cancel" : "Discard draft"}
+          </button>
+        ) : null}
+        {error ? (
+          <button
+            type="button"
+            onClick={start}
+            className="inline-flex min-h-11 items-center rounded-md border border-input bg-background px-4 py-2 text-sm text-foreground hover:bg-[color:var(--record-hover)]"
+          >
+            Retry
+          </button>
+        ) : null}
+      </div>
+      {rawConversationText.length > MAX_CONVERSATION_TRANSCRIPT_CHARS ? (
+        <p className="mt-3 text-sm text-[color:var(--destructive-foreground)]">
+          The conversation exceeds the {MAX_CONVERSATION_TRANSCRIPT_CHARS.toLocaleString()}{" "}
+          character excavation limit.
+        </p>
+      ) : null}
+      {error ? (
+        <Banner kind="error" title="Could not excavate this conversation">
+          {error} The form has not been changed.
+        </Banner>
+      ) : null}
+      {activeExtraction ? (
+        <ExtractionReview
+          extraction={activeExtraction}
+          linkedRecords={linkedRecords}
+          onChange={setExtraction}
+          disabled={isLoading}
+          onApply={() => {
+            onApply(activeExtraction);
+            setExtraction(null);
+            setExtractionTranscript(null);
+            setError(null);
+          }}
+        />
+      ) : null}
+    </Section>
+  );
+}
+
+function ExtractionReview({
+  extraction,
+  linkedRecords,
+  onChange,
+  onApply,
+  disabled,
+}: {
+  extraction: ConversationExtraction;
+  linkedRecords: ArchiveRecord[];
+  onChange: (next: ConversationExtraction) => void;
+  onApply: () => void;
+  disabled: boolean;
+}) {
+  function patch<K extends keyof ConversationExtraction>(key: K, value: ConversationExtraction[K]) {
+    onChange({ ...extraction, [key]: value });
+  }
+
+  return (
+    <div className="mt-5 space-y-4 border-t border-border pt-5">
+      <p className="text-sm text-muted-foreground">
+        Review and edit this draft before applying it to the form.
+      </p>
+      <Field label="Draft title">
+        <TextInput
+          value={extraction.title}
+          onChange={(event) => patch("title", event.target.value)}
+        />
+      </Field>
+      <Field label="Draft summary">
+        <TextArea
+          value={extraction.summary}
+          onChange={(event) => patch("summary", event.target.value)}
+        />
+      </Field>
+      <Field label="Draft tags">
+        <TagInput value={extraction.tags} onChange={(value) => patch("tags", value)} />
+      </Field>
+      <Field label="Draft project route">
+        <Select
+          value={extraction.projectRoute}
+          onChange={(event) =>
+            patch("projectRoute", event.target.value as ConversationData["projectRoute"])
+          }
+        >
+          {PROJECT_ROUTES.map((route) => (
+            <option key={route} value={route}>
+              {route}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      {(
+        [
+          ["High-signal findings", "highSignalFindings"],
+          ["Decisions made", "decisionsMade"],
+          ["Open loops", "openLoops"],
+          ["Reusable prompts", "reusablePrompts"],
+          ["Memory candidates", "memoryCandidates"],
+        ] as const
+      ).map(([label, key]) => (
+        <Field key={key} label={label}>
+          <TextArea value={extraction[key]} onChange={(event) => patch(key, event.target.value)} />
+        </Field>
+      ))}
+      <div>
+        <p className="text-sm font-medium text-foreground">Suggested record links</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Suggestions are optional. Remove any before applying the draft.
+        </p>
+        {linkedRecords.length ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {linkedRecords.map((record) => (
+              <button
+                key={record.id}
+                type="button"
+                onClick={() =>
+                  patch(
+                    "suggestedRecordIds",
+                    extraction.suggestedRecordIds.filter((id) => id !== record.id),
+                  )
+                }
+                className="inline-flex min-h-11 items-center rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground hover:bg-[color:var(--record-hover)]"
+              >
+                Remove {record.title}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-2 text-sm text-muted-foreground">No existing records were suggested.</p>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={onApply}
+        disabled={disabled}
+        className="inline-flex min-h-11 items-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-[color:var(--record-hover)]"
+      >
+        Apply reviewed draft to form
+      </button>
+    </div>
   );
 }
 
