@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "strict": true
+  },
+  "tasks": {
+    "check": "deno check conversation-extract/index.ts",
+    "test": "deno test conversation-extract/request.test.ts"
+  }
+}
