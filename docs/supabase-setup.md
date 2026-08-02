@@ -27,6 +27,8 @@ docs/migrations/0005_validation_helpers.sql
 docs/migrations/0006_write_rpcs.sql
 docs/migrations/0007_seed_lifecycle.sql
 docs/migrations/0008_restore_hardening.sql
+docs/migrations/0009_conversation_extraction_guardrails.sql
+docs/migrations/0010_rls_and_fk_advisor_cleanup.sql
 ```
 
 Two supported paths:
@@ -47,6 +49,8 @@ supabase db execute --file docs/migrations/0005_validation_helpers.sql
 supabase db execute --file docs/migrations/0006_write_rpcs.sql
 supabase db execute --file docs/migrations/0007_seed_lifecycle.sql
 supabase db execute --file docs/migrations/0008_restore_hardening.sql
+supabase db execute --file docs/migrations/0009_conversation_extraction_guardrails.sql
+supabase db execute --file docs/migrations/0010_rls_and_fk_advisor_cleanup.sql
 ```
 
 Migration `0008_restore_hardening.sql` enforces the approved canonical
@@ -176,6 +180,20 @@ OpenAI API abuse-monitoring retention policies may still apply.
 it in a `VITE_*` variable, `.env.example`, frontend source, Git, logs, or error
 messages. Suggested record IDs are untrusted draft values; the existing
 `save_record_with_links` RPC remains authoritative for ownership validation at
-save time. Persistent request-frequency limiting is not implemented. The
-current abuse controls are authenticated-only invocation, disabled public
-signup, bounded request/output sizes, and OpenAI API spending controls.
+save time.
+
+Migration `0009_conversation_extraction_guardrails.sql` creates an
+RLS-protected rate-limit table in the non-public `private` schema and one
+authenticated RPC, `consume_conversation_extraction_quota()`. It admits at
+most ten valid requests in a rolling hour and enforces a 30-second cooldown.
+The function consumes quota only after authentication and full input
+validation, immediately before the OpenAI request. It keeps the
+`Content-Length` check as a cheap early rejection but also stream-reads and
+counts the actual request bytes, so a missing or forged header cannot bypass
+the 110 KB limit.
+
+`supabase/config.toml` records that this function requires a verified JWT;
+deployments must preserve that setting. Migration
+`0010_rls_and_fk_advisor_cleanup.sql` keeps the existing owner-only read
+semantics while removing per-row `auth.uid()` evaluation and adds indexes that
+cover the two composite record-link foreign keys.
