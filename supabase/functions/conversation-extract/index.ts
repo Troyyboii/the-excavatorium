@@ -261,7 +261,11 @@ Deno.serve(async (req) => {
     "consume_conversation_extraction_quota",
   );
   if (quotaError || !isQuotaDecision(quotaData)) {
-    return json({ error: "Excavation is temporarily unavailable. Please retry." }, 503, allowedOrigin);
+    return json(
+      { error: "Excavation is temporarily unavailable. Please retry." },
+      503,
+      allowedOrigin,
+    );
   }
   if (!quotaData.allowed) {
     return json(
