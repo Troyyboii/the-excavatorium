@@ -1,0 +1,2 @@
+[functions.conversation-extract]
+verify_jwt = true
