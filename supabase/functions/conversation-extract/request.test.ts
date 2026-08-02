@@ -1,7 +1,4 @@
-import {
-  MAX_REQUEST_BYTES,
-  readJsonObjectBody,
-} from "./request.ts";
+import { MAX_REQUEST_BYTES, readJsonObjectBody } from "./request.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
