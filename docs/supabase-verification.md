@@ -200,6 +200,29 @@ covered by the source-only verification above.
 | ordinary manual Conversation creation       | unchanged form and RPC workflow succeeds without an extraction                     | Not tested |
 | allowed browser origins                     | production, configured preview, and localhost succeed; other origins receive `403` | Not tested |
 
+
+
+## Conversation Excavation guardrails
+
+Migration `0009_conversation_extraction_guardrails.sql` and the Edge Function
+source are required together. It is correct only when the migration has been
+applied before the function version that calls
+`consume_conversation_extraction_quota()` is deployed.
+
+| Scenario | Expected result | Status |
+| --- | --- | --- |
+| oversized body without `Content-Length` | `413`; body is cancelled before JSON parsing | Not tested |
+| forged small `Content-Length` with an oversized body | `413`; actual bytes control the limit | Not tested |
+| valid request inside quota | admitted, then one OpenAI request | Not tested |
+| second valid request within 30 seconds | `429` with `Retry-After`; no OpenAI request | Not tested |
+| eleventh valid request in the rolling hour | `429` with `Retry-After`; no OpenAI request | Not tested |
+| User B reading or consuming User A's quota | denied by RLS / owner scope | Not tested |
+
+Migration `0010_rls_and_fk_advisor_cleanup.sql` should remove the four
+`auth_rls_initplan` notices and the two unindexed composite-FK notices.
+The existing write-RPC `SECURITY DEFINER` warnings remain intentional and
+must be treated as documented exceptions, not silently removed.
+
 ## Verification evidence notes
 
 - Auth reachability: reachable

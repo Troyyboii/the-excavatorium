@@ -120,6 +120,11 @@ validation are tracked separately in the verification checklist.
 Conversation Excavation runtime scenarios, including malformed requests,
 timeouts, discarding drafts, edited saves, suggested-link removal, and
 origin handling, remain marked **Not tested** in the verification checklist.
-Persistent request-frequency limiting is also not implemented; current
-controls are authenticated invocation, disabled public signup, bounded
-request/output sizes, and OpenAI spending controls.
+
+The function hard-limits the raw request body to 110 KB even when
+`Content-Length` is missing or false. Valid, authenticated requests are also
+admitted through a durable per-user limit of ten requests in a rolling hour,
+with a 30-second cooldown to stop double-clicks and client loops. Invalid,
+signed-out, or unconfigured requests do not consume the quota. An admitted
+request that later fails upstream still consumes a slot, deliberately bounding
+retry-driven OpenAI cost.

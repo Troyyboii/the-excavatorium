@@ -1,7 +1,11 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  declaredContentLengthExceedsLimit,
+  MAX_REQUEST_BYTES,
+  readJsonObjectBody,
+} from "./request.ts";
 
 const MAX_TRANSCRIPT_CHARS = 24_000;
-const MAX_REQUEST_BYTES = 110_000;
 const MAX_CANDIDATE_RECORDS = 75;
 const MAX_OUTPUT_CHARS = 40_000;
 const OPENAI_TIMEOUT_MS = 25_000;
@@ -16,6 +20,7 @@ const corsHeaders = {
 const projectRoutes = ["The Forge", "The Chamber", "The Book", "General", "Do not preserve"];
 
 type CandidateRecord = { id: string; title: string; recordType: string };
+type QuotaDecision = { allowed: boolean; remaining: number; retryAfterSeconds: number };
 
 type Extraction = {
   title: string;
@@ -50,10 +55,19 @@ function responseHeaders(origin: string | null) {
   return origin ? { ...corsHeaders, "Access-Control-Allow-Origin": origin } : corsHeaders;
 }
 
-function json(body: Record<string, unknown>, status = 200, origin: string | null = null) {
+function json(
+  body: Record<string, unknown>,
+  status = 200,
+  origin: string | null = null,
+  extraHeaders: Record<string, string> = {},
+) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...responseHeaders(origin), "Content-Type": "application/json" },
+    headers: {
+      ...responseHeaders(origin),
+      ...extraHeaders,
+      "Content-Type": "application/json",
+    },
   });
 }
 
@@ -87,6 +101,22 @@ function isStringList(value: unknown, maximum: number, itemMaximum: number): val
     Array.isArray(value) &&
     value.length <= maximum &&
     value.every((item) => typeof item === "string" && item.length <= itemMaximum)
+  );
+}
+
+function isQuotaDecision(value: unknown): value is QuotaDecision {
+  if (!value || typeof value !== "object") return false;
+  const decision = value as Record<string, unknown>;
+  const remaining = decision.remaining;
+  const retryAfterSeconds = decision.retryAfterSeconds;
+  return (
+    typeof decision.allowed === "boolean" &&
+    typeof remaining === "number" &&
+    Number.isInteger(remaining) &&
+    typeof retryAfterSeconds === "number" &&
+    Number.isInteger(retryAfterSeconds) &&
+    remaining >= 0 &&
+    retryAfterSeconds >= 0
   );
 }
 
@@ -172,12 +202,12 @@ Deno.serve(async (req) => {
   const requestOrigin = req.headers.get("Origin");
   const allowedOrigin = requestOrigin && allowedOrigins().has(requestOrigin) ? requestOrigin : null;
   if (requestOrigin && !allowedOrigin) return json({ error: "Origin is not allowed." }, 403);
-  if (req.method === "OPTIONS")
+  if (req.method === "OPTIONS") {
     return new Response("ok", { headers: responseHeaders(allowedOrigin) });
+  }
   if (req.method !== "POST") return json({ error: "Method not allowed." }, 405, allowedOrigin);
 
-  const contentLength = Number(req.headers.get("content-length") ?? "0");
-  if (!Number.isFinite(contentLength) || contentLength > MAX_REQUEST_BYTES) {
+  if (declaredContentLengthExceedsLimit(req.headers.get("content-length"), MAX_REQUEST_BYTES)) {
     return json({ error: "Request is too large." }, 413, allowedOrigin);
   }
 
@@ -196,18 +226,15 @@ Deno.serve(async (req) => {
     global: { headers: { Authorization: authorization } },
   });
   const { data: authData, error: authError } = await supabase.auth.getUser();
-  if (authError || !authData.user)
+  if (authError || !authData.user) {
     return json({ error: "Sign in is required." }, 401, allowedOrigin);
-
-  let input: Record<string, unknown>;
-  try {
-    input = (await req.json()) as Record<string, unknown>;
-  } catch {
-    return json({ error: "Request must be valid JSON." }, 400, allowedOrigin);
   }
 
-  const transcript = input.transcript;
-  const candidateRecords = sanitizeCandidateRecords(input.candidateRecords);
+  const parsedBody = await readJsonObjectBody(req, MAX_REQUEST_BYTES);
+  if (!parsedBody.ok) return json({ error: parsedBody.error }, parsedBody.status, allowedOrigin);
+
+  const transcript = parsedBody.value.transcript;
+  const candidateRecords = sanitizeCandidateRecords(parsedBody.value.candidateRecords);
   if (
     typeof transcript !== "string" ||
     transcript.trim().length === 0 ||
@@ -227,6 +254,25 @@ Deno.serve(async (req) => {
       { error: "Excavation is not configured. Please try again later." },
       503,
       allowedOrigin,
+    );
+  }
+
+  const { data: quotaData, error: quotaError } = await supabase.rpc(
+    "consume_conversation_extraction_quota",
+  );
+  if (quotaError || !isQuotaDecision(quotaData)) {
+    return json(
+      { error: "Excavation is temporarily unavailable. Please retry." },
+      503,
+      allowedOrigin,
+    );
+  }
+  if (!quotaData.allowed) {
+    return json(
+      { error: "Excavation is temporarily rate limited. Please retry later." },
+      429,
+      allowedOrigin,
+      { "Retry-After": String(Math.max(1, quotaData.retryAfterSeconds)) },
     );
   }
 
