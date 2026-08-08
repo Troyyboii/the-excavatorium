@@ -5,7 +5,7 @@ import archiveStats from "./tools/archive-stats";
 
 // The OAuth issuer must be the direct Supabase host, never a proxy URL.
 const projectRef =
-  (import.meta.env['VITE_SUPABASE_PROJECT_ID'] as string | undefined) ?? "rmlaknguklxwbbdnywcd";
+  (import.meta.env["VITE_SUPABASE_PROJECT_ID"] as string | undefined) ?? "rmlaknguklxwbbdnywcd";
 
 export default defineMcp({
   name: "the-excavatorium",

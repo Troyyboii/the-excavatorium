@@ -25,7 +25,7 @@ export const Route = createFileRoute("/.lovable/oauth/consent")({
   // Browser-only: the Supabase session lives in localStorage.
   ssr: false,
   validateSearch: (s: Record<string, unknown>) => ({
-    authorization_id: typeof s['authorization_id'] === "string" ? s['authorization_id'] : "",
+    authorization_id: typeof s["authorization_id"] === "string" ? s["authorization_id"] : "",
   }),
   component: Consent,
 });

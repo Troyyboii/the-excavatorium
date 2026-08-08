@@ -27,8 +27,8 @@ function configuredEnv(names: readonly string[]): string | undefined {
 
 // Build-time literals from the browser client configuration. These are the
 // same public values already embedded in src/lib/supabase.ts.
-const BUILD_URL = (import.meta.env['VITE_SUPABASE_URL'] as string | undefined)?.trim();
-const BUILD_KEY = (import.meta.env['VITE_SUPABASE_PUBLISHABLE_KEY'] as string | undefined)?.trim();
+const BUILD_URL = (import.meta.env["VITE_SUPABASE_URL"] as string | undefined)?.trim();
+const BUILD_KEY = (import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"] as string | undefined)?.trim();
 
 const FALLBACK_URL = "https://rmlaknguklxwbbdnywcd.supabase.co";
 const FALLBACK_KEY = "sb_publishable_sigueHFNPiD455wrChYrog_SvJQFlIi";
