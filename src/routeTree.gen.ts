@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SearchRouteImport } from './routes/search'
+import { Route as McpRouteImport } from './routes/mcp'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ToolsIndexRouteImport } from './routes/tools.index'
 import { Route as RepositoriesIndexRouteImport } from './routes/repositories.index'
@@ -20,6 +21,8 @@ import { Route as ToolsNewRouteImport } from './routes/tools.new'
 import { Route as RepositoriesNewRouteImport } from './routes/repositories.new'
 import { Route as DecisionsNewRouteImport } from './routes/decisions.new'
 import { Route as ConversationsNewRouteImport } from './routes/conversations.new'
+import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
+import { Route as Char91DotmcpChar93ListToolsRouteImport } from './routes/[.mcp]/list-tools'
 import { Route as ToolsIdIndexRouteImport } from './routes/tools.$id.index'
 import { Route as RepositoriesIdIndexRouteImport } from './routes/repositories.$id.index'
 import { Route as DecisionsIdIndexRouteImport } from './routes/decisions.$id.index'
@@ -28,6 +31,8 @@ import { Route as ToolsIdEditRouteImport } from './routes/tools.$id.edit'
 import { Route as RepositoriesIdEditRouteImport } from './routes/repositories.$id.edit'
 import { Route as DecisionsIdEditRouteImport } from './routes/decisions.$id.edit'
 import { Route as ConversationsIdEditRouteImport } from './routes/conversations.$id.edit'
+import { Route as Char91DotmcpChar93InvokeToolToolRouteImport } from './routes/[.mcp]/invoke-tool/$tool'
+import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.oauth.consent'
 
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
@@ -37,6 +42,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const SearchRoute = SearchRouteImport.update({
   id: '/search',
   path: '/search',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const McpRoute = McpRouteImport.update({
+  id: '/mcp',
+  path: '/mcp',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -84,6 +94,18 @@ const ConversationsNewRoute = ConversationsNewRouteImport.update({
   path: '/conversations/new',
   getParentRoute: () => rootRouteImport,
 } as any)
+const Char91DotwellKnownChar93OauthProtectedResourceRoute =
+  Char91DotwellKnownChar93OauthProtectedResourceRouteImport.update({
+    id: '/.well-known/oauth-protected-resource',
+    path: '/.well-known/oauth-protected-resource',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const Char91DotmcpChar93ListToolsRoute =
+  Char91DotmcpChar93ListToolsRouteImport.update({
+    id: '/.mcp/list-tools',
+    path: '/.mcp/list-tools',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ToolsIdIndexRoute = ToolsIdIndexRouteImport.update({
   id: '/tools/$id/',
   path: '/tools/$id/',
@@ -124,11 +146,25 @@ const ConversationsIdEditRoute = ConversationsIdEditRouteImport.update({
   path: '/conversations/$id/edit',
   getParentRoute: () => rootRouteImport,
 } as any)
+const Char91DotmcpChar93InvokeToolToolRoute =
+  Char91DotmcpChar93InvokeToolToolRouteImport.update({
+    id: '/.mcp/invoke-tool/$tool',
+    path: '/.mcp/invoke-tool/$tool',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const DotlovableOauthConsentRoute = DotlovableOauthConsentRouteImport.update({
+  id: '/.lovable/oauth/consent',
+  path: '/.lovable/oauth/consent',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/mcp': typeof McpRoute
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
+  '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
+  '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/conversations/new': typeof ConversationsNewRoute
   '/decisions/new': typeof DecisionsNewRoute
   '/repositories/new': typeof RepositoriesNewRoute
@@ -137,6 +173,8 @@ export interface FileRoutesByFullPath {
   '/decisions/': typeof DecisionsIndexRoute
   '/repositories/': typeof RepositoriesIndexRoute
   '/tools/': typeof ToolsIndexRoute
+  '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
+  '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/conversations/$id/edit': typeof ConversationsIdEditRoute
   '/decisions/$id/edit': typeof DecisionsIdEditRoute
   '/repositories/$id/edit': typeof RepositoriesIdEditRoute
@@ -148,8 +186,11 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/mcp': typeof McpRoute
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
+  '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
+  '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/conversations/new': typeof ConversationsNewRoute
   '/decisions/new': typeof DecisionsNewRoute
   '/repositories/new': typeof RepositoriesNewRoute
@@ -158,6 +199,8 @@ export interface FileRoutesByTo {
   '/decisions': typeof DecisionsIndexRoute
   '/repositories': typeof RepositoriesIndexRoute
   '/tools': typeof ToolsIndexRoute
+  '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
+  '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/conversations/$id/edit': typeof ConversationsIdEditRoute
   '/decisions/$id/edit': typeof DecisionsIdEditRoute
   '/repositories/$id/edit': typeof RepositoriesIdEditRoute
@@ -170,8 +213,11 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/mcp': typeof McpRoute
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
+  '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
+  '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/conversations/new': typeof ConversationsNewRoute
   '/decisions/new': typeof DecisionsNewRoute
   '/repositories/new': typeof RepositoriesNewRoute
@@ -180,6 +226,8 @@ export interface FileRoutesById {
   '/decisions/': typeof DecisionsIndexRoute
   '/repositories/': typeof RepositoriesIndexRoute
   '/tools/': typeof ToolsIndexRoute
+  '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
+  '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/conversations/$id/edit': typeof ConversationsIdEditRoute
   '/decisions/$id/edit': typeof DecisionsIdEditRoute
   '/repositories/$id/edit': typeof RepositoriesIdEditRoute
@@ -193,8 +241,11 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/mcp'
     | '/search'
     | '/settings'
+    | '/.mcp/list-tools'
+    | '/.well-known/oauth-protected-resource'
     | '/conversations/new'
     | '/decisions/new'
     | '/repositories/new'
@@ -203,6 +254,8 @@ export interface FileRouteTypes {
     | '/decisions/'
     | '/repositories/'
     | '/tools/'
+    | '/.lovable/oauth/consent'
+    | '/.mcp/invoke-tool/$tool'
     | '/conversations/$id/edit'
     | '/decisions/$id/edit'
     | '/repositories/$id/edit'
@@ -214,8 +267,11 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/mcp'
     | '/search'
     | '/settings'
+    | '/.mcp/list-tools'
+    | '/.well-known/oauth-protected-resource'
     | '/conversations/new'
     | '/decisions/new'
     | '/repositories/new'
@@ -224,6 +280,8 @@ export interface FileRouteTypes {
     | '/decisions'
     | '/repositories'
     | '/tools'
+    | '/.lovable/oauth/consent'
+    | '/.mcp/invoke-tool/$tool'
     | '/conversations/$id/edit'
     | '/decisions/$id/edit'
     | '/repositories/$id/edit'
@@ -235,8 +293,11 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/mcp'
     | '/search'
     | '/settings'
+    | '/.mcp/list-tools'
+    | '/.well-known/oauth-protected-resource'
     | '/conversations/new'
     | '/decisions/new'
     | '/repositories/new'
@@ -245,6 +306,8 @@ export interface FileRouteTypes {
     | '/decisions/'
     | '/repositories/'
     | '/tools/'
+    | '/.lovable/oauth/consent'
+    | '/.mcp/invoke-tool/$tool'
     | '/conversations/$id/edit'
     | '/decisions/$id/edit'
     | '/repositories/$id/edit'
@@ -257,8 +320,11 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  McpRoute: typeof McpRoute
   SearchRoute: typeof SearchRoute
   SettingsRoute: typeof SettingsRoute
+  Char91DotmcpChar93ListToolsRoute: typeof Char91DotmcpChar93ListToolsRoute
+  Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   ConversationsNewRoute: typeof ConversationsNewRoute
   DecisionsNewRoute: typeof DecisionsNewRoute
   RepositoriesNewRoute: typeof RepositoriesNewRoute
@@ -267,6 +333,8 @@ export interface RootRouteChildren {
   DecisionsIndexRoute: typeof DecisionsIndexRoute
   RepositoriesIndexRoute: typeof RepositoriesIndexRoute
   ToolsIndexRoute: typeof ToolsIndexRoute
+  DotlovableOauthConsentRoute: typeof DotlovableOauthConsentRoute
+  Char91DotmcpChar93InvokeToolToolRoute: typeof Char91DotmcpChar93InvokeToolToolRoute
   ConversationsIdEditRoute: typeof ConversationsIdEditRoute
   DecisionsIdEditRoute: typeof DecisionsIdEditRoute
   RepositoriesIdEditRoute: typeof RepositoriesIdEditRoute
@@ -291,6 +359,13 @@ declare module '@tanstack/react-router' {
       path: '/search'
       fullPath: '/search'
       preLoaderRoute: typeof SearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mcp': {
+      id: '/mcp'
+      path: '/mcp'
+      fullPath: '/mcp'
+      preLoaderRoute: typeof McpRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -356,6 +431,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConversationsNewRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/.well-known/oauth-protected-resource': {
+      id: '/.well-known/oauth-protected-resource'
+      path: '/.well-known/oauth-protected-resource'
+      fullPath: '/.well-known/oauth-protected-resource'
+      preLoaderRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/.mcp/list-tools': {
+      id: '/.mcp/list-tools'
+      path: '/.mcp/list-tools'
+      fullPath: '/.mcp/list-tools'
+      preLoaderRoute: typeof Char91DotmcpChar93ListToolsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/tools/$id/': {
       id: '/tools/$id/'
       path: '/tools/$id'
@@ -412,13 +501,31 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConversationsIdEditRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/.mcp/invoke-tool/$tool': {
+      id: '/.mcp/invoke-tool/$tool'
+      path: '/.mcp/invoke-tool/$tool'
+      fullPath: '/.mcp/invoke-tool/$tool'
+      preLoaderRoute: typeof Char91DotmcpChar93InvokeToolToolRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/.lovable/oauth/consent': {
+      id: '/.lovable/oauth/consent'
+      path: '/.lovable/oauth/consent'
+      fullPath: '/.lovable/oauth/consent'
+      preLoaderRoute: typeof DotlovableOauthConsentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  McpRoute: McpRoute,
   SearchRoute: SearchRoute,
   SettingsRoute: SettingsRoute,
+  Char91DotmcpChar93ListToolsRoute: Char91DotmcpChar93ListToolsRoute,
+  Char91DotwellKnownChar93OauthProtectedResourceRoute:
+    Char91DotwellKnownChar93OauthProtectedResourceRoute,
   ConversationsNewRoute: ConversationsNewRoute,
   DecisionsNewRoute: DecisionsNewRoute,
   RepositoriesNewRoute: RepositoriesNewRoute,
@@ -427,6 +534,8 @@ const rootRouteChildren: RootRouteChildren = {
   DecisionsIndexRoute: DecisionsIndexRoute,
   RepositoriesIndexRoute: RepositoriesIndexRoute,
   ToolsIndexRoute: ToolsIndexRoute,
+  DotlovableOauthConsentRoute: DotlovableOauthConsentRoute,
+  Char91DotmcpChar93InvokeToolToolRoute: Char91DotmcpChar93InvokeToolToolRoute,
   ConversationsIdEditRoute: ConversationsIdEditRoute,
   DecisionsIdEditRoute: DecisionsIdEditRoute,
   RepositoriesIdEditRoute: RepositoriesIdEditRoute,
