@@ -12,8 +12,20 @@ export default defineTool({
       .enum(["tool", "repository", "conversation", "decision"])
       .optional()
       .describe("Restrict results to one record type."),
-    query: z.string().trim().min(1).max(200).optional().describe("Text to match in title or summary."),
-    limit: z.number().int().min(1).max(100).optional().describe("Maximum rows to return (default 25)."),
+    query: z
+      .string()
+      .trim()
+      .min(1)
+      .max(200)
+      .optional()
+      .describe("Text to match in title or summary."),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(100)
+      .optional()
+      .describe("Maximum rows to return (default 25)."),
   },
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   handler: async ({ recordType, query, limit }, ctx) => {
