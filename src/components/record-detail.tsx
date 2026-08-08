@@ -76,11 +76,6 @@ export function RecordDetail({
         <TypeIcon type={record.recordType} />
         <span>{RECORD_TYPE_LABEL[record.recordType]}</span>
         <TombstoneIfBuried r={record} />
-        {record.isExample ? (
-          <span className="rounded-sm border border-[color:var(--brass-muted)] px-1 font-mono text-[10px] uppercase text-[color:var(--brass)]">
-            seed
-          </span>
-        ) : null}
         <span className="ml-auto font-mono">updated {record.updatedAt.slice(0, 10)}</span>
       </div>
 

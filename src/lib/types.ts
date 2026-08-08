@@ -112,6 +112,8 @@ export type ConversationData = {
   rawConversationText: string;
 };
 
+export type ConversationEntryMode = "excavate" | "manual";
+
 export type DecisionStatus = "Current" | "Tentative" | "Superseded" | "Reversed" | "Archived";
 
 export const DECISION_STATUSES: DecisionStatus[] = [
