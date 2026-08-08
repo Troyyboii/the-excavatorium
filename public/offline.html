@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#141210" />
+    <link rel="icon" href="/favicon.ico" type="image/x-icon" />
+    <title>The Excavatorium · Offline</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: system-ui, sans-serif;
+        background: #141210;
+        color: #f3ece1;
+      }
+      body {
+        box-sizing: border-box;
+        display: grid;
+        min-height: 100vh;
+        margin: 0;
+        place-items: center;
+        padding: 1.5rem;
+      }
+      main {
+        width: min(32rem, 100%);
+        border: 1px solid #41382f;
+        border-radius: 8px;
+        background: #1d1a17;
+        padding: 2rem;
+      }
+      h1 {
+        margin: 0;
+        color: #c19a5a;
+        font:
+          1.65rem Georgia,
+          serif;
+      }
+      p {
+        color: #a09587;
+        line-height: 1.6;
+      }
+      a {
+        color: #f3ece1;
+      }
+      .mark {
+        width: 3.5rem;
+        height: 3.5rem;
+        margin-bottom: 1.25rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img class="mark" src="/icon-192.png" alt="" width="56" height="56" />
+      <h1>The Excavatorium is offline</h1>
+      <p>
+        The archive only works with a live connection. No writes are queued and no private data is
+        cached for offline use.
+      </p>
+      <p>Reconnect, then <a href="/">try again</a>.</p>
+    </main>
+  </body>
+</html>

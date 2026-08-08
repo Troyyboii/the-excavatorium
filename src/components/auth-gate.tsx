@@ -41,8 +41,12 @@ export function AuthGate({ children }: { children: ReactNode }) {
     // app_metadata-scoped keys are user-owned; unrelated caches (routing,
     // static config) are left alone.
     void qc.cancelQueries({ queryKey: ["archive"] });
+    void qc.cancelQueries({ queryKey: ["archive-records"] });
+    void qc.cancelQueries({ queryKey: ["archive-links"] });
     void qc.cancelQueries({ queryKey: ["app_metadata"] });
     qc.removeQueries({ queryKey: ["archive"] });
+    qc.removeQueries({ queryKey: ["archive-records"] });
+    qc.removeQueries({ queryKey: ["archive-links"] });
     qc.removeQueries({ queryKey: ["app_metadata"] });
 
     setAcknowledgedUserId(currentUserId);

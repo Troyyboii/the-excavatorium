@@ -53,11 +53,6 @@ export function RecordRow({ r, showType }: { r: ArchiveRecord; showType?: boolea
             <span className="shrink-0">
               <TombstoneIfBuried r={r} />
             </span>
-            {r.isExample ? (
-              <span className="shrink-0 rounded-sm border border-[color:var(--brass-muted)] px-1 font-mono text-[10px] uppercase tracking-wide text-[color:var(--brass)]">
-                seed
-              </span>
-            ) : null}
           </div>
           {showType ? (
             <div className="mt-0.5 text-[11px] uppercase tracking-wide text-muted-foreground">

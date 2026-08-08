@@ -3,15 +3,7 @@ import { useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { useSession } from "@/lib/session";
-import {
-  useArchive,
-  useAppMetadata,
-  useInitializeArchive,
-  useRemoveExamples,
-  useResetArchive,
-  useRestoreArchive,
-  useRestoreExamples,
-} from "@/lib/archive";
+import { useArchive, useAppMetadata, useResetArchive, useRestoreArchive } from "@/lib/archive";
 import { PageHeader, Banner, Toast } from "@/components/page-parts";
 import {
   backupFilename,
@@ -21,6 +13,7 @@ import {
   type BackupCounts,
 } from "@/lib/format";
 import { supabase, SUPABASE_URL } from "@/lib/supabase";
+import { useOnlineStatus } from "@/hooks/use-online";
 
 export const Route = createFileRoute("/settings")({ component: Page, ssr: false });
 
@@ -31,6 +24,7 @@ function Page() {
   const meta = useAppMetadata(true);
   const [toast, setToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const online = useOnlineStatus();
 
   return (
     <div>
@@ -43,11 +37,18 @@ function Page() {
         </div>
       ) : null}
 
-      <div className="space-y-6">
+      {!online ? (
+        <div className="mb-4">
+          <Banner kind="warning" title="Offline">
+            Settings that write to Supabase are disabled until the connection returns.
+          </Banner>
+        </div>
+      ) : null}
+
+      <fieldset disabled={!online} className="space-y-6 disabled:opacity-75">
         <AccountSection email={email} setToast={setToast} setError={setError} />
         <PasswordSection />
         <BackupSection q={q} setToast={setToast} setError={setError} />
-        <ExampleSection setToast={setToast} setError={setError} />
         <StorageSection />
         <DestructiveSection setToast={setToast} setError={setError} />
         <DiagnosticsSection
@@ -56,7 +57,7 @@ function Page() {
           qCount={q.data?.records.length ?? null}
           lCount={q.data?.links.length ?? null}
         />
-      </div>
+      </fieldset>
 
       {toast ? <Toast message={toast} onClose={() => setToast(null)} /> : null}
     </div>
@@ -360,8 +361,6 @@ function BackupSection({
             <dd>{pendingRestore.counts.decision}</dd>
             <dt className="text-muted-foreground">Links</dt>
             <dd>{pendingRestore.counts.links}</dd>
-            <dt className="text-muted-foreground">Example records</dt>
-            <dd>{pendingRestore.counts.examples}</dd>
           </dl>
           <div className="mt-3 flex flex-wrap gap-2">
             <button
@@ -391,73 +390,6 @@ function BackupSection({
           </div>
         </div>
       ) : null}
-    </Card>
-  );
-}
-
-function ExampleSection({
-  setToast,
-  setError,
-}: {
-  setToast: (m: string) => void;
-  setError: (m: string | null) => void;
-}) {
-  const remove = useRemoveExamples();
-  const restore = useRestoreExamples();
-  const init = useInitializeArchive();
-  return (
-    <Card title="Example data">
-      <p className="text-sm text-muted-foreground">
-        Canonical examples install once. You can remove them or restore any missing ones.
-      </p>
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          disabled={remove.isPending}
-          onClick={async () => {
-            try {
-              await remove.mutateAsync();
-              setToast("Examples removed");
-            } catch (e) {
-              setError(e instanceof Error ? e.message : "Remove failed.");
-            }
-          }}
-          className="inline-flex min-h-11 items-center rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground hover:bg-[color:var(--record-hover)]"
-        >
-          {remove.isPending ? "Removing…" : "Remove example data"}
-        </button>
-        <button
-          type="button"
-          disabled={restore.isPending}
-          onClick={async () => {
-            try {
-              await restore.mutateAsync();
-              setToast("Examples restored");
-            } catch (e) {
-              setError(e instanceof Error ? e.message : "Restore failed.");
-            }
-          }}
-          className="inline-flex min-h-11 items-center rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground hover:bg-[color:var(--record-hover)]"
-        >
-          {restore.isPending ? "Restoring…" : "Restore example data"}
-        </button>
-        <button
-          type="button"
-          disabled={init.isPending}
-          onClick={async () => {
-            try {
-              await init.mutateAsync();
-              setToast("Initialization complete");
-            } catch (e) {
-              setError(e instanceof Error ? e.message : "Initialization failed.");
-            }
-          }}
-          className="inline-flex min-h-11 items-center rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground hover:bg-[color:var(--record-hover)]"
-          title="Runs initialize_user_archive; no-op if already initialized."
-        >
-          {init.isPending ? "Running…" : "Run first-use initialization"}
-        </button>
-      </div>
     </Card>
   );
 }
@@ -552,9 +484,6 @@ function DiagnosticsSection({
   email: string | null;
   meta: null | {
     schema_version: number;
-    seed_lifecycle_initialized: boolean;
-    created_at: string;
-    updated_at: string;
   };
   qCount: number | null;
   lCount: number | null;
@@ -575,8 +504,6 @@ function DiagnosticsSection({
         <dd className="font-mono truncate">{email ?? "—"}</dd>
         <dt className="text-muted-foreground">Schema version</dt>
         <dd>{meta?.schema_version ?? "—"}</dd>
-        <dt className="text-muted-foreground">Lifecycle initialized</dt>
-        <dd>{meta ? String(meta.seed_lifecycle_initialized) : "—"}</dd>
         <dt className="text-muted-foreground">Records loaded</dt>
         <dd>{qCount ?? "—"}</dd>
         <dt className="text-muted-foreground">Links loaded</dt>

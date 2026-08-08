@@ -18,8 +18,50 @@ import {
   TOOL_STATUSES,
 } from "@/lib/types";
 import { RecordList } from "./record-list";
-import { EmptyState, NewRecordButton, PageHeader } from "./page-parts";
-import { plural } from "./record-list";
+import { EmptyState, PageHeader } from "./page-parts";
+import { useArchive } from "@/lib/archive";
+import { Banner } from "./page-parts";
+
+export function ArchiveRecordListPage({ type }: { type: RecordType }) {
+  const query = useArchive(true);
+  if (!query.data && query.isPending) {
+    return <PageHeader title="Loading archive…" description="Fetching records." />;
+  }
+  if (!query.data) {
+    return (
+      <div>
+        <PageHeader title="Archive unavailable" />
+        <Banner kind="error" title="Records could not load">
+          <span>{query.recordsError?.message ?? "The records request failed."}</span>{" "}
+          <button
+            type="button"
+            className="ml-2 underline underline-offset-4"
+            onClick={() => void query.refetch()}
+          >
+            Retry
+          </button>
+        </Banner>
+      </div>
+    );
+  }
+  return (
+    <div>
+      {query.recordsError ? (
+        <div className="mb-4">
+          <Banner kind="warning" title="Showing cached records">
+            Refresh failed. You can keep browsing or retry.
+          </Banner>
+        </div>
+      ) : null}
+      {query.isFetching ? (
+        <p className="mb-3 text-right text-xs text-muted-foreground" role="status">
+          Updating…
+        </p>
+      ) : null}
+      <RecordListPage type={type} records={query.data.records} />
+    </div>
+  );
+}
 
 type Filters = {
   toolStatus?: ToolStatus | "";
@@ -37,14 +79,22 @@ export function RecordListPage({ type, records }: { type: RecordType; records: A
   const items = useMemo(() => records.filter((r) => r.recordType === type), [records, type]);
   const [f, setF] = useState<Filters>({});
   const allTags = useMemo(() => {
-    const set = new Set<string>();
-    for (const r of items) for (const t of r.tags) set.add(t);
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
+    const canonical = new Map<string, string>();
+    for (const r of items) {
+      for (const tag of r.tags) {
+        const key = tag.trim().toLocaleLowerCase();
+        if (key && !canonical.has(key)) canonical.set(key, tag.trim());
+      }
+    }
+    return Array.from(canonical.values()).sort((a, b) => a.localeCompare(b));
   }, [items]);
 
   const filtered = useMemo(() => {
     let out = items;
-    if (f.tag) out = out.filter((r) => r.tags.includes(f.tag!));
+    if (f.tag) {
+      const selectedTag = f.tag.toLocaleLowerCase();
+      out = out.filter((r) => r.tags.some((tag) => tag.toLocaleLowerCase() === selectedTag));
+    }
     if (type === "tool") {
       if (f.toolStatus)
         out = out.filter(
@@ -111,14 +161,6 @@ export function RecordListPage({ type, records }: { type: RecordType; records: A
         : type === "conversation"
           ? "Conversations"
           : "Decisions";
-  const singular =
-    type === "tool"
-      ? "tool"
-      : type === "repository"
-        ? "repository"
-        : type === "conversation"
-          ? "conversation"
-          : "decision";
   const hasActive = Object.values(f).some((v) => v !== undefined && v !== "" && v !== false);
 
   return (
@@ -126,7 +168,6 @@ export function RecordListPage({ type, records }: { type: RecordType; records: A
       <PageHeader
         title={label}
         description={`${items.length} record${items.length === 1 ? "" : "s"}.`}
-        action={<NewRecordButton to={`/${plural(type)}/new`} label={`New ${singular}`} />}
       />
 
       <div className="mb-4 rounded-md border border-border bg-card p-3">
@@ -226,7 +267,7 @@ export function RecordListPage({ type, records }: { type: RecordType; records: A
               : "No records match the current filters."
           }
           hint={
-            items.length === 0 ? `Create the first ${singular} from the button above.` : undefined
+            items.length === 0 ? "Use New in the top bar to create the first record." : undefined
           }
         />
       ) : (

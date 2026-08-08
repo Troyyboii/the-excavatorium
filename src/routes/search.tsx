@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useArchive } from "@/lib/archive";
-import { PageHeader } from "@/components/page-parts";
+import { Banner, PageHeader } from "@/components/page-parts";
 import { RecordList } from "@/components/record-list";
 import type { ArchiveRecord, RecordType } from "@/lib/types";
 import { RECORD_TYPES, RECORD_TYPE_PLURAL } from "@/lib/types";
@@ -80,12 +80,37 @@ function Page() {
     decision: results.filter((r) => r.recordType === "decision"),
   };
 
+  if (!q.data && q.isPending) {
+    return <PageHeader title="Search" description="Loading the searchable archive…" />;
+  }
+
+  if (!q.data) {
+    return (
+      <div>
+        <PageHeader title="Search" />
+        <Banner kind="error" title="Search is unavailable">
+          <span>{q.recordsError?.message ?? "Records could not load."}</span>{" "}
+          <button type="button" className="underline" onClick={() => void q.refetch()}>
+            Retry
+          </button>
+        </Banner>
+      </div>
+    );
+  }
+
   return (
     <div>
       <PageHeader
         title="Search"
         description="Case-insensitive partial text across every user-entered field."
       />
+      {q.recordsError ? (
+        <div className="mb-4">
+          <Banner kind="warning" title="Showing cached search data">
+            The latest refresh failed. Existing results remain searchable.
+          </Banner>
+        </div>
+      ) : null}
       <input
         autoFocus
         value={text}

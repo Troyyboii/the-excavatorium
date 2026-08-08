@@ -9,6 +9,7 @@ import type {
   ArchiveLink,
   ArchiveRecord,
   ConversationData,
+  ConversationEntryMode,
   DecisionData,
   RecordType,
   RepositoryData,
@@ -19,7 +20,6 @@ import {
   DECISION_STATUSES,
   PROJECT_ROUTES,
   RATING_LEVELS,
-  RECORD_TYPE_LABEL,
   REPOSITORY_ACTIONS,
   TOOL_STATUSES,
   emptyRecordData,
@@ -31,6 +31,7 @@ import {
   type ConversationExtraction,
 } from "@/lib/conversation-excavation";
 import { plural } from "./record-list";
+import { useOnlineStatus } from "@/hooks/use-online";
 
 function todayLocal(): string {
   const d = new Date();
@@ -48,6 +49,7 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
   const navigate = useNavigate();
   const save = useSaveRecord();
   const del = useDeleteRecord();
+  const online = useOnlineStatus();
 
   const [title, setTitle] = useState(existing?.title ?? "");
   const [summary, setSummary] = useState(existing?.summary ?? "");
@@ -64,6 +66,9 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [conversationMode, setConversationMode] = useState<ConversationEntryMode>(
+    existing ? "manual" : "excavate",
+  );
 
   useEffect(() => {
     function onUnload(e: BeforeUnloadEvent) {
@@ -110,6 +115,10 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (!online) {
+      setError("You are offline. Reconnect before saving");
+      return;
+    }
     const err = clientValidate();
     if (err) {
       setError(err);
@@ -134,6 +143,10 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
 
   async function onDelete() {
     if (!existing) return;
+    if (!online) {
+      setError("You are offline. Reconnect before deleting this record.");
+      return;
+    }
     setError(null);
     try {
       await del.mutateAsync(existing.id);
@@ -177,6 +190,7 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
       ),
     );
     setDirty(true);
+    setConversationMode("manual");
   }
 
   return (
@@ -187,45 +201,102 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
         </Banner>
       ) : null}
 
-      <Section
-        title={
-          existing
-            ? `Edit ${RECORD_TYPE_LABEL[recordType]}`
-            : `New ${RECORD_TYPE_LABEL[recordType]}`
-        }
-      >
-        <Field label="Title" htmlFor="title" required>
-          <TextInput
-            id="title"
-            value={title}
-            onChange={(e) => {
-              setTitle(e.target.value);
-              setDirty(true);
-            }}
-            required
+      {recordType === "conversation" ? (
+        <div className="rounded-lg border border-border bg-card p-1">
+          <div
+            className="grid grid-cols-2 gap-1"
+            role="tablist"
+            aria-label="Conversation entry mode"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={conversationMode === "excavate"}
+              onClick={() => setConversationMode("excavate")}
+              className={`min-h-11 rounded-md px-3 py-2 text-sm ${
+                conversationMode === "excavate"
+                  ? "bg-[color:var(--burgundy-muted)] text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Excavate transcript
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={conversationMode === "manual"}
+              onClick={() => setConversationMode("manual")}
+              className={`min-h-11 rounded-md px-3 py-2 text-sm ${
+                conversationMode === "manual"
+                  ? "bg-[color:var(--burgundy-muted)] text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Write manually
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {recordType === "conversation" && conversationMode === "excavate" ? (
+        <Section title="Paste a conversation">
+          <Field
+            label="Raw conversation text"
+            hint={`${(data as ConversationData).rawConversationText.length.toLocaleString()} of ${MAX_CONVERSATION_TRANSCRIPT_CHARS.toLocaleString()} characters.`}
+          >
+            <TextArea
+              value={(data as ConversationData).rawConversationText}
+              onChange={(event) =>
+                patch("rawConversationText" as never, event.target.value as never)
+              }
+              className="min-h-[300px] font-mono text-xs"
+              placeholder="Paste the complete conversation here…"
+            />
+          </Field>
+          <ConversationExcavationPanel
+            rawConversationText={(data as ConversationData).rawConversationText}
+            allRecords={allRecords}
+            onApply={applyConversationExtraction}
+            online={online}
           />
-        </Field>
-        <Field label="Summary" htmlFor="summary">
-          <TextArea
-            id="summary"
-            value={summary}
-            onChange={(e) => {
-              setSummary(e.target.value);
-              setDirty(true);
-            }}
-          />
-        </Field>
-        <Field label="Tags" htmlFor="tags">
-          <TagInput
-            id="tags"
-            value={tags}
-            onChange={(v) => {
-              setTags(v);
-              setDirty(true);
-            }}
-          />
-        </Field>
-      </Section>
+        </Section>
+      ) : null}
+
+      {recordType !== "conversation" || conversationMode === "manual" ? (
+        <Section title="Overview">
+          <Field label="Title" htmlFor="title" required>
+            <TextInput
+              id="title"
+              value={title}
+              onChange={(e) => {
+                setTitle(e.target.value);
+                setDirty(true);
+              }}
+              required
+            />
+          </Field>
+          <Field label="Summary" htmlFor="summary">
+            <TextArea
+              id="summary"
+              value={summary}
+              onChange={(e) => {
+                setSummary(e.target.value);
+                setDirty(true);
+              }}
+            />
+          </Field>
+          <Field label="Tags" htmlFor="tags">
+            <TagInput
+              id="tags"
+              value={tags}
+              onChange={(v) => {
+                setTags(v);
+                setDirty(true);
+              }}
+            />
+          </Field>
+        </Section>
+      ) : null}
 
       {recordType === "tool" ? (
         <ToolFields data={data as ToolData} patch={patch as never} choices={toolChoices} />
@@ -233,15 +304,8 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
       {recordType === "repository" ? (
         <RepositoryFields data={data as RepositoryData} patch={patch as never} />
       ) : null}
-      {recordType === "conversation" ? (
-        <>
-          <ConversationExcavationPanel
-            rawConversationText={(data as ConversationData).rawConversationText}
-            allRecords={allRecords}
-            onApply={applyConversationExtraction}
-          />
-          <ConversationFields data={data as ConversationData} patch={patch as never} />
-        </>
+      {recordType === "conversation" && conversationMode === "manual" ? (
+        <ConversationFields data={data as ConversationData} patch={patch as never} />
       ) : null}
       {recordType === "decision" ? (
         <DecisionFields
@@ -251,26 +315,36 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
         />
       ) : null}
 
-      <Section title="Connected records">
-        <RecordPicker
-          all={allRecords}
-          currentId={existing?.id ?? null}
-          value={selectedLinks}
-          onChange={(v) => {
-            setSelectedLinks(v);
-            setDirty(true);
-          }}
-        />
-      </Section>
+      {recordType !== "conversation" || conversationMode === "manual" ? (
+        <Section title="Connected records">
+          <RecordPicker
+            all={allRecords}
+            currentId={existing?.id ?? null}
+            value={selectedLinks}
+            onChange={(v) => {
+              setSelectedLinks(v);
+              setDirty(true);
+            }}
+          />
+        </Section>
+      ) : null}
 
       <div className="sticky bottom-0 z-20 -mx-4 flex flex-col gap-3 border-t border-border bg-background px-4 py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] sm:mx-0 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:px-0">
         <div className="flex gap-2">
           <button
             type="submit"
-            disabled={save.isPending}
+            disabled={
+              save.isPending ||
+              !online ||
+              (recordType === "conversation" && conversationMode === "excavate")
+            }
             className="inline-flex min-h-11 items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-[color:var(--primary)]/90 disabled:opacity-60"
           >
-            {save.isPending ? "Saving…" : "Save"}
+            {save.isPending
+              ? "Saving…"
+              : recordType === "conversation" && conversationMode === "excavate"
+                ? "Apply a draft before saving"
+                : "Save"}
           </button>
           <button
             type="button"
@@ -294,7 +368,7 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
                   type="button"
                   className="inline-flex min-h-11 items-center rounded-md border border-[color:var(--destructive)] bg-[color:var(--destructive)]/10 px-3 py-2 text-sm text-[color:var(--destructive-foreground)]"
                   onClick={onDelete}
-                  disabled={del.isPending}
+                  disabled={del.isPending || !online}
                 >
                   {del.isPending ? "Deleting…" : "Confirm delete"}
                 </button>
@@ -311,6 +385,7 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
                 type="button"
                 className="inline-flex min-h-11 items-center rounded-md border border-[color:var(--destructive)]/60 px-3 py-2 text-sm text-[color:var(--destructive-foreground)] hover:bg-[color:var(--destructive)]/10"
                 onClick={() => setShowDeleteConfirm(true)}
+                disabled={!online}
               >
                 Delete
               </button>
@@ -618,10 +693,12 @@ function ConversationExcavationPanel({
   rawConversationText,
   allRecords,
   onApply,
+  online,
 }: {
   rawConversationText: string;
   allRecords: ArchiveRecord[];
   onApply: (extraction: ConversationExtraction) => void;
+  online: boolean;
 }) {
   const abortRef = useRef<AbortController | null>(null);
   const requestIdRef = useRef(0);
@@ -704,7 +781,8 @@ function ConversationExcavationPanel({
     : [];
 
   return (
-    <Section title="Conversation excavation">
+    <div className="border-t border-border pt-5">
+      <h3 className="font-serif text-lg text-foreground">Excavate with GPT-5.6</h3>
       <p className="text-sm text-muted-foreground">
         Sends the pasted conversation to OpenAI only when you start an excavation. Nothing is saved
         automatically.
@@ -714,13 +792,14 @@ function ConversationExcavationPanel({
           type="button"
           onClick={start}
           disabled={
+            !online ||
             isLoading ||
             rawConversationText.trim().length === 0 ||
             rawConversationText.length > MAX_CONVERSATION_TRANSCRIPT_CHARS
           }
           className="inline-flex min-h-11 items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-[color:var(--primary)]/90 disabled:opacity-60"
         >
-          {isLoading ? "Excavating…" : "Excavate with GPT-5.6"}
+          {isLoading ? "Excavating…" : "Create editable draft"}
         </button>
         {isLoading || activeExtraction ? (
           <button
@@ -741,6 +820,13 @@ function ConversationExcavationPanel({
           </button>
         ) : null}
       </div>
+      {!online ? (
+        <div className="mt-3">
+          <Banner kind="warning" title="Excavation unavailable offline">
+            Reconnect to send this transcript for extraction. The pasted text remains in the form.
+          </Banner>
+        </div>
+      ) : null}
       {rawConversationText.length > MAX_CONVERSATION_TRANSCRIPT_CHARS ? (
         <p className="mt-3 text-sm text-[color:var(--destructive-foreground)]">
           The conversation exceeds the {MAX_CONVERSATION_TRANSCRIPT_CHARS.toLocaleString()}{" "}
@@ -766,7 +852,7 @@ function ConversationExcavationPanel({
           }}
         />
       ) : null}
-    </Section>
+    </div>
   );
 }
 

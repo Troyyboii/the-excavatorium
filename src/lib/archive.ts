@@ -7,6 +7,7 @@
 // signed-in user changes (including sign-out) the AuthGate clears the whole
 // React Query cache before rendering.
 
+import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { supabase } from "./supabase";
 import { useCurrentUserId } from "./session";
@@ -147,28 +148,86 @@ export type ArchiveSnapshot = {
   byId: Map<string, ArchiveRecord>;
 };
 
+export type ArchiveLoadState = {
+  recordsPending: boolean;
+  linksPending: boolean;
+  recordsError: Error | null;
+  linksError: Error | null;
+  isFetching: boolean;
+  lastSuccessfulSync: number | null;
+};
+
 // User-scoped query keys. Passing a null user id yields a sentinel key that
 // is never enabled, keeping the pre-signed-in state from colliding.
 export function archiveKey(userId: string | null): QueryKey {
   return ["archive", userId ?? "__anonymous__"];
 }
+export function recordsKey(userId: string | null): QueryKey {
+  return ["archive-records", userId ?? "__anonymous__"];
+}
+export function linksKey(userId: string | null): QueryKey {
+  return ["archive-links", userId ?? "__anonymous__"];
+}
 export function appMetadataKey(userId: string | null): QueryKey {
   return ["app_metadata", userId ?? "__anonymous__"];
 }
 
-export function useArchive(enabled: boolean) {
+export function useRecords(enabled: boolean) {
   const userId = useCurrentUserId();
-  return useQuery<ArchiveSnapshot>({
-    queryKey: archiveKey(userId),
+  return useQuery<ArchiveRecord[]>({
+    queryKey: recordsKey(userId),
     enabled: enabled && userId !== null,
     staleTime: 30_000,
-    queryFn: async () => {
-      const [records, links] = await Promise.all([fetchAllRecords(), fetchAllLinks()]);
-      const byId = new Map<string, ArchiveRecord>();
-      for (const r of records) byId.set(r.id, r);
-      return { records, links, byId };
-    },
+    queryFn: fetchAllRecords,
   });
+}
+
+export function useLinks(enabled: boolean) {
+  const userId = useCurrentUserId();
+  return useQuery<ArchiveLink[]>({
+    queryKey: linksKey(userId),
+    enabled: enabled && userId !== null,
+    staleTime: 30_000,
+    queryFn: fetchAllLinks,
+  });
+}
+
+// Records are the render-blocking resource. Links are independently optional,
+// so a transient graph failure never blanks otherwise usable archive content.
+export function useArchive(enabled: boolean) {
+  const recordsQuery = useRecords(enabled);
+  const linksQuery = useLinks(enabled);
+  const data = useMemo<ArchiveSnapshot | undefined>(() => {
+    if (!recordsQuery.data) return undefined;
+    const byId = new Map<string, ArchiveRecord>();
+    for (const record of recordsQuery.data) byId.set(record.id, record);
+    return { records: recordsQuery.data, links: linksQuery.data ?? [], byId };
+  }, [linksQuery.data, recordsQuery.data]);
+
+  const state: ArchiveLoadState = {
+    recordsPending: recordsQuery.isPending,
+    linksPending: linksQuery.isPending,
+    recordsError: recordsQuery.error,
+    linksError: linksQuery.error,
+    isFetching: recordsQuery.isFetching || linksQuery.isFetching,
+    lastSuccessfulSync: Math.max(recordsQuery.dataUpdatedAt, linksQuery.dataUpdatedAt) || null,
+  };
+
+  return {
+    data,
+    isPending: recordsQuery.isPending,
+    // Full-snapshot consumers such as Backup must not treat a records-only
+    // response as export-ready. Rendering consumers can still use `data` and
+    // the split error fields below.
+    isSuccess: recordsQuery.isSuccess && linksQuery.isSuccess,
+    isError: recordsQuery.isError || linksQuery.isError,
+    error: recordsQuery.error ?? linksQuery.error,
+    isFetching: state.isFetching,
+    recordsError: recordsQuery.error,
+    linksError: linksQuery.error,
+    state,
+    refetch: () => Promise.all([recordsQuery.refetch(), linksQuery.refetch()]),
+  };
 }
 
 export function useAppMetadata(enabled: boolean) {
@@ -205,10 +264,12 @@ function todayLocal(): string {
 }
 
 function invalidateArchive(qc: ReturnType<typeof useQueryClient>, userId: string | null) {
+  qc.invalidateQueries({ queryKey: recordsKey(userId) });
+  qc.invalidateQueries({ queryKey: linksKey(userId) });
   qc.invalidateQueries({ queryKey: archiveKey(userId) });
 }
 function invalidateArchiveAndMeta(qc: ReturnType<typeof useQueryClient>, userId: string | null) {
-  qc.invalidateQueries({ queryKey: archiveKey(userId) });
+  invalidateArchive(qc, userId);
   qc.invalidateQueries({ queryKey: appMetadataKey(userId) });
 }
 
