@@ -1,0 +1,22 @@
+{
+  "name": "the-excavatorium",
+  "version": "0.1.0",
+  "description": "Search a private Excavatorium archive through its OAuth-protected MCP server.",
+  "author": {
+    "name": "Dario Juzbašić",
+    "url": "https://github.com/Troyyboii"
+  },
+  "homepage": "https://the-excavatorium.lovable.app",
+  "repository": "https://github.com/Troyyboii/the-excavatorium",
+  "interface": {
+    "displayName": "The Excavatorium",
+    "shortDescription": "Search your private technical archive.",
+    "longDescription": "Use OAuth to let ChatGPT or Codex search the signed-in user's Excavatorium records without exposing another user's archive.",
+    "developerName": "Dario Juzbašić",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": "Show me a summary of my Excavatorium archive."
+  },
+  "mcpServers": "./.mcp.json",
+  "apps": "./.app.json"
+}

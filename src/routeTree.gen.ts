@@ -19,6 +19,7 @@ import { Route as DecisionsIndexRouteImport } from './routes/decisions.index'
 import { Route as ConversationsIndexRouteImport } from './routes/conversations.index'
 import { Route as ToolsNewRouteImport } from './routes/tools.new'
 import { Route as RepositoriesNewRouteImport } from './routes/repositories.new'
+import { Route as OauthConsentRouteImport } from './routes/oauth/consent'
 import { Route as DecisionsNewRouteImport } from './routes/decisions.new'
 import { Route as ConversationsNewRouteImport } from './routes/conversations.new'
 import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
@@ -82,6 +83,11 @@ const ToolsNewRoute = ToolsNewRouteImport.update({
 const RepositoriesNewRoute = RepositoriesNewRouteImport.update({
   id: '/repositories/new',
   path: '/repositories/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OauthConsentRoute = OauthConsentRouteImport.update({
+  id: '/oauth/consent',
+  path: '/oauth/consent',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DecisionsNewRoute = DecisionsNewRouteImport.update({
@@ -167,6 +173,7 @@ export interface FileRoutesByFullPath {
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/conversations/new': typeof ConversationsNewRoute
   '/decisions/new': typeof DecisionsNewRoute
+  '/oauth/consent': typeof OauthConsentRoute
   '/repositories/new': typeof RepositoriesNewRoute
   '/tools/new': typeof ToolsNewRoute
   '/conversations/': typeof ConversationsIndexRoute
@@ -193,6 +200,7 @@ export interface FileRoutesByTo {
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/conversations/new': typeof ConversationsNewRoute
   '/decisions/new': typeof DecisionsNewRoute
+  '/oauth/consent': typeof OauthConsentRoute
   '/repositories/new': typeof RepositoriesNewRoute
   '/tools/new': typeof ToolsNewRoute
   '/conversations': typeof ConversationsIndexRoute
@@ -220,6 +228,7 @@ export interface FileRoutesById {
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/conversations/new': typeof ConversationsNewRoute
   '/decisions/new': typeof DecisionsNewRoute
+  '/oauth/consent': typeof OauthConsentRoute
   '/repositories/new': typeof RepositoriesNewRoute
   '/tools/new': typeof ToolsNewRoute
   '/conversations/': typeof ConversationsIndexRoute
@@ -248,6 +257,7 @@ export interface FileRouteTypes {
     | '/.well-known/oauth-protected-resource'
     | '/conversations/new'
     | '/decisions/new'
+    | '/oauth/consent'
     | '/repositories/new'
     | '/tools/new'
     | '/conversations/'
@@ -274,6 +284,7 @@ export interface FileRouteTypes {
     | '/.well-known/oauth-protected-resource'
     | '/conversations/new'
     | '/decisions/new'
+    | '/oauth/consent'
     | '/repositories/new'
     | '/tools/new'
     | '/conversations'
@@ -300,6 +311,7 @@ export interface FileRouteTypes {
     | '/.well-known/oauth-protected-resource'
     | '/conversations/new'
     | '/decisions/new'
+    | '/oauth/consent'
     | '/repositories/new'
     | '/tools/new'
     | '/conversations/'
@@ -327,6 +339,7 @@ export interface RootRouteChildren {
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   ConversationsNewRoute: typeof ConversationsNewRoute
   DecisionsNewRoute: typeof DecisionsNewRoute
+  OauthConsentRoute: typeof OauthConsentRoute
   RepositoriesNewRoute: typeof RepositoriesNewRoute
   ToolsNewRoute: typeof ToolsNewRoute
   ConversationsIndexRoute: typeof ConversationsIndexRoute
@@ -415,6 +428,13 @@ declare module '@tanstack/react-router' {
       path: '/repositories/new'
       fullPath: '/repositories/new'
       preLoaderRoute: typeof RepositoriesNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/oauth/consent': {
+      id: '/oauth/consent'
+      path: '/oauth/consent'
+      fullPath: '/oauth/consent'
+      preLoaderRoute: typeof OauthConsentRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/decisions/new': {
@@ -528,6 +548,7 @@ const rootRouteChildren: RootRouteChildren = {
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
   ConversationsNewRoute: ConversationsNewRoute,
   DecisionsNewRoute: DecisionsNewRoute,
+  OauthConsentRoute: OauthConsentRoute,
   RepositoriesNewRoute: RepositoriesNewRoute,
   ToolsNewRoute: ToolsNewRoute,
   ConversationsIndexRoute: ConversationsIndexRoute,

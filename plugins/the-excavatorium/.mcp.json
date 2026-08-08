@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "the-excavatorium": {
+      "type": "http",
+      "url": "https://the-excavatorium.lovable.app/mcp"
+    }
+  }
+}
