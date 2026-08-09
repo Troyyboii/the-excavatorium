@@ -19,6 +19,7 @@ import {
   normalizeDocumentFile,
   readBoundedBody,
   readFileBytes,
+  toBinaryData,
   type CandidateRecord,
   type NormalizedDocument,
   type SourceUnit,
