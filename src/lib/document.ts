@@ -88,6 +88,48 @@ export const documentDraftSchema = z
 
 export type DocumentDraft = z.infer<typeof documentDraftSchema>;
 
+const documentValidationSectionLabels: Record<string, string> = {
+  highSignalFindings: "High-signal findings",
+  keyClaims: "Key claims",
+  contradictions: "Contradictions",
+  uncertainties: "Uncertainties",
+  sourceReferences: "Source references",
+};
+
+const documentValidationFieldLabels: Record<string, string> = {
+  documentDate: "Document date",
+  pageCount: "Page count",
+  sourceReferenceIds: "Citations",
+  id: "Reference ID",
+  text: "Text",
+  label: "Label",
+  locator: "Locator",
+  note: "Note",
+};
+
+function formatDocumentValidationPath(path: readonly (string | number)[]): string {
+  if (path.length === 0) return "Document";
+  const section = typeof path[0] === "string" ? path[0] : "Document";
+  const sectionLabel = documentValidationSectionLabels[section] ?? section;
+  const index = typeof path[1] === "number" ? ` ${path[1] + 1}` : "";
+  const field = typeof path[2] === "string" ? path[2] : null;
+  const fieldLabel = field ? (documentValidationFieldLabels[field] ?? field) : null;
+  return `${sectionLabel}${index}${fieldLabel ? ` · ${fieldLabel}` : ""}`;
+}
+
+export function formatDocumentValidationIssues(
+  issues: ReadonlyArray<{
+    path: readonly (string | number)[];
+    message: string;
+  }>,
+): string[] {
+  return [
+    ...new Set(
+      issues.map((issue) => `${formatDocumentValidationPath(issue.path)}: ${issue.message}`),
+    ),
+  ];
+}
+
 function validateSourceReferenceLinks(
   value: {
     sourceReferences: DocumentSourceReference[];
