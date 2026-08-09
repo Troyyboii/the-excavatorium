@@ -12,6 +12,8 @@ import type {
   ConversationEntryMode,
   DecisionData,
   DocumentData,
+  DocumentInsight,
+  DocumentSourceReference,
   RecordType,
   RepositoryData,
   ToolData,
@@ -26,7 +28,12 @@ import {
   emptyRecordData,
 } from "@/lib/types";
 import { normalizeTags } from "@/lib/format";
-import { validateDocumentData, type DocumentDraft } from "@/lib/document";
+import {
+  documentDataSchema,
+  documentDraftSchema,
+  formatDocumentValidationIssues,
+  type DocumentDraft,
+} from "@/lib/document";
 import {
   excavateConversation,
   MAX_CONVERSATION_TRANSCRIPT_CHARS,
@@ -67,6 +74,7 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
       .map((l) => (l.sourceId === existing.id ? l.targetId : l.sourceId));
   });
   const [error, setError] = useState<string | null>(null);
+  const [validationIssues, setValidationIssues] = useState<string[]>([]);
   const [dirty, setDirty] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [conversationMode, setConversationMode] = useState<ConversationEntryMode>(
@@ -88,52 +96,52 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
 
   function patch<K extends keyof typeof data>(k: K, v: (typeof data)[K]) {
     setData((prev) => ({ ...prev, [k]: v }));
+    setError(null);
+    setValidationIssues([]);
     setDirty(true);
   }
 
-  function clientValidate(): string | null {
-    if (title.trim() === "") return "Title is required.";
+  function clientValidate(): string[] {
+    if (title.trim() === "") return ["Title is required."];
     if (recordType === "tool") {
       const d = data as ToolData;
-      if (!d.category.trim()) return "Category is required.";
-      if (!d.status) return "Status is required.";
+      if (!d.category.trim()) return ["Category is required."];
+      if (!d.status) return ["Status is required."];
       if (d.replacementToolId && d.replacementToolId === existing?.id)
-        return "Replacement tool cannot be the current record.";
+        return ["Replacement tool cannot be the current record."];
     } else if (recordType === "repository") {
       const d = data as RepositoryData;
-      if (!d.githubUrl.trim()) return "GitHub URL is required.";
+      if (!d.githubUrl.trim()) return ["GitHub URL is required."];
     } else if (recordType === "conversation") {
       const d = data as ConversationData;
-      if (!d.projectRoute) return "Project route is required.";
+      if (!d.projectRoute) return ["Project route is required."];
     } else if (recordType === "decision") {
       const d = data as DecisionData;
-      if (!d.reason.trim()) return "Reason is required.";
-      if (!d.decisionDate) return "Decision date is required.";
-      if (!d.status) return "Status is required.";
-      if (!d.confidence) return "Confidence is required.";
+      if (!d.reason.trim()) return ["Reason is required."];
+      if (!d.decisionDate) return ["Decision date is required."];
+      if (!d.status) return ["Status is required."];
+      if (!d.confidence) return ["Confidence is required."];
       if (d.supersedesDecisionId && d.supersedesDecisionId === existing?.id)
-        return "Supersedes cannot reference the current record.";
+        return ["Supersedes cannot reference the current record."];
     } else {
       const d = data as DocumentData;
-      try {
-        validateDocumentData(d);
-      } catch {
-        return "Document data is incomplete or malformed.";
-      }
+      const result = documentDataSchema.safeParse(d);
+      if (!result.success) return formatDocumentValidationIssues(result.error.issues);
     }
-    return null;
+    return [];
   }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setValidationIssues([]);
     if (!online) {
       setError("You are offline. Reconnect before saving");
       return;
     }
-    const err = clientValidate();
-    if (err) {
-      setError(err);
+    const issues = clientValidate();
+    if (issues.length) {
+      setValidationIssues(issues);
       return;
     }
     try {
@@ -182,6 +190,8 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
 
   function applyConversationExtraction(extraction: ConversationExtraction) {
     if (recordType !== "conversation") return;
+    setError(null);
+    setValidationIssues([]);
     setTitle(extraction.title);
     setSummary(extraction.summary);
     setTags(extraction.tags);
@@ -212,6 +222,8 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
   }
 
   function applyDocumentExtraction(extraction: DocumentDraft) {
+    setError(null);
+    setValidationIssues([]);
     setTitle(extraction.title);
     setSummary(extraction.summary);
     setTags(extraction.tags);
@@ -248,6 +260,8 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
   }
 
   function onDocumentFileChange(file: File | null) {
+    setError(null);
+    setValidationIssues([]);
     setDocumentFile(file);
     setDocumentFileRemoved(file === null && !!existing);
     setData((previous) => {
@@ -280,9 +294,22 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
 
   return (
     <form onSubmit={onSubmit} className="space-y-5 pb-40 sm:pb-24">
+      {validationIssues.length ? (
+        <Banner kind="error" title="Fix these fields before saving">
+          <ul className="list-disc space-y-1 pl-5">
+            {validationIssues.map((issue) => (
+              <li key={issue}>{issue}</li>
+            ))}
+          </ul>
+        </Banner>
+      ) : null}
       {error ? (
-        <Banner kind="error" title="Could not save this record">
-          {error}. Existing data was not changed. You can safely retry.
+        <Banner
+          kind="error"
+          title={existing ? "Could not save this record" : "Could not create this record"}
+        >
+          {error} {existing ? "Existing data was not changed." : "Nothing was saved."} You can
+          safely retry.
         </Banner>
       ) : null}
 
@@ -370,6 +397,8 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
               value={title}
               onChange={(e) => {
                 setTitle(e.target.value);
+                setError(null);
+                setValidationIssues([]);
                 setDirty(true);
               }}
               required
@@ -381,6 +410,8 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
               value={summary}
               onChange={(e) => {
                 setSummary(e.target.value);
+                setError(null);
+                setValidationIssues([]);
                 setDirty(true);
               }}
             />
@@ -391,6 +422,8 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
               value={tags}
               onChange={(v) => {
                 setTags(v);
+                setError(null);
+                setValidationIssues([]);
                 setDirty(true);
               }}
             />
@@ -522,6 +555,7 @@ function DocumentExcavationPanel({
   online: boolean;
 }) {
   const [draft, setDraft] = useState<DocumentDraft | null>(null);
+  const [applied, setApplied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const requestIdRef = useRef(0);
@@ -535,6 +569,7 @@ function DocumentExcavationPanel({
     controllerRef.current?.abort();
     controllerRef.current = null;
     setDraft(null);
+    setApplied(false);
     setError(null);
     setIsLoading(false);
   }, [file]);
@@ -550,6 +585,7 @@ function DocumentExcavationPanel({
   function chooseFile(next: File | null) {
     onFileChange(next);
     setDraft(null);
+    setApplied(false);
     setError(null);
   }
 
@@ -561,6 +597,7 @@ function DocumentExcavationPanel({
     const controller = new AbortController();
     controllerRef.current = controller;
     setDraft(null);
+    setApplied(false);
     setError(null);
     setIsLoading(true);
     try {
@@ -586,20 +623,27 @@ function DocumentExcavationPanel({
     controllerRef.current = null;
     setIsLoading(false);
     setDraft(null);
+    setApplied(false);
     setError(null);
   }
 
   function discardDraft() {
     requestIdRef.current += 1;
     setDraft(null);
+    setApplied(false);
     setError(null);
   }
 
   async function applyDraft() {
     if (!draft || !file || fileRef.current !== file) return;
+    const parsedDraft = documentDraftSchema.safeParse(draft);
+    if (!parsedDraft.success) {
+      setError(formatDocumentValidationIssues(parsedDraft.error.issues).join(" "));
+      return;
+    }
     const requestId = requestIdRef.current;
     const snapshot = file;
-    const draftSnapshot = draft;
+    const draftSnapshot = parsedDraft.data;
     const { fingerprintFile } = await import("@/lib/document");
     const currentHash = await fingerprintFile(snapshot);
     if (requestId !== requestIdRef.current || fileRef.current !== snapshot) return;
@@ -609,6 +653,8 @@ function DocumentExcavationPanel({
       return;
     }
     onApply(draftSnapshot);
+    setDraft(null);
+    setApplied(true);
     setError(null);
   }
 
@@ -659,6 +705,11 @@ function DocumentExcavationPanel({
             ? `Stored privately: ${existingFileName}`
             : "No file selected."}
       </p>
+      {applied && !draft ? (
+        <p className="border-l-2 border-[color:var(--brass)] pl-3 text-sm text-muted-foreground">
+          Draft applied to the form. Review the evidence below, then save when it is ready.
+        </p>
+      ) : null}
       {file ? (
         <div className="flex flex-wrap gap-2">
           <button
@@ -713,6 +764,7 @@ function DocumentExcavationPanel({
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Document date">
               <TextInput
+                type="date"
                 value={draft.documentDate ?? ""}
                 onChange={(e) => updateDraft("documentDate", e.target.value || null)}
               />
@@ -731,21 +783,26 @@ function DocumentExcavationPanel({
           <DocumentInsightEditor
             label="High-signal findings"
             items={draft.highSignalFindings}
+            references={draft.sourceReferences}
+            defaultExpanded
             onChange={(items) => updateDraft("highSignalFindings", items)}
           />
           <DocumentInsightEditor
             label="Key claims"
             items={draft.keyClaims}
+            references={draft.sourceReferences}
             onChange={(items) => updateDraft("keyClaims", items)}
           />
           <DocumentInsightEditor
             label="Contradictions"
             items={draft.contradictions}
+            references={draft.sourceReferences}
             onChange={(items) => updateDraft("contradictions", items)}
           />
           <DocumentInsightEditor
             label="Uncertainties"
             items={draft.uncertainties}
+            references={draft.sourceReferences}
             onChange={(items) => updateDraft("uncertainties", items)}
           />
           <DocumentReferenceEditor
@@ -797,69 +854,177 @@ function DocumentExcavationPanel({
 function DocumentInsightEditor({
   label,
   items,
+  references,
   onChange,
+  defaultExpanded = false,
 }: {
   label: string;
-  items: DocumentDraft["highSignalFindings"];
-  onChange: (items: DocumentDraft["highSignalFindings"]) => void;
+  items: DocumentInsight[];
+  references: DocumentSourceReference[];
+  onChange: (items: DocumentInsight[]) => void;
+  defaultExpanded?: boolean;
 }) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+
+  function addItem() {
+    setExpanded(true);
+    onChange([...items, { text: "", sourceReferenceIds: [] }]);
+  }
+
   return (
-    <div>
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
+    <div className="rounded-md border border-border/80 p-3">
+      <div className="flex items-center justify-between gap-2">
         <button
           type="button"
-          onClick={() => onChange([...items, { text: "", sourceReferenceIds: [] }])}
-          className="text-xs text-[color:var(--brass)]"
+          onClick={() => setExpanded((current) => !current)}
+          aria-expanded={expanded}
+          className="flex min-h-9 items-center gap-2 text-left text-xs uppercase tracking-wide text-muted-foreground"
         >
+          <span aria-hidden="true">{expanded ? "▾" : "▸"}</span>
+          <span>{label}</span>
+          <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-foreground">
+            {items.length}
+          </span>
+        </button>
+        <button type="button" onClick={addItem} className="text-xs text-[color:var(--brass)]">
           Add
         </button>
       </div>
-      <div className="space-y-3">
-        {items.map((item, index) => (
-          <div key={`${label}-${index}`} className="rounded-md border border-border p-3">
-            <TextArea
-              value={item.text}
-              onChange={(e) =>
-                onChange(
-                  items.map((current, i) =>
-                    i === index ? { ...current, text: e.target.value } : current,
-                  ),
-                )
-              }
-              placeholder="Supported conclusion or claim…"
-            />
-            <div className="mt-2 flex gap-2">
-              <TextInput
-                value={item.sourceReferenceIds.join(", ")}
+      {expanded ? (
+        <div className="mt-3 space-y-3">
+          {items.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No entries yet.</p>
+          ) : null}
+          {items.map((item, index) => (
+            <div key={`${label}-${index}`} className="rounded-md border border-border p-3">
+              <TextArea
+                aria-label={`${label} ${index + 1}`}
+                value={item.text}
                 onChange={(e) =>
                   onChange(
                     items.map((current, i) =>
-                      i === index
-                        ? {
-                            ...current,
-                            sourceReferenceIds: e.target.value
-                              .split(",")
-                              .map((value) => value.trim())
-                              .filter(Boolean),
-                          }
-                        : current,
+                      i === index ? { ...current, text: e.target.value } : current,
                     ),
                   )
                 }
-                placeholder="ref_00000001, ref_00000002"
+                placeholder="Supported conclusion or claim…"
+              />
+              <SourceReferencePicker
+                selectedIds={item.sourceReferenceIds}
+                references={references}
+                onChange={(sourceReferenceIds) =>
+                  onChange(
+                    items.map((current, i) =>
+                      i === index ? { ...current, sourceReferenceIds } : current,
+                    ),
+                  )
+                }
               />
               <button
                 type="button"
                 onClick={() => onChange(items.filter((_, i) => i !== index))}
-                className="shrink-0 text-xs text-[color:var(--destructive-foreground)]"
+                className="mt-2 text-xs text-[color:var(--destructive-foreground)]"
               >
-                Remove
+                Remove entry
               </button>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SourceReferencePicker({
+  selectedIds,
+  references,
+  onChange,
+}: {
+  selectedIds: string[];
+  references: DocumentSourceReference[];
+  onChange: (ids: string[]) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const referenceById = new Map(references.map((reference) => [reference.id, reference]));
+
+  function toggle(id: string) {
+    if (selectedIds.includes(id)) {
+      onChange(selectedIds.filter((current) => current !== id));
+      return;
+    }
+    if (selectedIds.length >= 4) return;
+    onChange([...selectedIds, id]);
+  }
+
+  return (
+    <div className="mt-3 rounded-md border border-input bg-background/40 p-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs uppercase tracking-wide text-muted-foreground">Citations</span>
+        <button
+          type="button"
+          onClick={() => setExpanded((current) => !current)}
+          aria-expanded={expanded}
+          className="text-xs text-[color:var(--brass)]"
+        >
+          {expanded ? "Done" : selectedIds.length ? "Edit sources" : "Add source"}
+        </button>
       </div>
+      {selectedIds.length ? (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {selectedIds.map((id) => {
+            const reference = referenceById.get(id);
+            return (
+              <span
+                key={id}
+                className="inline-flex max-w-full items-center gap-1 rounded-full border border-border px-2 py-1 text-xs text-foreground"
+                title={reference ? `${reference.label} · ${reference.locator}` : "Unknown source"}
+              >
+                <span className="truncate">
+                  {reference ? `${reference.label} · ${reference.locator}` : "Unknown source"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onChange(selectedIds.filter((current) => current !== id))}
+                  aria-label={`Remove ${reference?.label ?? "source"}`}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  ×
+                </button>
+              </span>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="mt-2 text-xs text-muted-foreground">No source selected.</p>
+      )}
+      {expanded ? (
+        <div className="mt-2 grid gap-2 sm:grid-cols-2" role="group" aria-label="Source citations">
+          {references.map((reference) => {
+            const checked = selectedIds.includes(reference.id);
+            return (
+              <label
+                key={reference.id}
+                className="flex cursor-pointer items-start gap-2 rounded-md border border-border p-2 text-xs hover:bg-[color:var(--record-hover)]"
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={!checked && selectedIds.length >= 4}
+                  onChange={() => toggle(reference.id)}
+                  className="mt-0.5"
+                />
+                <span className="min-w-0">
+                  <span className="block truncate text-foreground">{reference.label}</span>
+                  <span className="block truncate text-muted-foreground">{reference.locator}</span>
+                </span>
+              </label>
+            );
+          })}
+          {references.length === 0 ? (
+            <p className="text-xs text-muted-foreground">Add a source reference below first.</p>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -868,84 +1033,99 @@ function DocumentReferenceEditor({
   references,
   onChange,
 }: {
-  references: DocumentDraft["sourceReferences"];
-  onChange: (references: DocumentDraft["sourceReferences"]) => void;
+  references: DocumentSourceReference[];
+  onChange: (references: DocumentSourceReference[]) => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
+
+  function addReference() {
+    setExpanded(true);
+    onChange([
+      ...references,
+      {
+        id: `ref_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`,
+        locator: "",
+        label: "",
+        note: "",
+      },
+    ]);
+  }
+
   return (
-    <div>
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="text-xs uppercase tracking-wide text-muted-foreground">
-          Source references
-        </div>
+    <div className="rounded-md border border-border/80 p-3">
+      <div className="flex items-center justify-between gap-2">
         <button
           type="button"
-          onClick={() =>
-            onChange([
-              ...references,
-              {
-                id: `ref_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`,
-                locator: "",
-                label: "",
-                note: "",
-              },
-            ])
-          }
-          className="text-xs text-[color:var(--brass)]"
+          onClick={() => setExpanded((current) => !current)}
+          aria-expanded={expanded}
+          className="flex min-h-9 items-center gap-2 text-left text-xs uppercase tracking-wide text-muted-foreground"
         >
+          <span aria-hidden="true">{expanded ? "▾" : "▸"}</span>
+          <span>Source references</span>
+          <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-foreground">
+            {references.length}
+          </span>
+        </button>
+        <button type="button" onClick={addReference} className="text-xs text-[color:var(--brass)]">
           Add
         </button>
       </div>
-      <div className="space-y-3">
-        {references.map((reference, index) => (
-          <div
-            key={`${reference.id}-${index}`}
-            className="grid gap-2 rounded-md border border-border p-3 md:grid-cols-3"
-          >
-            <TextInput
-              value={reference.label}
-              onChange={(e) =>
-                onChange(
-                  references.map((current, i) =>
-                    i === index ? { ...current, label: e.target.value } : current,
-                  ),
-                )
-              }
-              placeholder="Label"
-            />
-            <TextInput
-              value={reference.locator}
-              onChange={(e) =>
-                onChange(
-                  references.map((current, i) =>
-                    i === index ? { ...current, locator: e.target.value } : current,
-                  ),
-                )
-              }
-              placeholder="p. 13 or Section 4.2"
-            />
-            <div className="flex gap-2">
-              <TextInput
-                value={reference.note}
-                onChange={(e) =>
-                  onChange(
-                    references.map((current, i) =>
-                      i === index ? { ...current, note: e.target.value } : current,
-                    ),
-                  )
-                }
-                placeholder="Note"
-              />
+      {expanded ? (
+        <div className="mt-3 space-y-3">
+          {references.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No source references yet.</p>
+          ) : null}
+          {references.map((reference, index) => (
+            <div key={`${reference.id}-${index}`} className="rounded-md border border-border p-3">
+              <div className="grid gap-2 md:grid-cols-3">
+                <TextInput
+                  aria-label={`Source reference ${index + 1} label`}
+                  value={reference.label}
+                  onChange={(e) =>
+                    onChange(
+                      references.map((current, i) =>
+                        i === index ? { ...current, label: e.target.value } : current,
+                      ),
+                    )
+                  }
+                  placeholder="Label"
+                />
+                <TextInput
+                  aria-label={`Source reference ${index + 1} locator`}
+                  value={reference.locator}
+                  onChange={(e) =>
+                    onChange(
+                      references.map((current, i) =>
+                        i === index ? { ...current, locator: e.target.value } : current,
+                      ),
+                    )
+                  }
+                  placeholder="p. 13 or Section 4.2"
+                />
+                <TextInput
+                  aria-label={`Source reference ${index + 1} note`}
+                  value={reference.note}
+                  onChange={(e) =>
+                    onChange(
+                      references.map((current, i) =>
+                        i === index ? { ...current, note: e.target.value } : current,
+                      ),
+                    )
+                  }
+                  placeholder="Optional note"
+                />
+              </div>
               <button
                 type="button"
                 onClick={() => onChange(references.filter((_, i) => i !== index))}
-                className="shrink-0 text-xs text-[color:var(--destructive-foreground)]"
+                className="mt-2 text-xs text-[color:var(--destructive-foreground)]"
               >
-                Remove
+                Remove reference
               </button>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -956,6 +1136,7 @@ function DocumentFields({ data, patch }: { data: DocumentData; patch: Patcher<Do
       <div className="grid gap-4 md:grid-cols-3">
         <Field label="Document date">
           <TextInput
+            type="date"
             value={data.documentDate ?? ""}
             onChange={(e) => patch("documentDate", e.target.value || null)}
           />
@@ -990,21 +1171,26 @@ function DocumentFields({ data, patch }: { data: DocumentData; patch: Patcher<Do
       <DocumentInsightEditor
         label="High-signal findings"
         items={data.highSignalFindings}
+        references={data.sourceReferences}
+        defaultExpanded
         onChange={(items) => patch("highSignalFindings", items)}
       />
       <DocumentInsightEditor
         label="Key claims"
         items={data.keyClaims}
+        references={data.sourceReferences}
         onChange={(items) => patch("keyClaims", items)}
       />
       <DocumentInsightEditor
         label="Contradictions"
         items={data.contradictions}
+        references={data.sourceReferences}
         onChange={(items) => patch("contradictions", items)}
       />
       <DocumentInsightEditor
         label="Uncertainties"
         items={data.uncertainties}
+        references={data.sourceReferences}
         onChange={(items) => patch("uncertainties", items)}
       />
       <DocumentReferenceEditor

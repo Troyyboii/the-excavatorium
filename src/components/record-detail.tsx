@@ -319,6 +319,13 @@ function DocumentDetail({
   onToast: (message: string) => void;
 }) {
   const d = r.recordData;
+  const referenceById = new Map(d.sourceReferences.map((reference) => [reference.id, reference]));
+
+  function citationLabel(id: string): string {
+    const reference = referenceById.get(id);
+    return reference ? `${reference.label} · ${reference.locator}` : "Unknown source";
+  }
+
   async function openOriginal() {
     if (!d.storagePath) return;
     const { data, error } = await supabase.storage
@@ -330,23 +337,39 @@ function DocumentDetail({
     }
     window.open(data.signedUrl, "_blank", "noopener,noreferrer");
   }
-  const insightSection = (heading: string, items: typeof d.highSignalFindings) =>
+  const insightSection = (
+    heading: string,
+    items: typeof d.highSignalFindings,
+    defaultOpen = false,
+  ) =>
     items.length === 0 ? null : (
-      <section className="rounded-lg border border-border bg-card p-4 md:p-6">
-        <h2 className="mb-3 font-serif text-lg text-foreground">{heading}</h2>
-        <ul className="space-y-3">
+      <details open={defaultOpen} className="rounded-lg border border-border bg-card p-4 md:p-6">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 font-serif text-lg text-foreground">
+          <span>{heading}</span>
+          <span className="rounded-full border border-border px-2 py-0.5 font-sans text-xs text-muted-foreground">
+            {items.length}
+          </span>
+        </summary>
+        <ul className="mt-4 space-y-3">
           {items.map((item, index) => (
             <li key={`${heading}-${index}`} className="text-sm text-foreground">
               <p className="whitespace-pre-wrap">{item.text}</p>
               {item.sourceReferenceIds.length ? (
-                <p className="mt-1 font-mono text-xs text-muted-foreground">
-                  Sources: {item.sourceReferenceIds.join(", ")}
-                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {item.sourceReferenceIds.map((id) => (
+                    <span
+                      key={id}
+                      className="rounded-full border border-border px-2 py-1 text-xs text-muted-foreground"
+                    >
+                      {citationLabel(id)}
+                    </span>
+                  ))}
+                </div>
               ) : null}
             </li>
           ))}
         </ul>
-      </section>
+      </details>
     );
   return (
     <>
@@ -374,14 +397,19 @@ function DocumentDetail({
           </p>
         </section>
       ) : null}
-      {insightSection("High-signal findings", d.highSignalFindings)}
+      {insightSection("High-signal findings", d.highSignalFindings, true)}
       {insightSection("Key claims", d.keyClaims)}
       {insightSection("Contradictions", d.contradictions)}
       {insightSection("Uncertainties", d.uncertainties)}
       {d.sourceReferences.length ? (
-        <section className="rounded-lg border border-border bg-card p-4 md:p-6">
-          <h2 className="mb-3 font-serif text-lg text-foreground">Source references</h2>
-          <ul className="space-y-3">
+        <details className="rounded-lg border border-border bg-card p-4 md:p-6">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 font-serif text-lg text-foreground">
+            <span>Source references</span>
+            <span className="rounded-full border border-border px-2 py-0.5 font-sans text-xs text-muted-foreground">
+              {d.sourceReferences.length}
+            </span>
+          </summary>
+          <ul className="mt-4 space-y-3">
             {d.sourceReferences.map((ref) => (
               <li key={ref.id} className="text-sm text-foreground">
                 <div className="font-medium">{ref.label}</div>
@@ -390,7 +418,7 @@ function DocumentDetail({
               </li>
             ))}
           </ul>
-        </section>
+        </details>
       ) : null}
     </>
   );

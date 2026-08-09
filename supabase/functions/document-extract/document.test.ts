@@ -7,6 +7,11 @@ import {
   type NormalizedDocument,
   validateNormalizedDocument,
 } from "../_shared/document.ts";
+import {
+  compactInsightList,
+  DOCUMENT_SYNTHESIS_LIMITS,
+  orderSourceReferenceIds,
+} from "../_shared/document-draft.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -141,4 +146,37 @@ Deno.test("rejects tampered normalized provenance", async () => {
   const tampered = structuredClone(normalized);
   tampered.units[0].order = 99;
   assert(!validateNormalizedDocument(tampered), "expected reordered units to fail validation");
+});
+
+Deno.test("compacts duplicate insights, merges citations, and enforces the cap", () => {
+  const result = compactInsightList(
+    [
+      {
+        text: "  Supported   claim. ",
+        sourceReferenceIds: ["ref_00000002", "ref_00000002"],
+      },
+      { text: "supported claim.", sourceReferenceIds: ["ref_00000001", "ref_00000002"] },
+      { text: "Another claim.", sourceReferenceIds: ["ref_00000003"] },
+      { text: "A claim beyond the cap.", sourceReferenceIds: ["ref_00000004"] },
+    ],
+    2,
+  );
+  assert(result.length === 2, "expected duplicate insight text to collapse");
+  assert(result[0].text === "Supported claim.", "expected whitespace to normalize");
+  assert(
+    JSON.stringify(result[0].sourceReferenceIds) ===
+      JSON.stringify(["ref_00000002", "ref_00000001"]),
+    "expected duplicate citations to merge without reordering",
+  );
+});
+
+Deno.test("orders compact source references by document order", () => {
+  const result = orderSourceReferenceIds(
+    ["ref_00000003", "ref_00000001", "ref_00000002", "ref_00000001"],
+    ["ref_00000001", "ref_00000002", "ref_00000003"],
+  );
+  assert(
+    JSON.stringify(result) === JSON.stringify(["ref_00000001", "ref_00000002", "ref_00000003"]),
+    "expected source references to be unique and document ordered",
+  );
 });

@@ -9,6 +9,11 @@
 
 import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
+import {
+  FunctionsFetchError,
+  FunctionsHttpError,
+  FunctionsRelayError,
+} from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import { useCurrentUserId } from "./session";
 import { fingerprintFile, validateDocumentData, validateSelectedDocumentFile } from "./document";
@@ -280,6 +285,35 @@ function invalidateArchiveAndMeta(qc: ReturnType<typeof useQueryClient>, userId:
   qc.invalidateQueries({ queryKey: appMetadataKey(userId) });
 }
 
+async function documentFunctionErrorMessage(error: unknown, fallback: string): Promise<string> {
+  if (error instanceof FunctionsHttpError) {
+    const response = error.context as Partial<Response> & { json?: unknown; clone?: unknown };
+    if (response.status === 504) return "Document save timed out. Please retry.";
+    if (typeof response.json !== "function" || typeof response.clone !== "function") {
+      return fallback;
+    }
+    try {
+      const body = await (response.clone() as Response).json();
+      if (
+        body &&
+        typeof body === "object" &&
+        !Array.isArray(body) &&
+        typeof (body as { error?: unknown }).error === "string" &&
+        (body as { error: string }).error.trim().length <= 300
+      ) {
+        const message = (body as { error: string }).error.trim();
+        if (message) return message;
+      }
+    } catch {
+      // The response body is optional; keep the sanitized fallback below.
+    }
+    return fallback;
+  }
+  if (error instanceof FunctionsRelayError) return "Supabase could not relay the save request.";
+  if (error instanceof FunctionsFetchError) return "The save service could not be reached.";
+  return fallback;
+}
+
 export type SaveRecordInput = {
   id: string | null;
   recordType: RecordType;
@@ -328,8 +362,12 @@ export function useSaveRecord() {
           const { data, error } = await supabase.functions.invoke("document-save", {
             body,
           });
-          if (error)
-            throw new Error("Document files could not be saved. Existing data was not changed.");
+          if (error) {
+            const fallback = input.id
+              ? "The document could not be saved."
+              : "The document could not be created.";
+            throw new Error(await documentFunctionErrorMessage(error, fallback));
+          }
           if (
             !data ||
             typeof data !== "object" ||
