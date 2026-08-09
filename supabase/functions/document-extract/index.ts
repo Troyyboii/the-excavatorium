@@ -33,6 +33,7 @@ const MAX_CLAIMS = 16;
 const MAX_REFS = 64;
 const CHUNK_ANALYSIS_CONCURRENCY = 4;
 const OPENAI_TIMEOUT_MS = 20_000;
+const OPENAI_MAX_OUTPUT_TOKENS = 6_000;
 const MAX_PIPELINE_MS = 135_000;
 const MAX_SYNTHESIS_INPUT_BYTES = 300_000;
 const DEFAULT_MODEL = "gpt-5.6-luna";
@@ -244,9 +245,13 @@ async function openAiJson(
       body: JSON.stringify({
         model: excavationModel(),
         store: false,
-        max_output_tokens: 2_400,
+        reasoning: { effort: "none" },
+        max_output_tokens: OPENAI_MAX_OUTPUT_TOKENS,
         input,
-        text: { format: { type: "json_schema", name: schemaName, strict: true, schema } },
+        text: {
+          verbosity: "low",
+          format: { type: "json_schema", name: schemaName, strict: true, schema },
+        },
       }),
     });
     if (!response.ok) {
@@ -262,9 +267,36 @@ async function openAiJson(
     } catch {
       throw new Error("output");
     }
-    const outputText = extractAssistantOutputText(upstream);
-    if (!outputText || new TextEncoder().encode(outputText).byteLength > DOCUMENT_MAX_OUTPUT_BYTES)
+    if (
+      !upstream ||
+      typeof upstream !== "object" ||
+      (upstream as Record<string, unknown>).status !== "completed"
+    ) {
+      const reason =
+        upstream &&
+        typeof upstream === "object" &&
+        (upstream as Record<string, unknown>).incomplete_details &&
+        typeof (upstream as Record<string, unknown>).incomplete_details === "object"
+          ? ((upstream as { incomplete_details: { reason?: unknown } }).incomplete_details.reason ??
+            "unknown")
+          : "unknown";
+      logDiagnostic(schemaName, reason === "max_output_tokens" ? "output_limit" : "output_status", {
+        status: 200,
+        durationMs: Date.now() - startedAt,
+      });
       throw new Error("output");
+    }
+    const outputText = extractAssistantOutputText(upstream);
+    if (
+      !outputText ||
+      new TextEncoder().encode(outputText).byteLength > DOCUMENT_MAX_OUTPUT_BYTES
+    ) {
+      logDiagnostic(schemaName, "output_shape", {
+        status: 200,
+        durationMs: Date.now() - startedAt,
+      });
+      throw new Error("output");
+    }
     try {
       return JSON.parse(outputText);
     } catch {
