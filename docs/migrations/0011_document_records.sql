@@ -363,13 +363,13 @@ begin
          where bucket_id = 'document-files'
            and name = data ->> 'extractedContentPath'
            and owner_id = (auth.uid())::text
-           and metadata ->> 'document_version' = '1'
-           and metadata ->> 'document_content_hash' = data ->> 'contentHash'
+           and user_metadata ->> 'document_version' = '1'
+           and user_metadata ->> 'document_content_hash' = data ->> 'contentHash'
            and not exists (
              select 1
                from pg_catalog.jsonb_array_elements(data -> 'sourceReferences') as refs(value)
               where pg_catalog.strpos(
-                pg_catalog.coalesce(metadata ->> 'document_source_reference_ids', ''),
+                coalesce(user_metadata ->> 'document_source_reference_ids', ''),
                 '"' || (refs.value ->> 'id') || '"'
               ) = 0
            )
