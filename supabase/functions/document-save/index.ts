@@ -235,18 +235,18 @@ Deno.serve(async (request) => {
           origin,
         );
       }
-      const sameExistingFile =
-        existingData?.contentHash === normalized.contentHash &&
+      const reusablePath =
+        existingData &&
+        existingData.contentHash === normalized.contentHash &&
         typeof existingData.storagePath === "string" &&
         typeof existingData.extractedContentPath === "string" &&
         validGeneratedPath(existingData.storagePath, auth.user.id, recordId) &&
-        validGeneratedPath(existingData.extractedContentPath, auth.user.id, recordId);
-      const existingNormalized = sameExistingFile
-        ? await loadStoredNormalized(
-            auth,
-            existingData.extractedContentPath,
-            normalized.contentHash,
-          )
+        validGeneratedPath(existingData.extractedContentPath, auth.user.id, recordId)
+          ? existingData.extractedContentPath
+          : null;
+      const sameExistingFile = reusablePath !== null;
+      const existingNormalized = reusablePath
+        ? await loadStoredNormalized(auth, reusablePath, normalized.contentHash)
         : null;
       if (sameExistingFile && existingNormalized) {
         nextData = {
