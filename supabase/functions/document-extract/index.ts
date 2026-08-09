@@ -7,6 +7,7 @@ import {
   type AuthenticatedSupabase,
 } from "../_shared/http.ts";
 import {
+  arrayBufferFromBytes,
   chunkUnits,
   declaredLengthTooLarge,
   displayFileName,
@@ -15,6 +16,7 @@ import {
   DOCUMENT_MAX_OUTPUT_BYTES,
   isUuid,
   kindFor,
+  logDocumentDiagnostic,
   normalizeDocumentFile,
   readBoundedBody,
   type CandidateRecord,
@@ -29,7 +31,11 @@ const MAX_REFS = 64;
 const OPENAI_TIMEOUT_MS = 25_000;
 const MAX_PIPELINE_MS = 180_000;
 const MAX_SYNTHESIS_INPUT_BYTES = 300_000;
-const MODEL = "gpt-5.6-terra";
+const DEFAULT_MODEL = "gpt-5.6-luna";
+
+function selectedModel(): string {
+  return Deno.env.get("OPENAI_DOCUMENT_MODEL")?.trim() || DEFAULT_MODEL;
+}
 
 type Insight = { text: string; sourceReferenceIds: string[] };
 type ChunkAnalysis = {
@@ -211,6 +217,7 @@ async function openAiJson(
   input: unknown,
   schemaName: string,
   schema: Record<string, unknown>,
+  model: string,
   requestSignal: AbortSignal,
   deadline: number,
 ): Promise<unknown> {
@@ -229,7 +236,7 @@ async function openAiJson(
       signal: controller.signal,
       headers: { Authorization: `Bearer ${openAiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: MODEL,
+        model,
         store: false,
         max_output_tokens: 2_400,
         input,
@@ -342,11 +349,13 @@ function finalDraft(
   )
     return null;
   if (output.documentDate !== null && !isIsoDate(output.documentDate)) return null;
+  const pageCount = output.pageCount;
   if (
-    output.pageCount !== null &&
-    (!Number.isInteger(output.pageCount) ||
-      output.pageCount < 1 ||
-      output.pageCount > DOCUMENT_MAX_PAGE_COUNT)
+    pageCount !== null &&
+    (typeof pageCount !== "number" ||
+      !Number.isInteger(pageCount) ||
+      pageCount < 1 ||
+      pageCount > DOCUMENT_MAX_PAGE_COUNT)
   )
     return null;
   const knownIds = new Set(normalized.units.map((unit) => unit.id));
@@ -423,6 +432,9 @@ function finalDraft(
 }
 
 Deno.serve(async (request) => {
+  const startedAt = Date.now();
+  let phase = "request";
+  let normalizationKind: "pdf" | "other" = "other";
   const origin = originFor(request);
   if (origin === "__denied__") return jsonResponse({ error: "Origin is not allowed." }, 403);
   if (request.method === "OPTIONS") return new Response("ok", { headers: responseHeaders(origin) });
@@ -433,20 +445,21 @@ Deno.serve(async (request) => {
   const auth = await authenticatedSupabase(request);
   if (!auth) return jsonResponse({ error: "Sign in is required." }, 401, origin);
   const openAiKey = Deno.env.get("OPENAI_API_KEY");
-  if (!openAiKey)
+  if (!openAiKey) {
+    logDocumentDiagnostic("configuration", "configuration", 503, startedAt);
     return jsonResponse(
       { error: "Excavation is not configured. Please try again later." },
       503,
       origin,
     );
-  void openAiKey;
+  }
 
   try {
     const bytes = await readBoundedBody(request);
     const replay = new Request(request.url, {
       method: "POST",
       headers: request.headers,
-      body: bytes,
+      body: arrayBufferFromBytes(bytes),
     });
     const form = await replay.formData();
     const file = form.get("file");
@@ -471,20 +484,26 @@ Deno.serve(async (request) => {
     const { data: quotaData, error: quotaError } = await auth.client.rpc(
       "consume_conversation_extraction_quota",
     );
-    if (quotaError || !isQuotaDecision(quotaData))
+    if (quotaError || !isQuotaDecision(quotaData)) {
+      logDocumentDiagnostic("quota", "quota", 503, startedAt);
       return jsonResponse(
         { error: "Excavation is temporarily unavailable. Please retry." },
         503,
         origin,
       );
-    if (!quotaData.allowed)
+    }
+    if (!quotaData.allowed) {
+      logDocumentDiagnostic("quota", "quota", 429, startedAt);
       return jsonResponse(
         { error: "Excavation is temporarily rate limited. Please retry later." },
         429,
         origin,
         { "Retry-After": String(Math.max(1, quotaData.retryAfterSeconds)) },
       );
+    }
 
+    phase = "normalization";
+    normalizationKind = kindFor(file.name, file.type) === "pdf" ? "pdf" : "other";
     const normalized = await normalizeDocumentFile(
       fileBytes,
       file.name,
@@ -493,6 +512,7 @@ Deno.serve(async (request) => {
     );
 
     const deadline = Date.now() + MAX_PIPELINE_MS;
+    const model = selectedModel();
     const chunks = chunkUnits(normalized.units);
     if (chunks.length === 0 || chunks.length > 16)
       return jsonResponse(
@@ -502,6 +522,7 @@ Deno.serve(async (request) => {
       );
     const analyses: ChunkAnalysis[] = [];
     for (const chunk of chunks) {
+      phase = "analysis";
       const result = await openAiJson(
         [
           {
@@ -519,6 +540,7 @@ Deno.serve(async (request) => {
         ],
         "document_chunk_analysis",
         chunkResponseSchema,
+        model,
         request.signal,
         deadline,
       );
@@ -558,10 +580,12 @@ Deno.serve(async (request) => {
         origin,
       );
     }
+    phase = "synthesis";
     const synthesis = await openAiJson(
       synthesisInput,
       "document_synthesis",
       synthesisResponseSchema,
+      model,
       request.signal,
       deadline,
     );
@@ -583,17 +607,27 @@ Deno.serve(async (request) => {
     draft.fileSizeBytes = fileBytes.byteLength;
     return jsonResponse(draft, 200, origin);
   } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError")
+    if (error instanceof DOMException && error.name === "AbortError") {
+      logDocumentDiagnostic(phase, "timeout", 504, startedAt);
       return jsonResponse({ error: "Excavation timed out or was cancelled." }, 504, origin);
+    }
     if (
       error instanceof Error &&
       ["deadline", "configuration", "upstream", "output"].includes(error.message)
-    )
+    ) {
+      const category =
+        error.message === "deadline"
+          ? "timeout"
+          : error.message === "configuration"
+            ? "configuration"
+            : "upstream";
+      logDocumentDiagnostic(phase, category, 502, startedAt);
       return jsonResponse(
         { error: "Excavation service is temporarily unavailable. Please retry." },
         502,
         origin,
       );
+    }
     if (
       error &&
       typeof error === "object" &&
@@ -601,12 +635,19 @@ Deno.serve(async (request) => {
       typeof (error as { status?: unknown }).status === "number"
     ) {
       const input = error as { message?: unknown; status: number };
+      logDocumentDiagnostic(
+        phase,
+        phase === "normalization" && normalizationKind === "pdf" ? "pdf_normalization" : "internal",
+        input.status,
+        startedAt,
+      );
       return jsonResponse(
         { error: typeof input.message === "string" ? input.message : "File input is invalid." },
         input.status,
         origin,
       );
     }
+    logDocumentDiagnostic(phase, "internal", 400, startedAt);
     return jsonResponse(
       { error: "File excavation could not be completed. Please retry." },
       400,
