@@ -389,7 +389,9 @@ async function normalizePdf(bytes: Uint8Array, contentHash: string): Promise<Nor
   try {
     pdf = await getDocument({
       data: new Uint8Array(toBinaryData(bytes)),
-      disableWorker: true,
+      // `disableWorker` is honoured at runtime but missing from the published
+      // parameter typings, so it is supplied through a narrow cast.
+      ...({ disableWorker: true } as Record<string, unknown>),
       isEvalSupported: false,
     }).promise;
   } catch {
