@@ -2,6 +2,7 @@ import {
   authenticatedSupabase,
   allowedOrigin,
   jsonResponse,
+  logDiagnostic,
   responseHeaders,
   type AuthenticatedSupabase,
 } from "../_shared/http.ts";
@@ -13,6 +14,8 @@ import {
   normalizeDocumentFile,
   pathIsOwnerScoped,
   readBoundedBody,
+  readFileBytes,
+  toBinaryData,
   validateDocumentRecordData,
   validateNormalizedDocument,
   isHash,
@@ -133,9 +136,9 @@ async function removeObjects(auth: AuthenticatedSupabase, paths: string[]): Prom
   if (paths.length === 0) return;
   const { error } = await auth.client.storage.from(BUCKET).remove(paths);
   if (error) {
-    // Keep the internal report limited to owner-scoped object paths. Never
-    // expose the upstream error payload or any file contents to the caller.
-    console.error("Document Storage cleanup failed.", { paths });
+    // Diagnostics stay limited to phase and category metadata. Never expose the
+    // upstream error payload, object paths, or any file contents.
+    logDiagnostic("storage-cleanup", "failed");
   }
 }
 
@@ -156,6 +159,7 @@ async function loadStoredNormalized(
 }
 
 Deno.serve(async (request) => {
+  const requestStartedAt = Date.now();
   const origin = originFor(request);
   if (origin === "__denied__") return jsonResponse({ error: "Origin is not allowed." }, 403);
   if (request.method === "OPTIONS") return new Response("ok", { headers: responseHeaders(origin) });
@@ -171,7 +175,7 @@ Deno.serve(async (request) => {
     const replay = new Request(request.url, {
       method: "POST",
       headers: request.headers,
-      body: bytes,
+      body: toBinaryData(bytes),
     });
     const form = await replay.formData();
     const fileValue = form.get("file");
@@ -209,7 +213,7 @@ Deno.serve(async (request) => {
     let newPaths: { original: string; extracted: string } | null = null;
 
     if (file) {
-      const fileBytes = new Uint8Array(await file.arrayBuffer());
+      const fileBytes = await readFileBytes(file);
       const expectedHashValue = form.get("contentHash");
       if (
         expectedHashValue !== null &&
@@ -231,18 +235,18 @@ Deno.serve(async (request) => {
           origin,
         );
       }
-      const sameExistingFile =
-        existingData?.contentHash === normalized.contentHash &&
+      const reusablePath =
+        existingData &&
+        existingData.contentHash === normalized.contentHash &&
         typeof existingData.storagePath === "string" &&
         typeof existingData.extractedContentPath === "string" &&
         validGeneratedPath(existingData.storagePath, auth.user.id, recordId) &&
-        validGeneratedPath(existingData.extractedContentPath, auth.user.id, recordId);
-      const existingNormalized = sameExistingFile
-        ? await loadStoredNormalized(
-            auth,
-            existingData.extractedContentPath,
-            normalized.contentHash,
-          )
+        validGeneratedPath(existingData.extractedContentPath, auth.user.id, recordId)
+          ? existingData.extractedContentPath
+          : null;
+      const sameExistingFile = reusablePath !== null;
+      const existingNormalized = reusablePath
+        ? await loadStoredNormalized(auth, reusablePath, normalized.contentHash)
         : null;
       if (sameExistingFile && existingNormalized) {
         nextData = {
@@ -415,6 +419,7 @@ Deno.serve(async (request) => {
     return jsonResponse({ id: result.id, isNew: result.isNew === true }, 200, origin);
   } catch (error) {
     await removeObjects(auth, createdPaths);
+    const durationMs = Date.now() - requestStartedAt;
     if (
       error &&
       typeof error === "object" &&
@@ -422,12 +427,14 @@ Deno.serve(async (request) => {
       typeof (error as { status?: unknown }).status === "number"
     ) {
       const input = error as { message?: unknown; status: number };
+      logDiagnostic("request", "input", { status: input.status, durationMs });
       return jsonResponse(
         { error: typeof input.message === "string" ? input.message : "Document input is invalid." },
         input.status,
         origin,
       );
     }
+    logDiagnostic("request", "unhandled", { status: 502, durationMs });
     return jsonResponse(
       { error: "Document files could not be saved. Existing data was not changed." },
       502,

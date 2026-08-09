@@ -9,6 +9,36 @@ import type { ArchiveRecord } from "./types";
 
 export type DocumentCandidateRecord = Pick<ArchiveRecord, "id" | "title" | "recordType">;
 
+const GENERIC_RELAY_MESSAGE =
+  "File excavation could not be reached. Check your connection and retry.";
+const GENERIC_FAILURE_MESSAGE = "File excavation could not be completed. Please retry.";
+
+/**
+ * Extracts the Edge Function's sanitized `{ error }` message from a Supabase
+ * FunctionsHttpError. The response body is read from the error context only;
+ * nothing else about the failure is surfaced, so secrets, prompts, upstream
+ * payloads, and document text can never reach the UI.
+ */
+async function sanitizedFunctionErrorMessage(error: unknown): Promise<string | null> {
+  if (!error || typeof error !== "object") return null;
+  const context = (error as { context?: unknown }).context;
+  if (!context || typeof context !== "object") return null;
+  const response = context as Partial<Response> & { json?: unknown };
+  if (typeof response.json !== "function" || typeof response.clone !== "function") return null;
+  let body: unknown;
+  try {
+    body = await (response.clone() as Response).json();
+  } catch {
+    return null;
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) return null;
+  const message = (body as { error?: unknown }).error;
+  if (typeof message !== "string") return null;
+  const trimmed = message.trim();
+  if (trimmed.length === 0 || trimmed.length > 300) return null;
+  return trimmed;
+}
+
 export async function excavateDocument(
   file: File,
   records: DocumentCandidateRecord[],
@@ -35,7 +65,10 @@ export async function excavateDocument(
   });
   if (error) {
     if (signal?.aborted) throw new DOMException("Excavation cancelled.", "AbortError");
-    throw new Error("File excavation could not be completed. Please retry.");
+    const message = await sanitizedFunctionErrorMessage(error);
+    // A parsed body means the function responded: surface its sanitized text.
+    // Otherwise the failure was network or relay level and stays generic.
+    throw new Error(message ?? GENERIC_RELAY_MESSAGE);
   }
   const parsed = documentDraftSchema.safeParse(data);
   if (!parsed.success) throw new Error("File excavation returned an incomplete draft.");
@@ -44,3 +77,5 @@ export async function excavateDocument(
   }
   return parsed.data;
 }
+
+export { GENERIC_FAILURE_MESSAGE, GENERIC_RELAY_MESSAGE };
