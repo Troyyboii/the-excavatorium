@@ -6,7 +6,6 @@ import {
   type AuthenticatedSupabase,
 } from "../_shared/http.ts";
 import {
-  arrayBufferFromBytes,
   declaredLengthTooLarge,
   displayFileName,
   DOCUMENT_MAX_NORMALIZED_BYTES,
@@ -18,8 +17,6 @@ import {
   validateNormalizedDocument,
   isHash,
   isUuid,
-  kindFor,
-  logDocumentDiagnostic,
   type DocumentRecordData,
   type DocumentRecordPayload,
   type NormalizedDocument,
@@ -132,15 +129,13 @@ function referencesMatchNormalized(data: DocumentRecordData, knownIds: Set<strin
     .every((insight) => insight.sourceReferenceIds.every((id) => knownIds.has(id)));
 }
 
-async function removeObjects(
-  auth: AuthenticatedSupabase,
-  paths: string[],
-  startedAt: number,
-): Promise<void> {
+async function removeObjects(auth: AuthenticatedSupabase, paths: string[]): Promise<void> {
   if (paths.length === 0) return;
   const { error } = await auth.client.storage.from(BUCKET).remove(paths);
   if (error) {
-    logDocumentDiagnostic("storage_cleanup", "upstream", 502, startedAt);
+    // Keep the internal report limited to owner-scoped object paths. Never
+    // expose the upstream error payload or any file contents to the caller.
+    console.error("Document Storage cleanup failed.", { paths });
   }
 }
 
@@ -161,9 +156,6 @@ async function loadStoredNormalized(
 }
 
 Deno.serve(async (request) => {
-  const startedAt = Date.now();
-  let phase = "request";
-  let normalizationKind: "pdf" | "other" = "other";
   const origin = originFor(request);
   if (origin === "__denied__") return jsonResponse({ error: "Origin is not allowed." }, 403);
   if (request.method === "OPTIONS") return new Response("ok", { headers: responseHeaders(origin) });
@@ -179,7 +171,7 @@ Deno.serve(async (request) => {
     const replay = new Request(request.url, {
       method: "POST",
       headers: request.headers,
-      body: arrayBufferFromBytes(bytes),
+      body: bytes,
     });
     const form = await replay.formData();
     const fileValue = form.get("file");
@@ -226,8 +218,6 @@ Deno.serve(async (request) => {
         return jsonResponse({ error: "The file fingerprint is invalid." }, 400, origin);
       }
       const expectedHash = typeof expectedHashValue === "string" ? expectedHashValue : undefined;
-      phase = "normalization";
-      normalizationKind = kindFor(file.name, file.type) === "pdf" ? "pdf" : "other";
       const normalized = await normalizeDocumentFile(fileBytes, file.name, file.type, expectedHash);
       if (
         !referencesMatchNormalized(
@@ -241,31 +231,23 @@ Deno.serve(async (request) => {
           origin,
         );
       }
-      const existingFileData =
-        existingData &&
-        existingData.contentHash === normalized.contentHash &&
+      const sameExistingFile =
+        existingData?.contentHash === normalized.contentHash &&
         typeof existingData.storagePath === "string" &&
         typeof existingData.extractedContentPath === "string" &&
         validGeneratedPath(existingData.storagePath, auth.user.id, recordId) &&
-        validGeneratedPath(existingData.extractedContentPath, auth.user.id, recordId)
-          ? {
-              ...existingData,
-              contentHash: existingData.contentHash,
-              storagePath: existingData.storagePath,
-              extractedContentPath: existingData.extractedContentPath,
-            }
-          : null;
-      const existingNormalized = existingFileData
+        validGeneratedPath(existingData.extractedContentPath, auth.user.id, recordId);
+      const existingNormalized = sameExistingFile
         ? await loadStoredNormalized(
             auth,
-            existingFileData.extractedContentPath,
+            existingData.extractedContentPath,
             normalized.contentHash,
           )
         : null;
-      if (existingFileData && existingNormalized) {
+      if (sameExistingFile && existingNormalized) {
         nextData = {
           ...nextData,
-          ...existingFileData,
+          ...existingData,
           highSignalFindings: payload.recordData.highSignalFindings,
           keyClaims: payload.recordData.keyClaims,
           contradictions: payload.recordData.contradictions,
@@ -286,8 +268,6 @@ Deno.serve(async (request) => {
         const originalUpload = await auth.client.storage
           .from(BUCKET)
           .upload(newPaths.original, fileBytes, { contentType: canonicalMime, upsert: false });
-        if (originalUpload.error)
-          logDocumentDiagnostic("storage_upload", "upstream", 502, startedAt);
         if (originalUpload.error)
           return jsonResponse(
             { error: "The original file could not be stored. No archive record was created." },
@@ -310,8 +290,7 @@ Deno.serve(async (request) => {
             upsert: false,
           });
         if (extractedUpload.error) {
-          logDocumentDiagnostic("storage_upload", "upstream", 502, startedAt);
-          await removeObjects(auth, createdPaths, startedAt);
+          await removeObjects(auth, createdPaths);
           createdPaths.length = 0;
           return jsonResponse(
             {
@@ -414,8 +393,7 @@ Deno.serve(async (request) => {
       selected_target_ids: targetIds,
     });
     if (saveError || !saveResult || typeof saveResult !== "object") {
-      logDocumentDiagnostic("record_save", "upstream", 502, startedAt);
-      await removeObjects(auth, createdPaths, startedAt);
+      await removeObjects(auth, createdPaths);
       return jsonResponse(
         {
           error:
@@ -427,16 +405,16 @@ Deno.serve(async (request) => {
     }
     const result = saveResult as { id?: unknown; isNew?: unknown };
     if (typeof result.id !== "string") {
-      await removeObjects(auth, createdPaths, startedAt);
+      await removeObjects(auth, createdPaths);
       return jsonResponse({ error: "The archive save returned an invalid result." }, 502, origin);
     }
     const pathsToRemove = previousPaths.filter(
       (path) => ![nextData.storagePath, nextData.extractedContentPath].includes(path),
     );
-    await removeObjects(auth, pathsToRemove, startedAt);
+    await removeObjects(auth, pathsToRemove);
     return jsonResponse({ id: result.id, isNew: result.isNew === true }, 200, origin);
   } catch (error) {
-    await removeObjects(auth, createdPaths, startedAt);
+    await removeObjects(auth, createdPaths);
     if (
       error &&
       typeof error === "object" &&
@@ -444,19 +422,12 @@ Deno.serve(async (request) => {
       typeof (error as { status?: unknown }).status === "number"
     ) {
       const input = error as { message?: unknown; status: number };
-      logDocumentDiagnostic(
-        phase,
-        phase === "normalization" && normalizationKind === "pdf" ? "pdf_normalization" : "internal",
-        input.status,
-        startedAt,
-      );
       return jsonResponse(
         { error: typeof input.message === "string" ? input.message : "Document input is invalid." },
         input.status,
         origin,
       );
     }
-    logDocumentDiagnostic(phase, "internal", 502, startedAt);
     return jsonResponse(
       { error: "Document files could not be saved. Existing data was not changed." },
       502,

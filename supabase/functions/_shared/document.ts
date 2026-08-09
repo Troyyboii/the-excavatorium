@@ -9,28 +9,6 @@ export const DOCUMENT_MAX_PAGE_COUNT = 1_000;
 export const DOCUMENT_MAX_NORMALIZED_BYTES = 1_000_000;
 export const DOCUMENT_MAX_OUTPUT_BYTES = 45_000;
 
-export type DocumentDiagnosticCategory =
-  | "pdf_normalization"
-  | "quota"
-  | "configuration"
-  | "upstream"
-  | "timeout"
-  | "internal";
-
-export function logDocumentDiagnostic(
-  phase: string,
-  category: DocumentDiagnosticCategory,
-  status: number,
-  startedAt: number,
-): void {
-  console.error({
-    phase,
-    category,
-    status,
-    timingMs: Math.max(0, Date.now() - startedAt),
-  });
-}
-
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HASH_RE = /^[0-9a-f]{64}$/;
 const SOURCE_REFERENCE_RE = /^ref_[0-9a-f]{8}$/;
@@ -159,7 +137,7 @@ function isStoragePath(value: unknown): value is string {
 }
 
 export async function sha256(bytes: Uint8Array): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", arrayBufferFromBytes(bytes));
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
@@ -175,7 +153,6 @@ export async function readBoundedBody(
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      if (!value) throw new DocumentInputError("Request body is invalid.", 400);
       size += value.byteLength;
       if (size > maxBytes) {
         await reader.cancel();
@@ -193,12 +170,6 @@ export async function readBoundedBody(
     offset += chunk.byteLength;
   }
   return bytes;
-}
-
-export function arrayBufferFromBytes(bytes: Uint8Array): ArrayBuffer {
-  const buffer = new ArrayBuffer(bytes.byteLength);
-  new Uint8Array(buffer).set(bytes);
-  return buffer;
 }
 
 export function declaredLengthTooLarge(
@@ -398,7 +369,7 @@ function addBoundedUnits(
 async function normalizePdf(bytes: Uint8Array, contentHash: string): Promise<NormalizedDocument> {
   let pdf: { numPages: number; getPage: (pageNumber: number) => Promise<unknown> };
   try {
-    pdf = await getDocument({ data: arrayBufferFromBytes(bytes), isEvalSupported: false }).promise;
+    pdf = await getDocument({ data: bytes, disableWorker: true, isEvalSupported: false }).promise;
   } catch {
     throw new DocumentInputError(
       "The PDF could not be read. It may be malformed or encrypted.",
