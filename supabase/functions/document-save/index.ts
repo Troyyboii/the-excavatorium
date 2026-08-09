@@ -15,6 +15,7 @@ import {
   pathIsOwnerScoped,
   readBoundedBody,
   readFileBytes,
+  toBinaryData,
   validateDocumentRecordData,
   validateNormalizedDocument,
   isHash,
