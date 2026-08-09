@@ -3,8 +3,9 @@ import { getDocument } from "npm:pdfjs-dist@4.10.38/legacy/build/pdf.mjs";
 export const DOCUMENT_MAX_FILE_BYTES = 10_000_000;
 export const DOCUMENT_MAX_REQUEST_BYTES = 12_000_000;
 export const DOCUMENT_MAX_EXTRACTED_CHARS = 400_000;
-export const DOCUMENT_MAX_CHUNKS = 16;
-export const DOCUMENT_MAX_CHUNK_CHARS = 7_000;
+export const DOCUMENT_MAX_CHUNKS = 24;
+export const DOCUMENT_MAX_SOURCE_UNITS = 128;
+export const DOCUMENT_MAX_CHUNK_CHARS = 14_000;
 export const DOCUMENT_MAX_PAGE_COUNT = 1_000;
 export const DOCUMENT_MAX_NORMALIZED_BYTES = 1_000_000;
 export const DOCUMENT_MAX_OUTPUT_BYTES = 45_000;
@@ -243,7 +244,7 @@ export async function normalizeDocumentFile(
   if (normalized.extractedCharacterCount > DOCUMENT_MAX_EXTRACTED_CHARS) {
     throw new DocumentInputError("The extracted document text exceeds the supported limit.", 413);
   }
-  if (normalized.units.length === 0 || normalized.units.length > DOCUMENT_MAX_CHUNKS * 8) {
+  if (normalized.units.length === 0 || normalized.units.length > DOCUMENT_MAX_SOURCE_UNITS) {
     throw new DocumentInputError(
       "The document has too many source sections for bounded excavation.",
       413,
@@ -276,7 +277,7 @@ export function validateNormalizedDocument(value: unknown): value is NormalizedD
     !isHash(document.contentHash) ||
     !Array.isArray(document.units) ||
     document.units.length === 0 ||
-    document.units.length > DOCUMENT_MAX_CHUNKS * 8 ||
+    document.units.length > DOCUMENT_MAX_SOURCE_UNITS ||
     !Number.isInteger(document.extractedCharacterCount) ||
     (document.extractedCharacterCount as number) < 1 ||
     (document.extractedCharacterCount as number) > DOCUMENT_MAX_EXTRACTED_CHARS

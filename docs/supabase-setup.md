@@ -221,7 +221,7 @@ supabase functions deploy document-save
 `document-extract` accepts only PDF, Markdown, and UTF-8 text within its
 bounded request, file, page, extracted-text, chunk, synthesis-input, and
 output limits. It uses the existing authenticated quota RPC once per explicit
-excavation request, then performs at most sixteen chunk calls plus one
+excavation request, then performs at most 24 chunk calls plus one
 synthesis call. The server never stores the full extracted body in
 `records.record_data`.
 

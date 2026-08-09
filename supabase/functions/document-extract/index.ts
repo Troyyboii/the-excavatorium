@@ -11,6 +11,7 @@ import {
   chunkUnits,
   declaredLengthTooLarge,
   displayFileName,
+  DOCUMENT_MAX_CHUNKS,
   DOCUMENT_MAX_FILE_BYTES,
   DOCUMENT_MAX_PAGE_COUNT,
   DOCUMENT_MAX_OUTPUT_BYTES,
@@ -513,7 +514,7 @@ Deno.serve(async (request) => {
 
     const deadline = Date.now() + MAX_PIPELINE_MS;
     const chunks = chunkUnits(normalized.units);
-    if (chunks.length === 0 || chunks.length > 16)
+    if (chunks.length === 0 || chunks.length > DOCUMENT_MAX_CHUNKS)
       return jsonResponse(
         { error: "The document exceeds the bounded excavation limit." },
         413,
