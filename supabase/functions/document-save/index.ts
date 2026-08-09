@@ -174,7 +174,7 @@ Deno.serve(async (request) => {
     const replay = new Request(request.url, {
       method: "POST",
       headers: request.headers,
-      body: bytes,
+      body: toBinaryData(bytes),
     });
     const form = await replay.formData();
     const fileValue = form.get("file");
