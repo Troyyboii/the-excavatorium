@@ -357,11 +357,13 @@ function finalDraft(
   )
     return null;
   if (output.documentDate !== null && !isIsoDate(output.documentDate)) return null;
+  const pageCount: unknown = output.pageCount;
   if (
-    output.pageCount !== null &&
-    (!Number.isInteger(output.pageCount) ||
-      output.pageCount < 1 ||
-      output.pageCount > DOCUMENT_MAX_PAGE_COUNT)
+    pageCount !== null &&
+    (typeof pageCount !== "number" ||
+      !Number.isInteger(pageCount) ||
+      pageCount < 1 ||
+      pageCount > DOCUMENT_MAX_PAGE_COUNT)
   )
     return null;
   const knownIds = new Set(normalized.units.map((unit) => unit.id));
