@@ -1,2 +1,8 @@
 [functions.conversation-extract]
 verify_jwt = true
+
+[functions.document-extract]
+verify_jwt = true
+
+[functions.document-save]
+verify_jwt = true

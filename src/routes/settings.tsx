@@ -359,6 +359,8 @@ function BackupSection({
             <dd>{pendingRestore.counts.conversation}</dd>
             <dt className="text-muted-foreground">Decisions</dt>
             <dd>{pendingRestore.counts.decision}</dd>
+            <dt className="text-muted-foreground">Documents</dt>
+            <dd>{pendingRestore.counts.document}</dd>
             <dt className="text-muted-foreground">Links</dt>
             <dd>{pendingRestore.counts.links}</dd>
           </dl>

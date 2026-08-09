@@ -82,7 +82,7 @@ function isCandidateRecord(value: unknown): value is CandidateRecord {
     typeof record.title === "string" &&
     record.title.length <= 240 &&
     typeof record.recordType === "string" &&
-    ["tool", "repository", "conversation", "decision"].includes(record.recordType)
+    ["tool", "repository", "conversation", "decision", "document"].includes(record.recordType)
   );
 }
 

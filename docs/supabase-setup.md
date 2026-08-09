@@ -10,7 +10,7 @@ applied through the Supabase SQL editor or the Supabase CLI.
 Migration `0001_tables.sql` creates exactly four application tables:
 
 - `profiles` — application-read-only mirror of `auth.users`
-- `records` — Tools, Repositories, Conversations, Decisions
+- `records` — Tools, Repositories, Conversations, Decisions, Documents
 - `record_links` — undirected pair between two caller-owned records
 - `app_metadata` — one row per user; schema version and seed lifecycle flag
 
@@ -29,6 +29,7 @@ docs/migrations/0007_seed_lifecycle.sql
 docs/migrations/0008_restore_hardening.sql
 docs/migrations/0009_conversation_extraction_guardrails.sql
 docs/migrations/0010_rls_and_fk_advisor_cleanup.sql
+docs/migrations/0011_document_records.sql
 ```
 
 Two supported paths:
@@ -51,6 +52,7 @@ supabase db execute --file docs/migrations/0007_seed_lifecycle.sql
 supabase db execute --file docs/migrations/0008_restore_hardening.sql
 supabase db execute --file docs/migrations/0009_conversation_extraction_guardrails.sql
 supabase db execute --file docs/migrations/0010_rls_and_fk_advisor_cleanup.sql
+supabase db execute --file docs/migrations/0011_document_records.sql
 ```
 
 Migration `0008_restore_hardening.sql` enforces the approved canonical
@@ -197,3 +199,40 @@ deployments must preserve that setting. Migration
 `0010_rls_and_fk_advisor_cleanup.sql` keeps the existing owner-only read
 semantics while removing per-row `auth.uid()` evaluation and adds indexes that
 cover the two composite record-link foreign keys.
+
+## 11. Document records and File Excavation
+
+Migration `0011_document_records.sql` adds `document` to the existing record
+contract, extends the protected Save and restore RPCs, and creates the private
+`document-files` Storage bucket with owner-scoped policies. It must be applied
+after `0010`; creating the file in this repository does not apply it to the
+Supabase project. The normalized object stores a bounded provenance manifest
+in Storage metadata; the record validator checks that the saved source
+reference IDs and content hash match that manifest.
+
+Deploy the two new functions only after the migration and the existing
+`OPENAI_API_KEY` Edge Function secret are configured:
+
+```
+supabase functions deploy document-extract
+supabase functions deploy document-save
+```
+
+`document-extract` accepts only PDF, Markdown, and UTF-8 text within its
+bounded request, file, page, extracted-text, chunk, synthesis-input, and
+output limits. It uses the existing authenticated quota RPC once per explicit
+excavation request, then performs at most sixteen chunk calls plus one
+synthesis call. The server never stores the full extracted body in
+`records.record_data`.
+
+The original and normalized representation are written to private Storage
+only during an explicit ordinary Save. File Excavation itself stores no
+archive row or Storage object. OpenAI File uploads are not used; Responses
+requests set `store: false`. OpenAI standard abuse-monitoring or organization
+retention controls may still apply. Storage objects are owner-scoped and
+opened through short-lived signed URLs; no public file URLs are created.
+
+JSON backups preserve Document metadata, conclusions, and links, but they do
+not contain private Storage objects. The backup builder clears document Storage
+paths and content hashes so a restore creates a valid detached Document rather
+than a record pointing at missing files.

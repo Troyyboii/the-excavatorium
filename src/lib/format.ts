@@ -4,10 +4,12 @@ import type {
   ArchiveRecord,
   ConversationData,
   DecisionData,
+  DocumentData,
   RecordType,
   RepositoryData,
   ToolData,
 } from "./types";
+import { documentDataSchema } from "./document";
 import {
   CONFIDENCE_LEVELS,
   DECISION_STATUSES,
@@ -102,7 +104,22 @@ export function backupFilename(now = new Date()): string {
 
 // ---------- Backup builder (spec §19) ----------
 export function buildBackup(records: ArchiveRecord[], links: ArchiveLink[]): ArchiveExport {
-  const sortedRecords = [...records].sort((a, b) => a.id.localeCompare(b.id));
+  const sortedRecords = [...records]
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .map((record) => {
+      if (record.recordType !== "document") return record;
+      return {
+        ...record,
+        recordData: {
+          ...record.recordData,
+          // JSON backups do not contain private Storage objects. Preserve the
+          // document's conclusions and display metadata as a detached record.
+          storagePath: null,
+          extractedContentPath: null,
+          contentHash: null,
+        },
+      };
+    });
   const sortedLinks = [...links].sort((a, b) => a.id.localeCompare(b.id));
   return {
     application: "The Excavatorium",
@@ -125,6 +142,7 @@ export type BackupCounts = {
   repository: number;
   conversation: number;
   decision: number;
+  document: number;
   links: number;
   examples: number;
 };
@@ -216,6 +234,10 @@ function validateRecordData(type: RecordType, d: unknown): string | null {
     ];
     return errs.find(Boolean) ?? null;
   }
+  if (type === "document") {
+    const parsed = documentDataSchema.safeParse(d);
+    return parsed.success ? null : "document recordData is malformed";
+  }
   const dd = rd as unknown as DecisionData;
   const errs = [
     req("reason", typeof dd.reason === "string"),
@@ -268,6 +290,7 @@ export function validateBackup(raw: unknown): ValidationResult {
     repository: 0,
     conversation: 0,
     decision: 0,
+    document: 0,
     links: 0,
     examples: 0,
   };
@@ -281,7 +304,7 @@ export function validateBackup(raw: unknown): ValidationResult {
     recordIds.add(rec.id);
     if (
       typeof rec.recordType !== "string" ||
-      !["tool", "repository", "conversation", "decision"].includes(rec.recordType)
+      !["tool", "repository", "conversation", "decision", "document"].includes(rec.recordType)
     )
       return { ok: false, error: `records[${i}].recordType is invalid` };
     if (typeof rec.title !== "string" || rec.title.trim() === "")
@@ -458,8 +481,18 @@ export function toMarkdown(
   ];
   const d = record.recordData as Record<string, unknown>;
   for (const [k, v] of Object.entries(d)) {
-    if (Array.isArray(v)) fm.push(`${k}: ${yamlList(v as string[])}`);
-    else fm.push(`${k}: ${yaml(v)}`);
+    if (
+      record.recordType === "document" &&
+      ["storagePath", "extractedContentPath", "contentHash"].includes(k)
+    )
+      continue;
+    if (Array.isArray(v) && v.every((item) => typeof item === "string")) {
+      fm.push(`${k}: ${yamlList(v as string[])}`);
+    } else if (v && typeof v === "object") {
+      fm.push(`${k}: ${yaml(JSON.stringify(v))}`);
+    } else {
+      fm.push(`${k}: ${yaml(v)}`);
+    }
   }
   fm.push("---");
 
@@ -495,7 +528,7 @@ export function toMarkdown(
     body += section("Reusable prompts", record.recordData.reusablePrompts);
     body += section("Memory candidates", record.recordData.memoryCandidates);
     body += section("Raw conversation text", record.recordData.rawConversationText);
-  } else {
+  } else if (record.recordType === "decision") {
     body += section("Reason", record.recordData.reason);
     body += section("Trigger", record.recordData.trigger);
     body += section("What would change my mind", record.recordData.whatWouldChangeMyMind);
@@ -503,6 +536,37 @@ export function toMarkdown(
       const r = byId.get(record.recordData.supersedesDecisionId);
       if (r) body += section("Supersedes", connectedRef(r));
     }
+  } else {
+    const insightBody = (items: DocumentData["highSignalFindings"]) =>
+      items
+        .map(
+          (item) =>
+            `${item.text}${item.sourceReferenceIds.length ? `\nSources: ${item.sourceReferenceIds.join(", ")}` : ""}`,
+        )
+        .join("\n\n");
+    body += section(
+      "Document details",
+      [
+        record.recordData.originalFileName
+          ? `Original file: ${record.recordData.originalFileName}`
+          : "",
+        record.recordData.documentDate ? `Document date: ${record.recordData.documentDate}` : "",
+        record.recordData.pageCount === null ? "" : `Page count: ${record.recordData.pageCount}`,
+        record.recordData.projectRoute ? `Project route: ${record.recordData.projectRoute}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    body += section("High-signal findings", insightBody(record.recordData.highSignalFindings));
+    body += section("Key claims", insightBody(record.recordData.keyClaims));
+    body += section("Contradictions", insightBody(record.recordData.contradictions));
+    body += section("Uncertainties", insightBody(record.recordData.uncertainties));
+    body += section(
+      "Source references",
+      record.recordData.sourceReferences
+        .map((ref) => `${ref.label} (${ref.locator})${ref.note ? `\n${ref.note}` : ""}`)
+        .join("\n\n"),
+    );
   }
 
   if (linkedRecords.length) {

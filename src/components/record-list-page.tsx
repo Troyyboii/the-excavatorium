@@ -160,7 +160,9 @@ export function RecordListPage({ type, records }: { type: RecordType; records: A
         ? "Repositories"
         : type === "conversation"
           ? "Conversations"
-          : "Decisions";
+          : type === "decision"
+            ? "Decisions"
+            : "Documents";
   const hasActive = Object.values(f).some((v) => v !== undefined && v !== "" && v !== false);
 
   return (

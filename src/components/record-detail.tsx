@@ -6,6 +6,7 @@ import { RECORD_TYPE_LABEL } from "@/lib/types";
 import { plural, recordHref, TypeIcon, TombstoneIfBuried } from "./record-list";
 import { PageHeader, Toast } from "./page-parts";
 import { download, toMarkdown } from "@/lib/format";
+import { supabase } from "@/lib/supabase";
 
 function editRoute(record: ArchiveRecord) {
   switch (record.recordType) {
@@ -17,6 +18,8 @@ function editRoute(record: ArchiveRecord) {
       return { to: "/conversations/$id/edit" as const, params: { id: record.id } };
     case "decision":
       return { to: "/decisions/$id/edit" as const, params: { id: record.id } };
+    case "document":
+      return { to: "/documents/$id/edit" as const, params: { id: record.id } };
   }
 }
 
@@ -103,6 +106,7 @@ export function RecordDetail({
           <ConversationDetail r={record} onToast={setToast} />
         ) : null}
         {record.recordType === "decision" ? <DecisionDetail r={record} byId={byId} /> : null}
+        {record.recordType === "document" ? <DocumentDetail r={record} onToast={setToast} /> : null}
 
         <LinkedSection title="Linked records" items={linked} />
         <LinkedSection title="Backlinks" items={backlinked} />
@@ -307,6 +311,91 @@ function DecisionDetail({
   );
 }
 
+function DocumentDetail({
+  r,
+  onToast,
+}: {
+  r: ArchiveRecord & { recordType: "document" };
+  onToast: (message: string) => void;
+}) {
+  const d = r.recordData;
+  async function openOriginal() {
+    if (!d.storagePath) return;
+    const { data, error } = await supabase.storage
+      .from("document-files")
+      .createSignedUrl(d.storagePath, 60);
+    if (error || !data?.signedUrl) {
+      onToast("The original file could not be opened.");
+      return;
+    }
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  }
+  const insightSection = (heading: string, items: typeof d.highSignalFindings) =>
+    items.length === 0 ? null : (
+      <section className="rounded-lg border border-border bg-card p-4 md:p-6">
+        <h2 className="mb-3 font-serif text-lg text-foreground">{heading}</h2>
+        <ul className="space-y-3">
+          {items.map((item, index) => (
+            <li key={`${heading}-${index}`} className="text-sm text-foreground">
+              <p className="whitespace-pre-wrap">{item.text}</p>
+              {item.sourceReferenceIds.length ? (
+                <p className="mt-1 font-mono text-xs text-muted-foreground">
+                  Sources: {item.sourceReferenceIds.join(", ")}
+                </p>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      </section>
+    );
+  return (
+    <>
+      <DlSection
+        heading="Document details"
+        entries={[
+          ["Original file", d.originalFileName],
+          ["MIME type", d.mimeType],
+          ["Document date", d.documentDate],
+          ["Page count", d.pageCount === null ? null : String(d.pageCount)],
+          ["Project route", d.projectRoute],
+        ]}
+      />
+      {d.storagePath ? (
+        <section className="rounded-lg border border-border bg-card p-4 md:p-6">
+          <button
+            type="button"
+            onClick={() => void openOriginal()}
+            className="inline-flex min-h-11 items-center rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground hover:bg-[color:var(--record-hover)]"
+          >
+            Open original file
+          </button>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Authenticated signed URL, valid for 60 seconds.
+          </p>
+        </section>
+      ) : null}
+      {insightSection("High-signal findings", d.highSignalFindings)}
+      {insightSection("Key claims", d.keyClaims)}
+      {insightSection("Contradictions", d.contradictions)}
+      {insightSection("Uncertainties", d.uncertainties)}
+      {d.sourceReferences.length ? (
+        <section className="rounded-lg border border-border bg-card p-4 md:p-6">
+          <h2 className="mb-3 font-serif text-lg text-foreground">Source references</h2>
+          <ul className="space-y-3">
+            {d.sourceReferences.map((ref) => (
+              <li key={ref.id} className="text-sm text-foreground">
+                <div className="font-medium">{ref.label}</div>
+                <div className="font-mono text-xs text-muted-foreground">{ref.locator}</div>
+                {ref.note ? <div className="mt-1 whitespace-pre-wrap">{ref.note}</div> : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+    </>
+  );
+}
+
 function LinkedSection({ title, items }: { title: string; items: ArchiveRecord[] }) {
   if (items.length === 0) return null;
   const groups = {
@@ -314,6 +403,7 @@ function LinkedSection({ title, items }: { title: string; items: ArchiveRecord[]
     repository: items.filter((r) => r.recordType === "repository"),
     conversation: items.filter((r) => r.recordType === "conversation"),
     decision: items.filter((r) => r.recordType === "decision"),
+    document: items.filter((r) => r.recordType === "document"),
   };
   return (
     <section className="rounded-lg border border-border bg-card p-4 md:p-6">

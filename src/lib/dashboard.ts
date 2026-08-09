@@ -28,7 +28,7 @@ export type DashboardViewModel = {
   statusBreakdown: DashboardBreakdown[];
 };
 
-const TYPES: RecordType[] = ["conversation", "repository", "tool", "decision"];
+const TYPES: RecordType[] = ["conversation", "repository", "tool", "decision", "document"];
 
 function contextFor(record: ArchiveRecord): string {
   if (record.summary.trim()) return record.summary.trim();
@@ -41,6 +41,14 @@ function contextFor(record: ArchiveRecord): string {
       return record.recordData.finalVerdict.trim() || record.recordData.whatActuallyHappened.trim();
     case "decision":
       return record.recordData.reason.trim();
+    case "document":
+      return (
+        record.recordData.highSignalFindings[0]?.text.trim() ||
+        record.recordData.keyClaims[0]?.text.trim() ||
+        record.recordData.uncertainties[0]?.text.trim() ||
+        record.recordData.originalFileName ||
+        ""
+      );
   }
 }
 
@@ -54,6 +62,8 @@ function statusFor(record: ArchiveRecord): string {
       return record.recordData.status;
     case "decision":
       return `${record.recordData.status} · ${record.recordData.confidence}`;
+    case "document":
+      return record.recordData.uncertainties.length > 0 ? "Review uncertainties" : "Document";
   }
 }
 
@@ -68,6 +78,7 @@ function needsAttention(record: ArchiveRecord): boolean {
   if (record.recordType === "repository") return record.recordData.recommendedAction === null;
   if (record.recordType === "conversation") return record.recordData.openLoops.trim() !== "";
   if (record.recordType === "decision") return record.recordData.status === "Tentative";
+  if (record.recordType === "document") return record.recordData.uncertainties.length > 0;
   return ["Worth revisiting", "Useful but dormant", "Experimental"].includes(
     record.recordData.status,
   );

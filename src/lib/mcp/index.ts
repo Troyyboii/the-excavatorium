@@ -12,7 +12,7 @@ export default defineMcp({
   title: "The Excavatorium",
   version: "0.1.0",
   instructions:
-    "Read-only tools over a private technical archive of tools, repositories, conversations and decisions. Use `archive_stats` for an overview, `list_records` to find records by type or text, and `get_record` for the full detail of one record. All access is scoped to the signed-in user.",
+    "Read-only tools over a private technical archive of tools, repositories, conversations, decisions, and documents. Use `archive_stats` for an overview, `list_records` to find records by type or text, and `get_record` for the full detail of one record. All access is scoped to the signed-in user.",
   auth: auth.oauth.issuer({
     issuer: `https://${projectRef}.supabase.co/auth/v1`,
     acceptedAudiences: "authenticated",

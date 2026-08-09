@@ -1,7 +1,7 @@
 # The Excavatorium
 
 A private technical judgment archive for the things that deserve more than a
-bookmark: tools, repositories, AI conversations, and decisions.
+bookmark: tools, repositories, AI conversations, decisions, and documents.
 
 [Open the live application](https://the-excavatorium.lovable.app)
 
@@ -17,7 +17,7 @@ what worked, what failed, and the final verdict.
 
 ## What it preserves
 
-The archive has four connected record types:
+The archive has five connected record types:
 
 - **Tools** — evaluations of software and AI tools, including their promises,
   outcomes, failures, replacements, revisit conditions, and final verdicts.
@@ -29,6 +29,10 @@ The archive has four connected record types:
   reusable prompts, memory candidates, and the original conversation text.
 - **Decisions** — the reason and trigger, confidence, current status, and
   what would change your mind.
+- **Documents** — generic records for PDFs, Markdown, plain text, reports,
+  audits, papers, specifications, postmortems, and other reference material.
+  The archive stores bounded conclusions and source references, not the full
+  extracted body in ordinary record data.
 
 ## Conversation Excavation with GPT-5.6
 
@@ -44,6 +48,24 @@ The model assists with excavation; it is not the authority. Nothing is saved
 automatically. The user reviews the draft, edits it, chooses whether to apply
 the suggested links, applies it to the form, and uses the ordinary Save action
 to create or update the durable record.
+
+## File Excavation with GPT-5.6
+
+File Excavation is an optional action within a Document record. V1 accepts PDF,
+Markdown (`.md`), and UTF-8 plain text (`.txt`). The user explicitly selects
+**Excavate with GPT-5.6**. The function normalizes bounded page-, heading-, or
+line-aware source units, analyzes bounded chunks, validates source-reference
+IDs, and returns an editable draft. Applying the draft only populates local
+form state; the ordinary Save action remains the only archive persistence path.
+
+When a file is saved, the original and normalized representation are stored in
+the private `document-files` Supabase Storage bucket under an owner- and
+record-scoped path. The normalized object also carries a small server-generated
+provenance manifest containing its content hash and source-unit IDs, which is
+checked again on file-backed saves. The browser receives only a short-lived
+signed URL when the authenticated owner opens the original. Scanned or
+image-only PDFs are rejected when usable text cannot be extracted; OCR is not
+included.
 
 ## How the archive works
 
@@ -64,6 +86,13 @@ The archive is stored in a directly managed Supabase project and is accessed
 through authenticated sessions. Record reads are protected by Supabase Row
 Level Security, and writes use the application's approved database RPCs.
 
+Saved Document files are private Supabase Storage objects. The browser never
+receives the OpenAI key, service-role credentials, or a private file URL. File
+excavation does not create an OpenAI File object: the server sends bounded
+normalized text to the Responses API with `store: false`, then discards the
+request and draft unless the user saves. OpenAI's standard abuse-monitoring or
+organization retention controls may still apply.
+
 An excavation is sent to the model only after the signed-in user explicitly
 initiates it. The OpenAI request uses `store: false`. The application and Edge
 Function do not persist extraction requests or generated drafts; a draft only
@@ -71,7 +100,9 @@ becomes archive data when the user reviews, applies, and saves it. Standard
 OpenAI API abuse-monitoring retention policies may still apply.
 
 Markdown record exports and full JSON backups keep the archive portable and
-give the owner an independent recovery path.
+give the owner an independent recovery path. JSON backups preserve Document
+metadata and conclusions but not private Storage objects; restored file-backed
+Documents are detached until a file is selected and saved again.
 
 ## Technology
 
@@ -80,8 +111,8 @@ give the owner an independent recovery path.
 - Tailwind CSS and shadcn/ui
 - Direct Supabase for authentication, PostgreSQL storage, Row Level Security,
   and approved write RPCs
-- A Supabase Edge Function for authenticated Conversation Excavation with
-  `gpt-5.6-terra`
+- Supabase Edge Functions for authenticated Conversation and File Excavation
+  with `gpt-5.6-terra`
 - Lovable deployment; no Lovable Cloud backend and no second backend
 
 ## Local development
@@ -101,9 +132,9 @@ VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 ```
 
 Never put service-role keys, database passwords, private API keys, or other
-secrets in browser code or committed files. Conversation Excavation also
-requires an `OPENAI_API_KEY` configured as a Supabase Edge Function secret;
-see the setup guide below.
+secrets in browser code or committed files. Conversation and File Excavation
+require the existing `OPENAI_API_KEY` configured as a Supabase Edge Function
+secret; see the setup guide below.
 
 ## Detailed setup and verification
 
@@ -114,8 +145,8 @@ see the setup guide below.
 
 ## Verification status and known limitations
 
-Automated tests are not yet included. Source, database, and production
-validation are tracked separately in the verification checklist.
+Frontend unit tests are included. Source, database, Edge Function, and
+production validation are tracked separately in the verification checklist.
 
 Conversation Excavation runtime scenarios, including malformed requests,
 timeouts, discarding drafts, edited saves, suggested-link removal, and

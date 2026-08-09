@@ -1,7 +1,7 @@
 import { defineTool } from "@lovable.dev/mcp-js";
 import { supabaseForUser } from "../supabase";
 
-const TYPES = ["tool", "repository", "conversation", "decision"] as const;
+const TYPES = ["tool", "repository", "conversation", "decision", "document"] as const;
 
 export default defineTool({
   name: "archive_stats",

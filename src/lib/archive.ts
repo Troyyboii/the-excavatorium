@@ -11,6 +11,7 @@ import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { supabase } from "./supabase";
 import { useCurrentUserId } from "./session";
+import { fingerprintFile, validateDocumentData, validateSelectedDocumentFile } from "./document";
 import type {
   ArchiveExport,
   ArchiveLink,
@@ -88,6 +89,12 @@ function toRecord(row: RecordRow): ArchiveRecord {
         ...base,
         recordType: "decision",
         recordData: row.record_data as unknown as DecisionData,
+      };
+    case "document":
+      return {
+        ...base,
+        recordType: "document",
+        recordData: validateDocumentData(row.record_data),
       };
   }
 }
@@ -281,6 +288,8 @@ export type SaveRecordInput = {
   tags: string[];
   recordData: Record<string, unknown>;
   selectedTargetIds: string[];
+  documentFile?: File;
+  documentFileRemoved?: boolean;
 };
 
 export function useSaveRecord() {
@@ -288,6 +297,49 @@ export function useSaveRecord() {
   const userId = useCurrentUserId();
   return useMutation({
     mutationFn: async (input: SaveRecordInput) => {
+      if (input.recordType === "document") {
+        const documentData = validateDocumentData(input.recordData);
+        const hasStoredDocumentFile =
+          documentData.storagePath !== null || documentData.extractedContentPath !== null;
+        if (input.documentFile || input.documentFileRemoved || hasStoredDocumentFile) {
+          const fileError = input.documentFile
+            ? validateSelectedDocumentFile(input.documentFile)
+            : null;
+          if (input.documentFile && fileError) throw new Error(fileError);
+          const body = new FormData();
+          body.append(
+            "record",
+            JSON.stringify({
+              ...(input.id ? { id: input.id } : {}),
+              recordType: "document",
+              title: input.title,
+              summary: input.summary,
+              tags: input.tags,
+              recordData: documentData,
+            }),
+          );
+          body.append("selectedTargetIds", JSON.stringify(input.selectedTargetIds));
+          body.append("removeFile", input.documentFileRemoved ? "true" : "false");
+          if (input.documentFile) {
+            const contentHash = await fingerprintFile(input.documentFile);
+            body.append("contentHash", contentHash);
+            body.append("file", input.documentFile, input.documentFile.name);
+          }
+          const { data, error } = await supabase.functions.invoke("document-save", {
+            body,
+          });
+          if (error)
+            throw new Error("Document files could not be saved. Existing data was not changed.");
+          if (
+            !data ||
+            typeof data !== "object" ||
+            typeof (data as { id?: unknown }).id !== "string"
+          ) {
+            throw new Error("Document save returned an invalid result.");
+          }
+          return data as { id: string; isNew: boolean };
+        }
+      }
       const payload: Record<string, unknown> = {
         recordType: input.recordType,
         title: input.title,

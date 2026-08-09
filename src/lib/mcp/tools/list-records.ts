@@ -9,7 +9,7 @@ export default defineTool({
     "List the signed-in user's archive records, optionally filtered by record type or a text query matching the title, summary, or tags.",
   inputSchema: {
     recordType: z
-      .enum(["tool", "repository", "conversation", "decision"])
+      .enum(["tool", "repository", "conversation", "decision", "document"])
       .optional()
       .describe("Restrict results to one record type."),
     query: z

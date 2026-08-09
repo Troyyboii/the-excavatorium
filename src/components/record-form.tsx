@@ -11,6 +11,7 @@ import type {
   ConversationData,
   ConversationEntryMode,
   DecisionData,
+  DocumentData,
   RecordType,
   RepositoryData,
   ToolData,
@@ -25,6 +26,7 @@ import {
   emptyRecordData,
 } from "@/lib/types";
 import { normalizeTags } from "@/lib/format";
+import { validateDocumentData, type DocumentDraft } from "@/lib/document";
 import {
   excavateConversation,
   MAX_CONVERSATION_TRANSCRIPT_CHARS,
@@ -32,6 +34,7 @@ import {
 } from "@/lib/conversation-excavation";
 import { plural } from "./record-list";
 import { useOnlineStatus } from "@/hooks/use-online";
+import { excavateDocument } from "@/lib/document-excavation";
 
 function todayLocal(): string {
   const d = new Date();
@@ -54,9 +57,9 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
   const [title, setTitle] = useState(existing?.title ?? "");
   const [summary, setSummary] = useState(existing?.summary ?? "");
   const [tags, setTags] = useState<string[]>(existing?.tags ?? []);
-  const [data, setData] = useState<ToolData | RepositoryData | ConversationData | DecisionData>(
-    existing?.recordData ?? emptyRecordData(recordType, todayLocal()),
-  );
+  const [data, setData] = useState<
+    ToolData | RepositoryData | ConversationData | DecisionData | DocumentData
+  >(existing?.recordData ?? emptyRecordData(recordType, todayLocal()));
   const [selectedLinks, setSelectedLinks] = useState<string[]>(() => {
     if (!existing) return [];
     return allLinks
@@ -69,6 +72,8 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
   const [conversationMode, setConversationMode] = useState<ConversationEntryMode>(
     existing ? "manual" : "excavate",
   );
+  const [documentFile, setDocumentFile] = useState<File | null>(null);
+  const [documentFileRemoved, setDocumentFileRemoved] = useState(false);
 
   useEffect(() => {
     function onUnload(e: BeforeUnloadEvent) {
@@ -100,7 +105,7 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
     } else if (recordType === "conversation") {
       const d = data as ConversationData;
       if (!d.projectRoute) return "Project route is required.";
-    } else {
+    } else if (recordType === "decision") {
       const d = data as DecisionData;
       if (!d.reason.trim()) return "Reason is required.";
       if (!d.decisionDate) return "Decision date is required.";
@@ -108,6 +113,13 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
       if (!d.confidence) return "Confidence is required.";
       if (d.supersedesDecisionId && d.supersedesDecisionId === existing?.id)
         return "Supersedes cannot reference the current record.";
+    } else {
+      const d = data as DocumentData;
+      try {
+        validateDocumentData(d);
+      } catch {
+        return "Document data is incomplete or malformed.";
+      }
     }
     return null;
   }
@@ -133,6 +145,8 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
         tags: normalizeTags(tags),
         recordData: data as unknown as Record<string, unknown>,
         selectedTargetIds: selectedLinks,
+        documentFile: recordType === "document" ? (documentFile ?? undefined) : undefined,
+        documentFileRemoved: recordType === "document" ? documentFileRemoved : false,
       });
       setDirty(false);
       navigate({ to: `/${plural(recordType)}/${result.id}` });
@@ -167,18 +181,22 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
   );
 
   function applyConversationExtraction(extraction: ConversationExtraction) {
+    if (recordType !== "conversation") return;
     setTitle(extraction.title);
     setSummary(extraction.summary);
     setTags(extraction.tags);
-    setData((previous) => ({
-      ...previous,
-      projectRoute: extraction.projectRoute,
-      highSignalFindings: extraction.highSignalFindings,
-      decisionsMade: extraction.decisionsMade,
-      openLoops: extraction.openLoops,
-      reusablePrompts: extraction.reusablePrompts,
-      memoryCandidates: extraction.memoryCandidates,
-    }));
+    setData((previous) => {
+      const current = previous as ConversationData;
+      return {
+        ...current,
+        projectRoute: extraction.projectRoute,
+        highSignalFindings: extraction.highSignalFindings,
+        decisionsMade: extraction.decisionsMade,
+        openLoops: extraction.openLoops,
+        reusablePrompts: extraction.reusablePrompts,
+        memoryCandidates: extraction.memoryCandidates,
+      };
+    });
     setSelectedLinks((previous) =>
       Array.from(
         new Set([
@@ -191,6 +209,73 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
     );
     setDirty(true);
     setConversationMode("manual");
+  }
+
+  function applyDocumentExtraction(extraction: DocumentDraft) {
+    setTitle(extraction.title);
+    setSummary(extraction.summary);
+    setTags(extraction.tags);
+    setData((previous) => {
+      if (recordType !== "document") return previous;
+      const current = previous as DocumentData;
+      return {
+        ...current,
+        originalFileName: extraction.originalFileName,
+        mimeType: extraction.mimeType,
+        fileSizeBytes: extraction.fileSizeBytes,
+        documentDate: extraction.documentDate,
+        pageCount: extraction.pageCount,
+        contentHash: extraction.contentHash,
+        highSignalFindings: extraction.highSignalFindings,
+        keyClaims: extraction.keyClaims,
+        contradictions: extraction.contradictions,
+        uncertainties: extraction.uncertainties,
+        sourceReferences: extraction.sourceReferences,
+      };
+    });
+    setSelectedLinks((previous) =>
+      Array.from(
+        new Set([
+          ...previous,
+          ...extraction.suggestedRecordIds.filter(
+            (id) => id !== existing?.id && allRecords.some((r) => r.id === id),
+          ),
+        ]),
+      ),
+    );
+    setDocumentFileRemoved(false);
+    setDirty(true);
+  }
+
+  function onDocumentFileChange(file: File | null) {
+    setDocumentFile(file);
+    setDocumentFileRemoved(file === null && !!existing);
+    setData((previous) => {
+      if (recordType !== "document") return previous;
+      const current = previous as DocumentData;
+      const next = {
+        ...current,
+        originalFileName: file?.name ?? null,
+        mimeType: file?.type || null,
+        fileSizeBytes: file?.size ?? null,
+        storagePath: file ? null : null,
+        extractedContentPath: file ? null : null,
+        contentHash: file ? null : null,
+      };
+      return file
+        ? {
+            ...next,
+            documentDate: null,
+            pageCount: null,
+            highSignalFindings: [],
+            keyClaims: [],
+            contradictions: [],
+            uncertainties: [],
+            sourceReferences: [],
+          }
+        : next;
+    });
+    setDirty(true);
   }
 
   return (
@@ -262,6 +347,21 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
         </Section>
       ) : null}
 
+      {recordType === "document" ? (
+        <Section title="File excavation">
+          <DocumentExcavationPanel
+            file={documentFile}
+            existingFileName={(data as DocumentData).originalFileName}
+            hasStoredFile={Boolean((data as DocumentData).storagePath)}
+            excludeRecordId={existing?.id ?? null}
+            allRecords={allRecords}
+            onFileChange={onDocumentFileChange}
+            onApply={applyDocumentExtraction}
+            online={online}
+          />
+        </Section>
+      ) : null}
+
       {recordType !== "conversation" || conversationMode === "manual" ? (
         <Section title="Overview">
           <Field label="Title" htmlFor="title" required>
@@ -313,6 +413,9 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
           patch={patch as never}
           choices={decisionChoices}
         />
+      ) : null}
+      {recordType === "document" ? (
+        <DocumentFields data={data as DocumentData} patch={patch as never} />
       ) : null}
 
       {recordType !== "conversation" || conversationMode === "manual" ? (
@@ -398,6 +501,519 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
 }
 
 // ------------- Type-specific field groups -------------
+
+function DocumentExcavationPanel({
+  file,
+  existingFileName,
+  hasStoredFile,
+  excludeRecordId,
+  allRecords,
+  onFileChange,
+  onApply,
+  online,
+}: {
+  file: File | null;
+  existingFileName: string | null;
+  hasStoredFile: boolean;
+  excludeRecordId: string | null;
+  allRecords: ArchiveRecord[];
+  onFileChange: (file: File | null) => void;
+  onApply: (draft: DocumentDraft) => void;
+  online: boolean;
+}) {
+  const [draft, setDraft] = useState<DocumentDraft | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const requestIdRef = useRef(0);
+  const fileRef = useRef<File | null>(file);
+  const controllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (fileRef.current === file) return;
+    fileRef.current = file;
+    requestIdRef.current += 1;
+    controllerRef.current?.abort();
+    controllerRef.current = null;
+    setDraft(null);
+    setError(null);
+    setIsLoading(false);
+  }, [file]);
+
+  useEffect(
+    () => () => {
+      requestIdRef.current += 1;
+      controllerRef.current?.abort();
+    },
+    [],
+  );
+
+  function chooseFile(next: File | null) {
+    onFileChange(next);
+    setDraft(null);
+    setError(null);
+  }
+
+  async function startExcavation() {
+    if (!file || !online) return;
+    const snapshot = file;
+    const requestId = ++requestIdRef.current;
+    controllerRef.current?.abort();
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    setDraft(null);
+    setError(null);
+    setIsLoading(true);
+    try {
+      const next = await excavateDocument(
+        snapshot,
+        allRecords.filter((record) => record.id !== excludeRecordId),
+        controller.signal,
+      );
+      if (requestId !== requestIdRef.current || fileRef.current !== snapshot) return;
+      setDraft(next);
+    } catch (e) {
+      if (requestId !== requestIdRef.current) return;
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      setError(e instanceof Error ? e.message : "File excavation could not be completed.");
+    } finally {
+      if (requestId === requestIdRef.current) setIsLoading(false);
+    }
+  }
+
+  function cancelExcavation() {
+    requestIdRef.current += 1;
+    controllerRef.current?.abort();
+    controllerRef.current = null;
+    setIsLoading(false);
+    setDraft(null);
+    setError(null);
+  }
+
+  function discardDraft() {
+    requestIdRef.current += 1;
+    setDraft(null);
+    setError(null);
+  }
+
+  async function applyDraft() {
+    if (!draft || !file || fileRef.current !== file) return;
+    const requestId = requestIdRef.current;
+    const snapshot = file;
+    const draftSnapshot = draft;
+    const { fingerprintFile } = await import("@/lib/document");
+    const currentHash = await fingerprintFile(snapshot);
+    if (requestId !== requestIdRef.current || fileRef.current !== snapshot) return;
+    if (currentHash !== draftSnapshot.contentHash) {
+      setDraft(null);
+      setError("This excavation draft is stale. Excavate the current file again.");
+      return;
+    }
+    onApply(draftSnapshot);
+    setError(null);
+  }
+
+  function updateDraft<K extends keyof DocumentDraft>(key: K, value: DocumentDraft[K]) {
+    requestIdRef.current += 1;
+    setDraft((current) => (current ? { ...current, [key]: value } : current));
+  }
+
+  const currentSuggested = draft?.suggestedRecordIds ?? [];
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        Analyzes the selected file only when you start an excavation. Nothing is added to the
+        archive automatically.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="inline-flex min-h-11 cursor-pointer items-center rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground hover:bg-[color:var(--record-hover)]">
+          <span
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={(event) => {
+              event.preventDefault();
+              chooseFile(event.dataTransfer.files?.[0] ?? null);
+            }}
+          >
+            Select or drop a file
+          </span>
+          <input
+            type="file"
+            accept=".pdf,.md,.txt,application/pdf,text/markdown,text/plain"
+            className="sr-only"
+            onChange={(event) => chooseFile(event.target.files?.[0] ?? null)}
+          />
+        </label>
+        {(file || hasStoredFile) && (
+          <button
+            type="button"
+            onClick={() => chooseFile(null)}
+            className="inline-flex min-h-11 items-center rounded-md border border-input px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
+          >
+            Remove file
+          </button>
+        )}
+      </div>
+      <p className="break-all text-xs text-muted-foreground">
+        {file
+          ? `${file.name} · ${file.size.toLocaleString()} bytes`
+          : existingFileName
+            ? `Stored privately: ${existingFileName}`
+            : "No file selected."}
+      </p>
+      {file ? (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => void startExcavation()}
+            disabled={!online || isLoading}
+            className="inline-flex min-h-11 items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60"
+          >
+            {isLoading ? "Excavating…" : "Excavate with GPT-5.6"}
+          </button>
+          {isLoading ? (
+            <button
+              type="button"
+              onClick={cancelExcavation}
+              className="inline-flex min-h-11 items-center rounded-md border border-input px-3 py-2 text-sm text-foreground"
+            >
+              Cancel excavation
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {error ? <p className="text-sm text-[color:var(--destructive-foreground)]">{error}</p> : null}
+      {draft ? (
+        <div className="space-y-4 border-t border-border pt-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="font-serif text-lg text-foreground">Review file excavation</h3>
+              <p className="text-sm text-muted-foreground">
+                Edit this draft. Applying it only populates the form; Save remains required.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={discardDraft}
+              className="inline-flex min-h-11 items-center rounded-md border border-input px-3 py-2 text-sm text-muted-foreground"
+            >
+              Discard draft
+            </button>
+          </div>
+          <Field label="Draft title">
+            <TextInput value={draft.title} onChange={(e) => updateDraft("title", e.target.value)} />
+          </Field>
+          <Field label="Draft summary">
+            <TextArea
+              value={draft.summary}
+              onChange={(e) => updateDraft("summary", e.target.value)}
+            />
+          </Field>
+          <Field label="Draft tags">
+            <TagInput value={draft.tags} onChange={(value) => updateDraft("tags", value)} />
+          </Field>
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Document date">
+              <TextInput
+                value={draft.documentDate ?? ""}
+                onChange={(e) => updateDraft("documentDate", e.target.value || null)}
+              />
+            </Field>
+            <Field label="Page count">
+              <TextInput
+                type="number"
+                min={1}
+                value={draft.pageCount ?? ""}
+                onChange={(e) =>
+                  updateDraft("pageCount", e.target.value ? Number(e.target.value) : null)
+                }
+              />
+            </Field>
+          </div>
+          <DocumentInsightEditor
+            label="High-signal findings"
+            items={draft.highSignalFindings}
+            onChange={(items) => updateDraft("highSignalFindings", items)}
+          />
+          <DocumentInsightEditor
+            label="Key claims"
+            items={draft.keyClaims}
+            onChange={(items) => updateDraft("keyClaims", items)}
+          />
+          <DocumentInsightEditor
+            label="Contradictions"
+            items={draft.contradictions}
+            onChange={(items) => updateDraft("contradictions", items)}
+          />
+          <DocumentInsightEditor
+            label="Uncertainties"
+            items={draft.uncertainties}
+            onChange={(items) => updateDraft("uncertainties", items)}
+          />
+          <DocumentReferenceEditor
+            references={draft.sourceReferences}
+            onChange={(references) => updateDraft("sourceReferences", references)}
+          />
+          {currentSuggested.length ? (
+            <div>
+              <div className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
+                Suggested links
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {currentSuggested.map((id) => {
+                  const record = allRecords.find((item) => item.id === id);
+                  if (!record) return null;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() =>
+                        updateDraft(
+                          "suggestedRecordIds",
+                          currentSuggested.filter((value) => value !== id),
+                        )
+                      }
+                      className="rounded-md border border-input px-2 py-1 text-xs text-foreground hover:bg-[color:var(--record-hover)]"
+                      title="Remove suggested link"
+                    >
+                      {record.title} ×
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => void applyDraft()}
+            className="inline-flex min-h-11 items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+          >
+            Apply reviewed draft to form
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function DocumentInsightEditor({
+  label,
+  items,
+  onChange,
+}: {
+  label: string;
+  items: DocumentDraft["highSignalFindings"];
+  onChange: (items: DocumentDraft["highSignalFindings"]) => void;
+}) {
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
+        <button
+          type="button"
+          onClick={() => onChange([...items, { text: "", sourceReferenceIds: [] }])}
+          className="text-xs text-[color:var(--brass)]"
+        >
+          Add
+        </button>
+      </div>
+      <div className="space-y-3">
+        {items.map((item, index) => (
+          <div key={`${label}-${index}`} className="rounded-md border border-border p-3">
+            <TextArea
+              value={item.text}
+              onChange={(e) =>
+                onChange(
+                  items.map((current, i) =>
+                    i === index ? { ...current, text: e.target.value } : current,
+                  ),
+                )
+              }
+              placeholder="Supported conclusion or claim…"
+            />
+            <div className="mt-2 flex gap-2">
+              <TextInput
+                value={item.sourceReferenceIds.join(", ")}
+                onChange={(e) =>
+                  onChange(
+                    items.map((current, i) =>
+                      i === index
+                        ? {
+                            ...current,
+                            sourceReferenceIds: e.target.value
+                              .split(",")
+                              .map((value) => value.trim())
+                              .filter(Boolean),
+                          }
+                        : current,
+                    ),
+                  )
+                }
+                placeholder="ref_00000001, ref_00000002"
+              />
+              <button
+                type="button"
+                onClick={() => onChange(items.filter((_, i) => i !== index))}
+                className="shrink-0 text-xs text-[color:var(--destructive-foreground)]"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DocumentReferenceEditor({
+  references,
+  onChange,
+}: {
+  references: DocumentDraft["sourceReferences"];
+  onChange: (references: DocumentDraft["sourceReferences"]) => void;
+}) {
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="text-xs uppercase tracking-wide text-muted-foreground">
+          Source references
+        </div>
+        <button
+          type="button"
+          onClick={() =>
+            onChange([
+              ...references,
+              {
+                id: `ref_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`,
+                locator: "",
+                label: "",
+                note: "",
+              },
+            ])
+          }
+          className="text-xs text-[color:var(--brass)]"
+        >
+          Add
+        </button>
+      </div>
+      <div className="space-y-3">
+        {references.map((reference, index) => (
+          <div
+            key={`${reference.id}-${index}`}
+            className="grid gap-2 rounded-md border border-border p-3 md:grid-cols-3"
+          >
+            <TextInput
+              value={reference.label}
+              onChange={(e) =>
+                onChange(
+                  references.map((current, i) =>
+                    i === index ? { ...current, label: e.target.value } : current,
+                  ),
+                )
+              }
+              placeholder="Label"
+            />
+            <TextInput
+              value={reference.locator}
+              onChange={(e) =>
+                onChange(
+                  references.map((current, i) =>
+                    i === index ? { ...current, locator: e.target.value } : current,
+                  ),
+                )
+              }
+              placeholder="p. 13 or Section 4.2"
+            />
+            <div className="flex gap-2">
+              <TextInput
+                value={reference.note}
+                onChange={(e) =>
+                  onChange(
+                    references.map((current, i) =>
+                      i === index ? { ...current, note: e.target.value } : current,
+                    ),
+                  )
+                }
+                placeholder="Note"
+              />
+              <button
+                type="button"
+                onClick={() => onChange(references.filter((_, i) => i !== index))}
+                className="shrink-0 text-xs text-[color:var(--destructive-foreground)]"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DocumentFields({ data, patch }: { data: DocumentData; patch: Patcher<DocumentData> }) {
+  return (
+    <Section title="Document conclusions">
+      <div className="grid gap-4 md:grid-cols-3">
+        <Field label="Document date">
+          <TextInput
+            value={data.documentDate ?? ""}
+            onChange={(e) => patch("documentDate", e.target.value || null)}
+          />
+        </Field>
+        <Field label="Page count">
+          <TextInput
+            type="number"
+            min={1}
+            value={data.pageCount ?? ""}
+            onChange={(e) => patch("pageCount", e.target.value ? Number(e.target.value) : null)}
+          />
+        </Field>
+        <Field label="Project route">
+          <Select
+            value={data.projectRoute ?? ""}
+            onChange={(e) =>
+              patch(
+                "projectRoute",
+                e.target.value ? (e.target.value as DocumentData["projectRoute"]) : null,
+              )
+            }
+          >
+            <option value="">— None —</option>
+            {PROJECT_ROUTES.map((route) => (
+              <option key={route} value={route}>
+                {route}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </div>
+      <DocumentInsightEditor
+        label="High-signal findings"
+        items={data.highSignalFindings}
+        onChange={(items) => patch("highSignalFindings", items)}
+      />
+      <DocumentInsightEditor
+        label="Key claims"
+        items={data.keyClaims}
+        onChange={(items) => patch("keyClaims", items)}
+      />
+      <DocumentInsightEditor
+        label="Contradictions"
+        items={data.contradictions}
+        onChange={(items) => patch("contradictions", items)}
+      />
+      <DocumentInsightEditor
+        label="Uncertainties"
+        items={data.uncertainties}
+        onChange={(items) => patch("uncertainties", items)}
+      />
+      <DocumentReferenceEditor
+        references={data.sourceReferences}
+        onChange={(references) => patch("sourceReferences", references)}
+      />
+    </Section>
+  );
+}
 
 type Patcher<D> = <K extends keyof D>(k: K, v: D[K]) => void;
 

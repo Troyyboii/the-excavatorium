@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Wrench, BookOpen, ChatCenteredDots, Scales, Cross } from "@phosphor-icons/react";
+import { Wrench, BookOpen, ChatCenteredDots, Scales, Cross, FileText } from "@phosphor-icons/react";
 import type { ArchiveRecord, RecordType } from "@/lib/types";
 import { RECORD_TYPE_LABEL } from "@/lib/types";
 
@@ -8,7 +8,9 @@ export function recordHref(r: { id: string; recordType: RecordType }): string {
 }
 
 export function plural(t: RecordType): string {
-  return t === "repository" ? "repositories" : `${t}s`;
+  if (t === "repository") return "repositories";
+  if (t === "document") return "documents";
+  return `${t}s`;
 }
 
 export function TypeIcon({ type, size = 16 }: { type: RecordType; size?: number }) {
@@ -19,7 +21,9 @@ export function TypeIcon({ type, size = 16 }: { type: RecordType; size?: number 
         ? BookOpen
         : type === "conversation"
           ? ChatCenteredDots
-          : Scales;
+          : type === "decision"
+            ? Scales
+            : FileText;
   return <Cmp size={size} className="text-[color:var(--brass)]" />;
 }
 

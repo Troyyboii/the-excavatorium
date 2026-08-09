@@ -3,6 +3,7 @@ import {
   Archive,
   BookOpen,
   ChatCenteredDots,
+  FileText,
   Gear,
   House,
   MagnifyingGlass,
@@ -24,6 +25,7 @@ const NAV = [
   { to: "/repositories", label: "Repositories", icon: BookOpen },
   { to: "/conversations", label: "Conversations", icon: ChatCenteredDots },
   { to: "/decisions", label: "Decisions", icon: Scales },
+  { to: "/documents", label: "Documents", icon: FileText },
   { to: "/search", label: "Search", icon: MagnifyingGlass },
   { to: "/settings", label: "Settings", icon: Gear },
 ] as const;
@@ -33,6 +35,7 @@ const NEW_LINKS = [
   { to: "/tools/new", label: "Tool", icon: Wrench },
   { to: "/repositories/new", label: "Repository", icon: BookOpen },
   { to: "/decisions/new", label: "Decision", icon: Scales },
+  { to: "/documents/new", label: "Document", icon: FileText },
 ] as const;
 
 export function AppShell({ email, children }: { email: string | null; children: ReactNode }) {

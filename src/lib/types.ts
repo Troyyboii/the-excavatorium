@@ -1,14 +1,21 @@
 // The Excavatorium — application record contracts (spec §8).
 
-export type RecordType = "tool" | "repository" | "conversation" | "decision";
+export type RecordType = "tool" | "repository" | "conversation" | "decision" | "document";
 
-export const RECORD_TYPES: RecordType[] = ["tool", "repository", "conversation", "decision"];
+export const RECORD_TYPES: RecordType[] = [
+  "tool",
+  "repository",
+  "conversation",
+  "decision",
+  "document",
+];
 
 export const RECORD_TYPE_LABEL: Record<RecordType, string> = {
   tool: "Tool",
   repository: "Repository",
   conversation: "Conversation",
   decision: "Decision",
+  document: "Document",
 };
 
 export const RECORD_TYPE_PLURAL: Record<RecordType, string> = {
@@ -16,6 +23,7 @@ export const RECORD_TYPE_PLURAL: Record<RecordType, string> = {
   repository: "Repositories",
   conversation: "Conversations",
   decision: "Decisions",
+  document: "Documents",
 };
 
 export type ToolStatus =
@@ -112,6 +120,35 @@ export type ConversationData = {
   rawConversationText: string;
 };
 
+export type DocumentSourceReference = {
+  id: string;
+  locator: string;
+  label: string;
+  note: string;
+};
+
+export type DocumentInsight = {
+  text: string;
+  sourceReferenceIds: string[];
+};
+
+export type DocumentData = {
+  originalFileName: string | null;
+  mimeType: string | null;
+  fileSizeBytes: number | null;
+  documentDate: string | null;
+  pageCount: number | null;
+  storagePath: string | null;
+  extractedContentPath: string | null;
+  contentHash: string | null;
+  highSignalFindings: DocumentInsight[];
+  keyClaims: DocumentInsight[];
+  contradictions: DocumentInsight[];
+  uncertainties: DocumentInsight[];
+  sourceReferences: DocumentSourceReference[];
+  projectRoute: ProjectRoute | null;
+};
+
 export type ConversationEntryMode = "excavate" | "manual";
 
 export type DecisionStatus = "Current" | "Tentative" | "Superseded" | "Reversed" | "Archived";
@@ -166,8 +203,17 @@ export type DecisionRecord = BaseArchiveRecord & {
   recordType: "decision";
   recordData: DecisionData;
 };
+export type DocumentRecord = BaseArchiveRecord & {
+  recordType: "document";
+  recordData: DocumentData;
+};
 
-export type ArchiveRecord = ToolRecord | RepositoryRecord | ConversationRecord | DecisionRecord;
+export type ArchiveRecord =
+  | ToolRecord
+  | RepositoryRecord
+  | ConversationRecord
+  | DecisionRecord
+  | DocumentRecord;
 
 export type ArchiveLink = {
   id: string;
@@ -228,6 +274,23 @@ export const emptyConversationData: ConversationData = {
   rawConversationText: "",
 };
 
+export const emptyDocumentData: DocumentData = {
+  originalFileName: null,
+  mimeType: null,
+  fileSizeBytes: null,
+  documentDate: null,
+  pageCount: null,
+  storagePath: null,
+  extractedContentPath: null,
+  contentHash: null,
+  highSignalFindings: [],
+  keyClaims: [],
+  contradictions: [],
+  uncertainties: [],
+  sourceReferences: [],
+  projectRoute: null,
+};
+
 export const emptyDecisionData = (today: string): DecisionData => ({
   reason: "",
   trigger: "",
@@ -241,7 +304,7 @@ export const emptyDecisionData = (today: string): DecisionData => ({
 export function emptyRecordData(
   type: RecordType,
   today: string,
-): ToolData | RepositoryData | ConversationData | DecisionData {
+): ToolData | RepositoryData | ConversationData | DecisionData | DocumentData {
   switch (type) {
     case "tool":
       return { ...emptyToolData };
@@ -251,6 +314,8 @@ export function emptyRecordData(
       return { ...emptyConversationData };
     case "decision":
       return emptyDecisionData(today);
+    case "document":
+      return { ...emptyDocumentData };
   }
 }
 

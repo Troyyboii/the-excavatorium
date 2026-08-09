@@ -53,6 +53,20 @@ function toSearchableText(r: ArchiveRecord): string {
       r.recordData.status,
       r.recordData.confidence,
     );
+  } else if (r.recordType === "document") {
+    const insights = [
+      ...r.recordData.highSignalFindings,
+      ...r.recordData.keyClaims,
+      ...r.recordData.contradictions,
+      ...r.recordData.uncertainties,
+    ];
+    parts.push(
+      r.recordData.originalFileName ?? "",
+      r.recordData.documentDate ?? "",
+      r.recordData.projectRoute ?? "",
+      ...insights.flatMap((item) => [item.text, ...item.sourceReferenceIds]),
+      ...r.recordData.sourceReferences.flatMap((ref) => [ref.label, ref.note, ref.locator]),
+    );
   }
   void d;
   return parts.join("\n").toLowerCase();
@@ -78,6 +92,7 @@ function Page() {
     repository: results.filter((r) => r.recordType === "repository"),
     conversation: results.filter((r) => r.recordType === "conversation"),
     decision: results.filter((r) => r.recordType === "decision"),
+    document: results.filter((r) => r.recordType === "document"),
   };
 
   if (!q.data && q.isPending) {

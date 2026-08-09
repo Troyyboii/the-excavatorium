@@ -59,6 +59,38 @@ const links: ArchiveLink[] = [
   },
 ];
 
+const documentRecord: ArchiveRecord = {
+  id: "55555555-5555-4555-8555-555555555555",
+  recordType: "document",
+  title: "Stored document",
+  summary: "Conclusions survive a detached backup.",
+  tags: ["reference"],
+  isExample: false,
+  seedKey: null,
+  createdAt: "2026-08-01T10:00:00.000Z",
+  updatedAt: "2026-08-03T10:00:00.000Z",
+  recordData: {
+    originalFileName: "source.md",
+    mimeType: "text/markdown",
+    fileSizeBytes: 123,
+    documentDate: null,
+    pageCount: null,
+    storagePath:
+      "55555555-5555-4555-8555-555555555555/documents/55555555-5555-4555-8555-555555555555/original/operation-source.md",
+    extractedContentPath:
+      "55555555-5555-4555-8555-555555555555/documents/55555555-5555-4555-8555-555555555555/extracted/operation-normalized.json",
+    contentHash: "a".repeat(64),
+    highSignalFindings: [{ text: "A grounded finding.", sourceReferenceIds: ["ref_00000001"] }],
+    keyClaims: [],
+    contradictions: [],
+    uncertainties: [],
+    sourceReferences: [
+      { id: "ref_00000001", locator: "Heading: Evidence", label: "Evidence", note: "" },
+    ],
+    projectRoute: null,
+  },
+};
+
 describe("backup export and restore validation", () => {
   test("round-trips a complete record-and-link snapshot", () => {
     const backup = buildBackup(records, links);
@@ -79,5 +111,19 @@ describe("backup export and restore validation", () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toContain("targetId");
+  });
+
+  test("detaches private document objects while preserving conclusions", () => {
+    const backup = buildBackup([documentRecord], []);
+    const exported = backup.records[0];
+
+    expect(exported.recordType).toBe("document");
+    if (exported.recordType === "document") {
+      expect(exported.recordData.storagePath).toBeNull();
+      expect(exported.recordData.extractedContentPath).toBeNull();
+      expect(exported.recordData.contentHash).toBeNull();
+      expect(exported.recordData.highSignalFindings[0].text).toBe("A grounded finding.");
+    }
+    expect(validateBackup(backup).ok).toBe(true);
   });
 });
