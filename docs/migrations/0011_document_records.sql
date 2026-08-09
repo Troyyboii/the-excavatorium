@@ -431,7 +431,7 @@ begin
         raise exception 'document.% must be a bounded insight array', key using errcode = '22023';
       end if;
       if pg_catalog.jsonb_array_length(data -> key) >
-         case when key = 'keyClaims' then 16 else 12 end then
+         (case when key = 'keyClaims' then 16 else 12 end) then
         raise exception 'document.% exceeds its bounded insight count', key using errcode = '22023';
       end if;
       for item in select value from pg_catalog.jsonb_array_elements(data -> key) as entries(value) loop
