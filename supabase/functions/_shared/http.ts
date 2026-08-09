@@ -67,3 +67,21 @@ export function isQuotaDecision(
     typeof decision.retryAfterSeconds === "number"
   );
 }
+
+/**
+ * Emits one bounded diagnostic line. Only phase, category, status and timing
+ * metadata are ever recorded — never API keys, prompts, file contents, record
+ * data, or upstream payloads.
+ */
+export function logDiagnostic(
+  phase: string,
+  category: string,
+  detail: { status?: number; durationMs?: number } = {},
+): void {
+  const entry: Record<string, string | number> = { phase, category };
+  if (typeof detail.status === "number" && Number.isFinite(detail.status))
+    entry.status = detail.status;
+  if (typeof detail.durationMs === "number" && Number.isFinite(detail.durationMs))
+    entry.durationMs = Math.round(detail.durationMs);
+  console.error("document-diagnostic", entry);
+}

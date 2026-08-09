@@ -136,8 +136,26 @@ function isStoragePath(value: unknown): value is string {
   return typeof value === "string" && STORAGE_PATH_RE.test(value);
 }
 
+/**
+ * Returns a standalone ArrayBuffer copy of the supplied bytes.
+ *
+ * Web Crypto and PDFJS both accept a BufferSource and may retain or detach the
+ * backing buffer. Copying keeps every caller safe from detached-buffer
+ * failures and satisfies the ArrayBufferLike typing of Uint8Array views.
+ */
+export function toBinaryData(bytes: Uint8Array): ArrayBuffer {
+  const copy = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(copy).set(bytes);
+  return copy;
+}
+
+/** Reads an uploaded file into an owned, independently backed byte array. */
+export async function readFileBytes(file: File): Promise<Uint8Array> {
+  return new Uint8Array(await file.arrayBuffer());
+}
+
 export async function sha256(bytes: Uint8Array): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const digest = await crypto.subtle.digest("SHA-256", toBinaryData(bytes));
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
@@ -369,7 +387,11 @@ function addBoundedUnits(
 async function normalizePdf(bytes: Uint8Array, contentHash: string): Promise<NormalizedDocument> {
   let pdf: { numPages: number; getPage: (pageNumber: number) => Promise<unknown> };
   try {
-    pdf = await getDocument({ data: bytes, disableWorker: true, isEvalSupported: false }).promise;
+    pdf = await getDocument({
+      data: new Uint8Array(toBinaryData(bytes)),
+      disableWorker: true,
+      isEvalSupported: false,
+    }).promise;
   } catch {
     throw new DocumentInputError(
       "The PDF could not be read. It may be malformed or encrypted.",

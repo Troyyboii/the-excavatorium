@@ -3,6 +3,7 @@ import {
   allowedOrigin,
   isQuotaDecision,
   jsonResponse,
+  logDiagnostic,
   responseHeaders,
   type AuthenticatedSupabase,
 } from "../_shared/http.ts";
@@ -17,6 +18,7 @@ import {
   kindFor,
   normalizeDocumentFile,
   readBoundedBody,
+  readFileBytes,
   type CandidateRecord,
   type NormalizedDocument,
   type SourceUnit,
@@ -29,7 +31,13 @@ const MAX_REFS = 64;
 const OPENAI_TIMEOUT_MS = 25_000;
 const MAX_PIPELINE_MS = 180_000;
 const MAX_SYNTHESIS_INPUT_BYTES = 300_000;
-const MODEL = "gpt-5.6-terra";
+const DEFAULT_MODEL = "gpt-5.6-luna";
+
+/** Resolves the excavation model: OPENAI_DOCUMENT_MODEL when set, else the default. */
+function excavationModel(): string {
+  const configured = Deno.env.get("OPENAI_DOCUMENT_MODEL")?.trim();
+  return configured && configured.length > 0 ? configured : DEFAULT_MODEL;
+}
 
 type Insight = { text: string; sourceReferenceIds: string[] };
 type ChunkAnalysis = {
@@ -223,20 +231,27 @@ async function openAiJson(
   const onAbort = () => controller.abort();
   requestSignal.addEventListener("abort", onAbort, { once: true });
   const timeout = setTimeout(() => controller.abort(), Math.min(OPENAI_TIMEOUT_MS, remainingMs));
+  const startedAt = Date.now();
   try {
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       signal: controller.signal,
       headers: { Authorization: `Bearer ${openAiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: MODEL,
+        model: excavationModel(),
         store: false,
         max_output_tokens: 2_400,
         input,
         text: { format: { type: "json_schema", name: schemaName, strict: true, schema } },
       }),
     });
-    if (!response.ok) throw new Error("upstream");
+    if (!response.ok) {
+      logDiagnostic(schemaName, "upstream", {
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+      });
+      throw new Error("upstream");
+    }
     let upstream: unknown;
     try {
       upstream = await response.json();
@@ -423,6 +438,7 @@ function finalDraft(
 }
 
 Deno.serve(async (request) => {
+  const requestStartedAt = Date.now();
   const origin = originFor(request);
   if (origin === "__denied__") return jsonResponse({ error: "Origin is not allowed." }, 403);
   if (request.method === "OPTIONS") return new Response("ok", { headers: responseHeaders(origin) });
@@ -457,7 +473,7 @@ Deno.serve(async (request) => {
     const candidates = await callerOwnedCandidates(auth.client, suppliedCandidates);
     if (!candidates)
       return jsonResponse({ error: "Candidate records could not be verified." }, 400, origin);
-    const fileBytes = new Uint8Array(await file.arrayBuffer());
+    const fileBytes = await readFileBytes(file);
     if (fileBytes.byteLength === 0)
       return jsonResponse({ error: "The selected file is empty." }, 400, origin);
     if (fileBytes.byteLength > DOCUMENT_MAX_FILE_BYTES)
@@ -583,17 +599,22 @@ Deno.serve(async (request) => {
     draft.fileSizeBytes = fileBytes.byteLength;
     return jsonResponse(draft, 200, origin);
   } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError")
+    const durationMs = Date.now() - requestStartedAt;
+    if (error instanceof DOMException && error.name === "AbortError") {
+      logDiagnostic("request", "aborted", { status: 504, durationMs });
       return jsonResponse({ error: "Excavation timed out or was cancelled." }, 504, origin);
+    }
     if (
       error instanceof Error &&
       ["deadline", "configuration", "upstream", "output"].includes(error.message)
-    )
+    ) {
+      logDiagnostic("request", error.message, { status: 502, durationMs });
       return jsonResponse(
         { error: "Excavation service is temporarily unavailable. Please retry." },
         502,
         origin,
       );
+    }
     if (
       error &&
       typeof error === "object" &&
@@ -601,12 +622,14 @@ Deno.serve(async (request) => {
       typeof (error as { status?: unknown }).status === "number"
     ) {
       const input = error as { message?: unknown; status: number };
+      logDiagnostic("request", "input", { status: input.status, durationMs });
       return jsonResponse(
         { error: typeof input.message === "string" ? input.message : "File input is invalid." },
         input.status,
         origin,
       );
     }
+    logDiagnostic("request", "unhandled", { status: 400, durationMs });
     return jsonResponse(
       { error: "File excavation could not be completed. Please retry." },
       400,
