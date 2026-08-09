@@ -17,6 +17,7 @@ import {
   DOCUMENT_MAX_OUTPUT_BYTES,
   isUuid,
   kindFor,
+  mapInBatches,
   normalizeDocumentFile,
   readBoundedBody,
   readFileBytes,
@@ -30,8 +31,9 @@ const MAX_CANDIDATE_RECORDS = 75;
 const MAX_INSIGHTS = 12;
 const MAX_CLAIMS = 16;
 const MAX_REFS = 64;
-const OPENAI_TIMEOUT_MS = 25_000;
-const MAX_PIPELINE_MS = 180_000;
+const CHUNK_ANALYSIS_CONCURRENCY = 4;
+const OPENAI_TIMEOUT_MS = 20_000;
+const MAX_PIPELINE_MS = 135_000;
 const MAX_SYNTHESIS_INPUT_BYTES = 300_000;
 const DEFAULT_MODEL = "gpt-5.6-luna";
 
@@ -520,8 +522,7 @@ Deno.serve(async (request) => {
         413,
         origin,
       );
-    const analyses: ChunkAnalysis[] = [];
-    for (const chunk of chunks) {
+    const analyses = await mapInBatches(chunks, CHUNK_ANALYSIS_CONCURRENCY, async (chunk) => {
       const result = await openAiJson(
         [
           {
@@ -542,16 +543,18 @@ Deno.serve(async (request) => {
         request.signal,
         deadline,
       );
-      const analysis = validateChunkAnalysis(result, new Set(chunk.sourceReferenceIds));
-      if (!analysis)
-        return jsonResponse(
-          { error: "The excavation response was incomplete. Please retry." },
-          502,
-          origin,
-        );
-      analyses.push(analysis);
-    }
-    const seed = mergeInsights(analyses);
+      return validateChunkAnalysis(result, new Set(chunk.sourceReferenceIds));
+    });
+    const validAnalyses = analyses.filter(
+      (analysis): analysis is ChunkAnalysis => analysis !== null,
+    );
+    if (validAnalyses.length !== analyses.length)
+      return jsonResponse(
+        { error: "The excavation response was incomplete. Please retry." },
+        502,
+        origin,
+      );
+    const seed = mergeInsights(validAnalyses);
     const synthesisInput = [
       {
         role: "system",
@@ -562,7 +565,7 @@ Deno.serve(async (request) => {
         role: "user",
         content: JSON.stringify({
           sourceCatalog: sourceCatalog(normalized.units),
-          chunkAnalyses: analyses,
+          chunkAnalyses: validAnalyses,
           candidateRecords: candidates,
           boundedSeed: seed,
         }),

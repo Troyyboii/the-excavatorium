@@ -12,6 +12,7 @@ export type DocumentCandidateRecord = Pick<ArchiveRecord, "id" | "title" | "reco
 const GENERIC_RELAY_MESSAGE =
   "File excavation could not be reached. Check your connection and retry.";
 const GENERIC_FAILURE_MESSAGE = "File excavation could not be completed. Please retry.";
+const GENERIC_TIMEOUT_MESSAGE = "File excavation timed out before completion. Please retry.";
 
 /**
  * Extracts the Edge Function's sanitized `{ error }` message from a Supabase
@@ -19,23 +20,24 @@ const GENERIC_FAILURE_MESSAGE = "File excavation could not be completed. Please 
  * nothing else about the failure is surfaced, so secrets, prompts, upstream
  * payloads, and document text can never reach the UI.
  */
-async function sanitizedFunctionErrorMessage(error: unknown): Promise<string | null> {
+export async function sanitizedFunctionErrorMessage(error: unknown): Promise<string | null> {
   if (!error || typeof error !== "object") return null;
   const context = (error as { context?: unknown }).context;
   if (!context || typeof context !== "object") return null;
   const response = context as Partial<Response> & { json?: unknown };
-  if (typeof response.json !== "function" || typeof response.clone !== "function") return null;
+  const fallback = response.status === 504 ? GENERIC_TIMEOUT_MESSAGE : null;
+  if (typeof response.json !== "function" || typeof response.clone !== "function") return fallback;
   let body: unknown;
   try {
     body = await (response.clone() as Response).json();
   } catch {
-    return null;
+    return fallback;
   }
-  if (!body || typeof body !== "object" || Array.isArray(body)) return null;
+  if (!body || typeof body !== "object" || Array.isArray(body)) return fallback;
   const message = (body as { error?: unknown }).error;
-  if (typeof message !== "string") return null;
+  if (typeof message !== "string") return fallback;
   const trimmed = message.trim();
-  if (trimmed.length === 0 || trimmed.length > 300) return null;
+  if (trimmed.length === 0 || trimmed.length > 300) return fallback;
   return trimmed;
 }
 
@@ -78,4 +80,4 @@ export async function excavateDocument(
   return parsed.data;
 }
 
-export { GENERIC_FAILURE_MESSAGE, GENERIC_RELAY_MESSAGE };
+export { GENERIC_FAILURE_MESSAGE, GENERIC_RELAY_MESSAGE, GENERIC_TIMEOUT_MESSAGE };

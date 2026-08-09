@@ -2,6 +2,7 @@ import {
   chunkUnits,
   DOCUMENT_MAX_CHUNKS,
   DOCUMENT_MAX_SOURCE_UNITS,
+  mapInBatches,
   normalizeDocumentFile,
   type NormalizedDocument,
   validateNormalizedDocument,
@@ -56,6 +57,26 @@ Deno.test("normalizes plain text with bounded chunks", async () => {
   assert(result.pageCount === null, "plain text must not invent page count");
   assert(chunks.length === 1, "expected a small text document to use one chunk");
   assert(chunks[0].text.includes("ref_00000001"), "expected provenance marker in chunk");
+});
+
+Deno.test("maps in bounded concurrent batches and preserves input order", async () => {
+  let active = 0;
+  let maxActive = 0;
+  const values = [0, 1, 2, 3, 4, 5, 6];
+
+  const result = await mapInBatches(values, 3, async (value, index) => {
+    active += 1;
+    maxActive = Math.max(maxActive, active);
+    await new Promise((resolve) => setTimeout(resolve, value % 3 === 0 ? 5 : 0));
+    active -= 1;
+    return `${index}:${value}`;
+  });
+
+  assert(maxActive === 3, "batch mapper did not run a full batch concurrently");
+  assert(
+    JSON.stringify(result) === JSON.stringify(values.map((value, index) => `${index}:${value}`)),
+    "batch mapper changed input order",
+  );
 });
 
 Deno.test("retains all source units for a 55-page research-sized document", () => {

@@ -473,6 +473,23 @@ export function chunkUnits(
   return chunks;
 }
 
+export async function mapInBatches<T, R>(
+  items: readonly T[],
+  batchSize: number,
+  mapper: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (!Number.isInteger(batchSize) || batchSize < 1)
+    throw new RangeError("batchSize must be a positive integer");
+
+  const results: R[] = [];
+  for (let start = 0; start < items.length; start += batchSize) {
+    const batch = items.slice(start, start + batchSize);
+    const mapped = await Promise.all(batch.map((item, offset) => mapper(item, start + offset)));
+    results.push(...mapped);
+  }
+  return results;
+}
+
 export function validateDocumentRecordData(value: unknown): value is DocumentRecordData {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const data = value as Record<string, unknown>;
