@@ -359,7 +359,7 @@ function DocumentDetail({
                   {item.sourceReferenceIds.map((id) => (
                     <span
                       key={id}
-                      className="rounded-full border border-border px-2 py-1 text-xs text-muted-foreground"
+                      className="max-w-full break-words rounded-full border border-border px-2 py-1 text-xs text-muted-foreground [overflow-wrap:anywhere]"
                     >
                       {citationLabel(id)}
                     </span>
@@ -412,8 +412,12 @@ function DocumentDetail({
           <ul className="mt-4 space-y-3">
             {d.sourceReferences.map((ref) => (
               <li key={ref.id} className="text-sm text-foreground">
-                <div className="font-medium">{ref.label}</div>
-                <div className="font-mono text-xs text-muted-foreground">{ref.locator}</div>
+                <div className="max-w-full break-words font-medium [overflow-wrap:anywhere]">
+                  {ref.label}
+                </div>
+                <div className="max-w-full break-all font-mono text-xs text-muted-foreground">
+                  {ref.locator}
+                </div>
                 {ref.note ? <div className="mt-1 whitespace-pre-wrap">{ref.note}</div> : null}
               </li>
             ))}

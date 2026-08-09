@@ -82,6 +82,7 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
   );
   const [documentFile, setDocumentFile] = useState<File | null>(null);
   const [documentFileRemoved, setDocumentFileRemoved] = useState(false);
+  const [documentDraftReviewOpen, setDocumentDraftReviewOpen] = useState(false);
 
   useEffect(() => {
     function onUnload(e: BeforeUnloadEvent) {
@@ -384,12 +385,14 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
             allRecords={allRecords}
             onFileChange={onDocumentFileChange}
             onApply={applyDocumentExtraction}
+            onReviewStateChange={setDocumentDraftReviewOpen}
             online={online}
           />
         </Section>
       ) : null}
 
-      {recordType !== "conversation" || conversationMode === "manual" ? (
+      {!documentDraftReviewOpen &&
+      (recordType !== "conversation" || conversationMode === "manual") ? (
         <Section title="Overview">
           <Field label="Title" htmlFor="title" required>
             <TextInput
@@ -447,11 +450,12 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
           choices={decisionChoices}
         />
       ) : null}
-      {recordType === "document" ? (
+      {recordType === "document" && !documentDraftReviewOpen ? (
         <DocumentFields data={data as DocumentData} patch={patch as never} />
       ) : null}
 
-      {recordType !== "conversation" || conversationMode === "manual" ? (
+      {!documentDraftReviewOpen &&
+      (recordType !== "conversation" || conversationMode === "manual") ? (
         <Section title="Connected records">
           <RecordPicker
             all={allRecords}
@@ -472,15 +476,18 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
             disabled={
               save.isPending ||
               !online ||
+              documentDraftReviewOpen ||
               (recordType === "conversation" && conversationMode === "excavate")
             }
             className="inline-flex min-h-11 items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-[color:var(--primary)]/90 disabled:opacity-60"
           >
             {save.isPending
               ? "Saving…"
-              : recordType === "conversation" && conversationMode === "excavate"
+              : documentDraftReviewOpen
                 ? "Apply a draft before saving"
-                : "Save"}
+                : recordType === "conversation" && conversationMode === "excavate"
+                  ? "Apply a draft before saving"
+                  : "Save"}
           </button>
           <button
             type="button"
@@ -543,6 +550,7 @@ function DocumentExcavationPanel({
   allRecords,
   onFileChange,
   onApply,
+  onReviewStateChange,
   online,
 }: {
   file: File | null;
@@ -552,6 +560,7 @@ function DocumentExcavationPanel({
   allRecords: ArchiveRecord[];
   onFileChange: (file: File | null) => void;
   onApply: (draft: DocumentDraft) => void;
+  onReviewStateChange: (reviewing: boolean) => void;
   online: boolean;
 }) {
   const [draft, setDraft] = useState<DocumentDraft | null>(null);
@@ -561,6 +570,10 @@ function DocumentExcavationPanel({
   const requestIdRef = useRef(0);
   const fileRef = useRef<File | null>(file);
   const controllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    onReviewStateChange(Boolean(draft));
+  }, [draft, onReviewStateChange]);
 
   useEffect(() => {
     if (fileRef.current === file) return;
@@ -671,16 +684,15 @@ function DocumentExcavationPanel({
         archive automatically.
       </p>
       <div className="flex flex-wrap items-center gap-2">
-        <label className="inline-flex min-h-11 cursor-pointer items-center rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground hover:bg-[color:var(--record-hover)]">
-          <span
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={(event) => {
-              event.preventDefault();
-              chooseFile(event.dataTransfer.files?.[0] ?? null);
-            }}
-          >
-            Select or drop a file
-          </span>
+        <label
+          className="inline-flex min-h-11 cursor-pointer items-center rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground hover:bg-[color:var(--record-hover)]"
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={(event) => {
+            event.preventDefault();
+            chooseFile(event.dataTransfer.files?.[0] ?? null);
+          }}
+        >
+          Select or drop a file
           <input
             type="file"
             accept=".pdf,.md,.txt,application/pdf,text/markdown,text/plain"
