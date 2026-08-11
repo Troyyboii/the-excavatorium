@@ -1,5 +1,6 @@
 import { defineTool } from "@lovable.dev/mcp-js";
 import { supabaseForUser } from "../supabase";
+import { authResult, errorResult, jsonResult } from "../mcp-utils";
 
 const TYPES = ["tool", "repository", "conversation", "decision", "document"] as const;
 
@@ -11,29 +12,28 @@ export default defineTool({
   inputSchema: {},
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   handler: async (_input, ctx) => {
-    if (!ctx.isAuthenticated()) {
-      return { content: [{ type: "text", text: "Not authenticated." }], isError: true };
-    }
-    const supabase = supabaseForUser(ctx);
-    const byType: Record<string, number> = {};
-    for (const type of TYPES) {
-      const { count, error } = await supabase
-        .from("records")
-        .select("id", { count: "exact", head: true })
-        .eq("record_type", type);
-      if (error) return { content: [{ type: "text", text: error.message }], isError: true };
-      byType[type] = count ?? 0;
-    }
-    const { count: linkCount, error: linkError } = await supabase
-      .from("record_links")
-      .select("id", { count: "exact", head: true });
-    if (linkError) return { content: [{ type: "text", text: linkError.message }], isError: true };
+    const authError = authResult(ctx);
+    if (authError) return authError;
+    try {
+      const supabase = supabaseForUser(ctx);
+      const byType: Record<string, number> = {};
+      for (const type of TYPES) {
+        const { count, error } = await supabase
+          .from("records")
+          .select("id", { count: "exact", head: true })
+          .eq("record_type", type);
+        if (error) return errorResult("DATA_UNAVAILABLE");
+        byType[type] = count ?? 0;
+      }
+      const { count: linkCount, error: linkError } = await supabase
+        .from("record_links")
+        .select("id", { count: "exact", head: true });
+      if (linkError) return errorResult("DATA_UNAVAILABLE");
 
-    const totalRecords = Object.values(byType).reduce((sum, n) => sum + n, 0);
-    const payload = { recordsByType: byType, totalRecords, totalLinks: linkCount ?? 0 };
-    return {
-      content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
-      structuredContent: payload,
-    };
+      const totalRecords = Object.values(byType).reduce((sum, n) => sum + n, 0);
+      return jsonResult({ recordsByType: byType, totalRecords, totalLinks: linkCount ?? 0 });
+    } catch {
+      return errorResult("DATA_UNAVAILABLE");
+    }
   },
 });

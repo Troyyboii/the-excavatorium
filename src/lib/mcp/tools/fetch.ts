@@ -2,11 +2,11 @@ import { defineTool } from "@lovable.dev/mcp-js";
 import { z } from "zod";
 import { handleFetchRecord } from "../record-handlers";
 
-// Compatibility alias for the original public tool name.
 export default defineTool({
-  name: "get_record",
-  title: "Get archive record",
-  description: "Compatibility alias for fetch with the safe archive projection.",
+  name: "fetch",
+  title: "Fetch an archive record",
+  description:
+    "Fetch one signed-in user's archive record with an explicit safe projection and linked record ids.",
   inputSchema: {
     id: z.string().uuid().describe("The record id."),
   },

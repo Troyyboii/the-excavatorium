@@ -44,10 +44,12 @@ export function AuthGate({ children }: { children: ReactNode }) {
     void qc.cancelQueries({ queryKey: ["archive-records"] });
     void qc.cancelQueries({ queryKey: ["archive-links"] });
     void qc.cancelQueries({ queryKey: ["app_metadata"] });
+    void qc.cancelQueries({ queryKey: ["custodian"] });
     qc.removeQueries({ queryKey: ["archive"] });
     qc.removeQueries({ queryKey: ["archive-records"] });
     qc.removeQueries({ queryKey: ["archive-links"] });
     qc.removeQueries({ queryKey: ["app_metadata"] });
+    qc.removeQueries({ queryKey: ["custodian"] });
 
     setAcknowledgedUserId(currentUserId);
   }, [s.status, currentUserId, acknowledgedUserId, qc]);

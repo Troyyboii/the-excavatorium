@@ -12,9 +12,9 @@ Use this as the durable project context when working on The Excavatorium in Lova
 ## Supabase ownership
 
 - This is a directly managed Supabase project. Lovable must not create a replacement backend, change project ownership, or introduce a second data store.
-- Database changes are applied from the numbered SQL files under `docs/migrations/`; there is no automatic migration runner in the app.
+- Canonical database history lives under `supabase/migrations/`. After the one-time remote history repair is explicitly approved and verified, successful `main` CI may deploy the exact validated SHA through the guarded Supabase workflow.
 - Authentication, row-level security, owner validation, and the protected record-and-link RPCs are authoritative. Client code must not bypass or duplicate those checks.
-- The seven authenticated `SECURITY DEFINER` RPCs are intentional, documented exceptions. Do not convert or suppress them without reviewing their explicit role grants, empty `search_path`, and caller-ownership checks.
+- Authenticated `SECURITY DEFINER` RPCs are intentional, documented exceptions. Do not convert or suppress them without reviewing their explicit role grants, empty `search_path`, and caller-ownership checks.
 
 ## Private data and offline behavior
 

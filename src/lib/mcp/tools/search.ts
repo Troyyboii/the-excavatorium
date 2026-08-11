@@ -2,24 +2,17 @@ import { defineTool } from "@lovable.dev/mcp-js";
 import { z } from "zod";
 import { handleSearchRecords } from "../record-handlers";
 
-// Compatibility alias for the original public tool name.
 export default defineTool({
-  name: "list_records",
-  title: "List archive records",
+  name: "search",
+  title: "Search archive records",
   description:
-    "Compatibility alias for search: list the signed-in user's five canonical archive record types by title, summary, or exact tag.",
+    "Search the signed-in user's five canonical archive record types by title, summary, or exact tag.",
   inputSchema: {
     recordType: z
       .enum(["tool", "repository", "conversation", "decision", "document"])
       .optional()
       .describe("Restrict results to one canonical record type."),
-    query: z
-      .string()
-      .trim()
-      .min(1)
-      .max(200)
-      .optional()
-      .describe("Text to match in title, summary, or tags."),
+    query: z.string().trim().min(1).max(200).describe("Text to match in title, summary, or tags."),
     limit: z
       .number()
       .int()

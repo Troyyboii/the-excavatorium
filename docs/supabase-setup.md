@@ -1,13 +1,13 @@
 # Supabase setup for The Excavatorium
 
-This project uses a **directly-managed** Supabase project. Lovable Cloud
-is intentionally not enabled. All schema, RLS, and RPC changes come from
-the numbered SQL files in [`docs/migrations/`](./migrations/) and are
-applied through the Supabase SQL editor or the Supabase CLI.
+This project uses one **directly managed** Supabase project. Lovable Cloud is
+intentionally not enabled. GitHub `main` is the source of truth for schema,
+RLS, RPC, and Edge Function changes. Canonical migrations live in
+[`supabase/migrations/`](../supabase/migrations/).
 
 ## 1. Required tables
 
-Migration `0001_tables.sql` creates exactly four application tables:
+Migration `20260802150000_tables.sql` creates the original four application tables:
 
 - `profiles` — application-read-only mirror of `auth.users`
 - `records` — Tools, Repositories, Conversations, Decisions, Documents
@@ -16,46 +16,69 @@ Migration `0001_tables.sql` creates exactly four application tables:
 
 ## 2. Migrations
 
-Apply the migrations in order:
+The filenames in `supabase/migrations/` are the deployment ledger and run in
+timestamp order. Do not replay the eight manually applied baseline migrations
+against production. Before enabling automated deployment for the first time,
+reconcile those filenames with the remote
+`supabase_migrations.schema_migrations` history using a reviewed
+`supabase migration repair` operation.
 
-```
-docs/migrations/0001_tables.sql
-docs/migrations/0002_indexes_triggers.sql
-docs/migrations/0003_rls_privileges.sql
-docs/migrations/0004_profile_trigger.sql
-docs/migrations/0005_validation_helpers.sql
-docs/migrations/0006_write_rpcs.sql
-docs/migrations/0007_seed_lifecycle.sql
-docs/migrations/0008_restore_hardening.sql
-docs/migrations/0009_conversation_extraction_guardrails.sql
-docs/migrations/0010_rls_and_fk_advisor_cleanup.sql
-docs/migrations/0011_document_records.sql
-```
+### One-time migration-history reconciliation
 
-Two supported paths:
+The original migrations were manually applied under the legacy versions below
+and were later renamed to timestamped files. This is a history repair, not a
+schema replay. Do not run `supabase db push` during this procedure.
 
-**SQL editor.** Paste each file, in order, into the Supabase SQL editor
-and run it. Each file is idempotent (`create ... if not exists`,
-`create or replace function`, `drop trigger if exists ... create ...`)
-so re-running a file is safe.
+| Legacy remote version | Canonical repository version |
+| --------------------- | ---------------------------- |
+| `0001`                | `20260802150000`             |
+| `0002`                | `20260802150100`             |
+| `0003`                | `20260802150200`             |
+| `0004`                | `20260802150300`             |
+| `0005`                | `20260802150400`             |
+| `0006`                | `20260802150500`             |
+| `0007`                | `20260802150600`             |
+| `0008`                | `20260802150700`             |
+| `0009`                | `20260802153543`             |
+| `0010`                | `20260802153559`             |
+| `0011`                | `20260809132453`             |
+| `0012`                | `20260809132500`             |
 
-**Supabase CLI.**
+An authorized operator should, after verifying that the remote schema already
+contains the manually applied changes:
 
-```
-supabase db execute --file docs/migrations/0001_tables.sql
-supabase db execute --file docs/migrations/0002_indexes_triggers.sql
-supabase db execute --file docs/migrations/0003_rls_privileges.sql
-supabase db execute --file docs/migrations/0004_profile_trigger.sql
-supabase db execute --file docs/migrations/0005_validation_helpers.sql
-supabase db execute --file docs/migrations/0006_write_rpcs.sql
-supabase db execute --file docs/migrations/0007_seed_lifecycle.sql
-supabase db execute --file docs/migrations/0008_restore_hardening.sql
-supabase db execute --file docs/migrations/0009_conversation_extraction_guardrails.sql
-supabase db execute --file docs/migrations/0010_rls_and_fk_advisor_cleanup.sql
-supabase db execute --file docs/migrations/0011_document_records.sql
-```
+1. Link the local checkout to the existing project and save the read-only
+   before-state from `supabase migration list`.
+2. For every legacy version that appears in the remote history, mark that
+   history row reverted, then mark its canonical timestamp applied:
 
-Migration `0008_restore_hardening.sql` enforces the approved canonical
+   ```text
+   supabase migration repair <legacy-version> --status reverted
+   supabase migration repair <canonical-version> --status applied
+   ```
+
+   Run the pairs from `0001` through `0012`, substituting the values in the
+   table. These commands update migration bookkeeping only; they do not run
+   migration SQL. Stop if the remote schema or history does not match the
+   reviewed mapping.
+
+3. Run `supabase migration list` again and retain the output showing the
+   canonical timestamped versions in the remote history and no legacy rows.
+4. Set the GitHub Actions repository variable
+   `SUPABASE_MIGRATION_RECONCILIATION_COMPLETE` to `true` only after retaining
+   the reviewed before/after evidence. Until then, the deploy job is skipped
+   before linking or running `supabase db push`; its first step also verifies
+   the variable defensively.
+
+After that one-time reconciliation, a successful `main` CI run may trigger
+`.github/workflows/deploy-supabase.yml`. It checks out the exact SHA validated
+by CI, links the existing project, runs `supabase db push`, and deploys the
+repository's authenticated Edge Functions. It requires the
+`SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, and `SUPABASE_PROJECT_ID`
+GitHub secrets. Adding the workflow does not configure secrets or mutate the
+remote project.
+
+Migration `20260802150700_restore_hardening.sql` enforces the approved canonical
 seed-key-to-record-type mapping, validates record data strictly by type,
 prevents updates from changing an existing record's type, and preflights
 archive restores before deleting current records or links. A failed restore
@@ -64,7 +87,7 @@ modified.
 
 ## 3. Row-level security
 
-Migration `0003_rls_privileges.sql` enables RLS on every application
+Migration `20260802150200_rls_privileges.sql` enables RLS on every application
 table and creates only **owner-scoped SELECT** policies. Direct
 `INSERT`, `UPDATE`, `DELETE` privileges are revoked from `public`,
 `anon`, and `authenticated`. All mutations flow through the
@@ -184,7 +207,7 @@ messages. Suggested record IDs are untrusted draft values; the existing
 `save_record_with_links` RPC remains authoritative for ownership validation at
 save time.
 
-Migration `0009_conversation_extraction_guardrails.sql` creates an
+Migration `20260802153543_conversation_extraction_guardrails.sql` creates an
 RLS-protected rate-limit table in the non-public `private` schema and one
 authenticated RPC, `consume_conversation_extraction_quota()`. It admits at
 most ten valid requests in a rolling hour and enforces a 30-second cooldown.
@@ -196,16 +219,16 @@ the 110 KB limit.
 
 `supabase/config.toml` records that this function requires a verified JWT;
 deployments must preserve that setting. Migration
-`0010_rls_and_fk_advisor_cleanup.sql` keeps the existing owner-only read
+`20260802153559_rls_and_fk_advisor_cleanup.sql` keeps the existing owner-only read
 semantics while removing per-row `auth.uid()` evaluation and adds indexes that
 cover the two composite record-link foreign keys.
 
 ## 11. Document records and File Excavation
 
-Migration `0011_document_records.sql` adds `document` to the existing record
+Migration `20260809132453_document_records.sql` adds `document` to the existing record
 contract, extends the protected Save and restore RPCs, and creates the private
 `document-files` Storage bucket with owner-scoped policies. It must be applied
-after `0010`; creating the file in this repository does not apply it to the
+after the advisor cleanup migration; creating the file in this repository does not apply it to the
 Supabase project. The normalized object stores a bounded provenance manifest
 in Storage metadata; the record validator checks that the saved source
 reference IDs and content hash match that manifest.

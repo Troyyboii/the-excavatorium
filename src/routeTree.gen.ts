@@ -9,15 +9,23 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TimelineRouteImport } from './routes/timeline'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SearchRouteImport } from './routes/search'
+import { Route as RunRoomRouteImport } from './routes/run-room'
+import { Route as ObservatoryRouteImport } from './routes/observatory'
 import { Route as McpRouteImport } from './routes/mcp'
+import { Route as InboxRouteImport } from './routes/inbox'
+import { Route as GraphRouteImport } from './routes/graph'
+import { Route as ArchiveRouteImport } from './routes/archive'
+import { Route as ApprovalsRouteImport } from './routes/approvals'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ToolsIndexRouteImport } from './routes/tools.index'
 import { Route as RepositoriesIndexRouteImport } from './routes/repositories.index'
 import { Route as DocumentsIndexRouteImport } from './routes/documents.index'
 import { Route as DecisionsIndexRouteImport } from './routes/decisions.index'
 import { Route as ConversationsIndexRouteImport } from './routes/conversations.index'
+import { Route as CasesIndexRouteImport } from './routes/cases.index'
 import { Route as ToolsNewRouteImport } from './routes/tools.new'
 import { Route as RepositoriesNewRouteImport } from './routes/repositories.new'
 import { Route as OauthConsentRouteImport } from './routes/oauth/consent'
@@ -31,6 +39,7 @@ import { Route as RepositoriesIdIndexRouteImport } from './routes/repositories.$
 import { Route as DocumentsIdIndexRouteImport } from './routes/documents.$id.index'
 import { Route as DecisionsIdIndexRouteImport } from './routes/decisions.$id.index'
 import { Route as ConversationsIdIndexRouteImport } from './routes/conversations.$id.index'
+import { Route as CasesCaseIdIndexRouteImport } from './routes/cases.$caseId.index'
 import { Route as ToolsIdEditRouteImport } from './routes/tools.$id.edit'
 import { Route as RepositoriesIdEditRouteImport } from './routes/repositories.$id.edit'
 import { Route as DocumentsIdEditRouteImport } from './routes/documents.$id.edit'
@@ -39,6 +48,11 @@ import { Route as ConversationsIdEditRouteImport } from './routes/conversations.
 import { Route as Char91DotmcpChar93InvokeToolToolRouteImport } from './routes/[.mcp]/invoke-tool/$tool'
 import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.oauth.consent'
 
+const TimelineRoute = TimelineRouteImport.update({
+  id: '/timeline',
+  path: '/timeline',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -49,9 +63,39 @@ const SearchRoute = SearchRouteImport.update({
   path: '/search',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RunRoomRoute = RunRoomRouteImport.update({
+  id: '/run-room',
+  path: '/run-room',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ObservatoryRoute = ObservatoryRouteImport.update({
+  id: '/observatory',
+  path: '/observatory',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const McpRoute = McpRouteImport.update({
   id: '/mcp',
   path: '/mcp',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InboxRoute = InboxRouteImport.update({
+  id: '/inbox',
+  path: '/inbox',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GraphRoute = GraphRouteImport.update({
+  id: '/graph',
+  path: '/graph',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ArchiveRoute = ArchiveRouteImport.update({
+  id: '/archive',
+  path: '/archive',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApprovalsRoute = ApprovalsRouteImport.update({
+  id: '/approvals',
+  path: '/approvals',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -82,6 +126,11 @@ const DecisionsIndexRoute = DecisionsIndexRouteImport.update({
 const ConversationsIndexRoute = ConversationsIndexRouteImport.update({
   id: '/conversations/',
   path: '/conversations/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CasesIndexRoute = CasesIndexRouteImport.update({
+  id: '/cases/',
+  path: '/cases/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ToolsNewRoute = ToolsNewRouteImport.update({
@@ -151,6 +200,11 @@ const ConversationsIdIndexRoute = ConversationsIdIndexRouteImport.update({
   path: '/conversations/$id/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CasesCaseIdIndexRoute = CasesCaseIdIndexRouteImport.update({
+  id: '/cases/$caseId/',
+  path: '/cases/$caseId/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ToolsIdEditRoute = ToolsIdEditRouteImport.update({
   id: '/tools/$id/edit',
   path: '/tools/$id/edit',
@@ -190,9 +244,16 @@ const DotlovableOauthConsentRoute = DotlovableOauthConsentRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/approvals': typeof ApprovalsRoute
+  '/archive': typeof ArchiveRoute
+  '/graph': typeof GraphRoute
+  '/inbox': typeof InboxRoute
   '/mcp': typeof McpRoute
+  '/observatory': typeof ObservatoryRoute
+  '/run-room': typeof RunRoomRoute
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
+  '/timeline': typeof TimelineRoute
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/conversations/new': typeof ConversationsNewRoute
@@ -201,6 +262,7 @@ export interface FileRoutesByFullPath {
   '/oauth/consent': typeof OauthConsentRoute
   '/repositories/new': typeof RepositoriesNewRoute
   '/tools/new': typeof ToolsNewRoute
+  '/cases/': typeof CasesIndexRoute
   '/conversations/': typeof ConversationsIndexRoute
   '/decisions/': typeof DecisionsIndexRoute
   '/documents/': typeof DocumentsIndexRoute
@@ -213,6 +275,7 @@ export interface FileRoutesByFullPath {
   '/documents/$id/edit': typeof DocumentsIdEditRoute
   '/repositories/$id/edit': typeof RepositoriesIdEditRoute
   '/tools/$id/edit': typeof ToolsIdEditRoute
+  '/cases/$caseId/': typeof CasesCaseIdIndexRoute
   '/conversations/$id/': typeof ConversationsIdIndexRoute
   '/decisions/$id/': typeof DecisionsIdIndexRoute
   '/documents/$id/': typeof DocumentsIdIndexRoute
@@ -221,9 +284,16 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/approvals': typeof ApprovalsRoute
+  '/archive': typeof ArchiveRoute
+  '/graph': typeof GraphRoute
+  '/inbox': typeof InboxRoute
   '/mcp': typeof McpRoute
+  '/observatory': typeof ObservatoryRoute
+  '/run-room': typeof RunRoomRoute
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
+  '/timeline': typeof TimelineRoute
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/conversations/new': typeof ConversationsNewRoute
@@ -232,6 +302,7 @@ export interface FileRoutesByTo {
   '/oauth/consent': typeof OauthConsentRoute
   '/repositories/new': typeof RepositoriesNewRoute
   '/tools/new': typeof ToolsNewRoute
+  '/cases': typeof CasesIndexRoute
   '/conversations': typeof ConversationsIndexRoute
   '/decisions': typeof DecisionsIndexRoute
   '/documents': typeof DocumentsIndexRoute
@@ -244,6 +315,7 @@ export interface FileRoutesByTo {
   '/documents/$id/edit': typeof DocumentsIdEditRoute
   '/repositories/$id/edit': typeof RepositoriesIdEditRoute
   '/tools/$id/edit': typeof ToolsIdEditRoute
+  '/cases/$caseId': typeof CasesCaseIdIndexRoute
   '/conversations/$id': typeof ConversationsIdIndexRoute
   '/decisions/$id': typeof DecisionsIdIndexRoute
   '/documents/$id': typeof DocumentsIdIndexRoute
@@ -253,9 +325,16 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/approvals': typeof ApprovalsRoute
+  '/archive': typeof ArchiveRoute
+  '/graph': typeof GraphRoute
+  '/inbox': typeof InboxRoute
   '/mcp': typeof McpRoute
+  '/observatory': typeof ObservatoryRoute
+  '/run-room': typeof RunRoomRoute
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
+  '/timeline': typeof TimelineRoute
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/conversations/new': typeof ConversationsNewRoute
@@ -264,6 +343,7 @@ export interface FileRoutesById {
   '/oauth/consent': typeof OauthConsentRoute
   '/repositories/new': typeof RepositoriesNewRoute
   '/tools/new': typeof ToolsNewRoute
+  '/cases/': typeof CasesIndexRoute
   '/conversations/': typeof ConversationsIndexRoute
   '/decisions/': typeof DecisionsIndexRoute
   '/documents/': typeof DocumentsIndexRoute
@@ -276,6 +356,7 @@ export interface FileRoutesById {
   '/documents/$id/edit': typeof DocumentsIdEditRoute
   '/repositories/$id/edit': typeof RepositoriesIdEditRoute
   '/tools/$id/edit': typeof ToolsIdEditRoute
+  '/cases/$caseId/': typeof CasesCaseIdIndexRoute
   '/conversations/$id/': typeof ConversationsIdIndexRoute
   '/decisions/$id/': typeof DecisionsIdIndexRoute
   '/documents/$id/': typeof DocumentsIdIndexRoute
@@ -286,9 +367,16 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/approvals'
+    | '/archive'
+    | '/graph'
+    | '/inbox'
     | '/mcp'
+    | '/observatory'
+    | '/run-room'
     | '/search'
     | '/settings'
+    | '/timeline'
     | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
     | '/conversations/new'
@@ -297,6 +385,7 @@ export interface FileRouteTypes {
     | '/oauth/consent'
     | '/repositories/new'
     | '/tools/new'
+    | '/cases/'
     | '/conversations/'
     | '/decisions/'
     | '/documents/'
@@ -309,6 +398,7 @@ export interface FileRouteTypes {
     | '/documents/$id/edit'
     | '/repositories/$id/edit'
     | '/tools/$id/edit'
+    | '/cases/$caseId/'
     | '/conversations/$id/'
     | '/decisions/$id/'
     | '/documents/$id/'
@@ -317,9 +407,16 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/approvals'
+    | '/archive'
+    | '/graph'
+    | '/inbox'
     | '/mcp'
+    | '/observatory'
+    | '/run-room'
     | '/search'
     | '/settings'
+    | '/timeline'
     | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
     | '/conversations/new'
@@ -328,6 +425,7 @@ export interface FileRouteTypes {
     | '/oauth/consent'
     | '/repositories/new'
     | '/tools/new'
+    | '/cases'
     | '/conversations'
     | '/decisions'
     | '/documents'
@@ -340,6 +438,7 @@ export interface FileRouteTypes {
     | '/documents/$id/edit'
     | '/repositories/$id/edit'
     | '/tools/$id/edit'
+    | '/cases/$caseId'
     | '/conversations/$id'
     | '/decisions/$id'
     | '/documents/$id'
@@ -348,9 +447,16 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/approvals'
+    | '/archive'
+    | '/graph'
+    | '/inbox'
     | '/mcp'
+    | '/observatory'
+    | '/run-room'
     | '/search'
     | '/settings'
+    | '/timeline'
     | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
     | '/conversations/new'
@@ -359,6 +465,7 @@ export interface FileRouteTypes {
     | '/oauth/consent'
     | '/repositories/new'
     | '/tools/new'
+    | '/cases/'
     | '/conversations/'
     | '/decisions/'
     | '/documents/'
@@ -371,6 +478,7 @@ export interface FileRouteTypes {
     | '/documents/$id/edit'
     | '/repositories/$id/edit'
     | '/tools/$id/edit'
+    | '/cases/$caseId/'
     | '/conversations/$id/'
     | '/decisions/$id/'
     | '/documents/$id/'
@@ -380,9 +488,16 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApprovalsRoute: typeof ApprovalsRoute
+  ArchiveRoute: typeof ArchiveRoute
+  GraphRoute: typeof GraphRoute
+  InboxRoute: typeof InboxRoute
   McpRoute: typeof McpRoute
+  ObservatoryRoute: typeof ObservatoryRoute
+  RunRoomRoute: typeof RunRoomRoute
   SearchRoute: typeof SearchRoute
   SettingsRoute: typeof SettingsRoute
+  TimelineRoute: typeof TimelineRoute
   Char91DotmcpChar93ListToolsRoute: typeof Char91DotmcpChar93ListToolsRoute
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   ConversationsNewRoute: typeof ConversationsNewRoute
@@ -391,6 +506,7 @@ export interface RootRouteChildren {
   OauthConsentRoute: typeof OauthConsentRoute
   RepositoriesNewRoute: typeof RepositoriesNewRoute
   ToolsNewRoute: typeof ToolsNewRoute
+  CasesIndexRoute: typeof CasesIndexRoute
   ConversationsIndexRoute: typeof ConversationsIndexRoute
   DecisionsIndexRoute: typeof DecisionsIndexRoute
   DocumentsIndexRoute: typeof DocumentsIndexRoute
@@ -403,6 +519,7 @@ export interface RootRouteChildren {
   DocumentsIdEditRoute: typeof DocumentsIdEditRoute
   RepositoriesIdEditRoute: typeof RepositoriesIdEditRoute
   ToolsIdEditRoute: typeof ToolsIdEditRoute
+  CasesCaseIdIndexRoute: typeof CasesCaseIdIndexRoute
   ConversationsIdIndexRoute: typeof ConversationsIdIndexRoute
   DecisionsIdIndexRoute: typeof DecisionsIdIndexRoute
   DocumentsIdIndexRoute: typeof DocumentsIdIndexRoute
@@ -412,6 +529,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/timeline': {
+      id: '/timeline'
+      path: '/timeline'
+      fullPath: '/timeline'
+      preLoaderRoute: typeof TimelineRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings': {
       id: '/settings'
       path: '/settings'
@@ -426,11 +550,53 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SearchRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/run-room': {
+      id: '/run-room'
+      path: '/run-room'
+      fullPath: '/run-room'
+      preLoaderRoute: typeof RunRoomRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/observatory': {
+      id: '/observatory'
+      path: '/observatory'
+      fullPath: '/observatory'
+      preLoaderRoute: typeof ObservatoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/mcp': {
       id: '/mcp'
       path: '/mcp'
       fullPath: '/mcp'
       preLoaderRoute: typeof McpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/inbox': {
+      id: '/inbox'
+      path: '/inbox'
+      fullPath: '/inbox'
+      preLoaderRoute: typeof InboxRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/graph': {
+      id: '/graph'
+      path: '/graph'
+      fullPath: '/graph'
+      preLoaderRoute: typeof GraphRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/archive': {
+      id: '/archive'
+      path: '/archive'
+      fullPath: '/archive'
+      preLoaderRoute: typeof ArchiveRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/approvals': {
+      id: '/approvals'
+      path: '/approvals'
+      fullPath: '/approvals'
+      preLoaderRoute: typeof ApprovalsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -473,6 +639,13 @@ declare module '@tanstack/react-router' {
       path: '/conversations'
       fullPath: '/conversations/'
       preLoaderRoute: typeof ConversationsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cases/': {
+      id: '/cases/'
+      path: '/cases'
+      fullPath: '/cases/'
+      preLoaderRoute: typeof CasesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/tools/new': {
@@ -566,6 +739,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConversationsIdIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/cases/$caseId/': {
+      id: '/cases/$caseId/'
+      path: '/cases/$caseId'
+      fullPath: '/cases/$caseId/'
+      preLoaderRoute: typeof CasesCaseIdIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/tools/$id/edit': {
       id: '/tools/$id/edit'
       path: '/tools/$id/edit'
@@ -620,9 +800,16 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApprovalsRoute: ApprovalsRoute,
+  ArchiveRoute: ArchiveRoute,
+  GraphRoute: GraphRoute,
+  InboxRoute: InboxRoute,
   McpRoute: McpRoute,
+  ObservatoryRoute: ObservatoryRoute,
+  RunRoomRoute: RunRoomRoute,
   SearchRoute: SearchRoute,
   SettingsRoute: SettingsRoute,
+  TimelineRoute: TimelineRoute,
   Char91DotmcpChar93ListToolsRoute: Char91DotmcpChar93ListToolsRoute,
   Char91DotwellKnownChar93OauthProtectedResourceRoute:
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
@@ -632,6 +819,7 @@ const rootRouteChildren: RootRouteChildren = {
   OauthConsentRoute: OauthConsentRoute,
   RepositoriesNewRoute: RepositoriesNewRoute,
   ToolsNewRoute: ToolsNewRoute,
+  CasesIndexRoute: CasesIndexRoute,
   ConversationsIndexRoute: ConversationsIndexRoute,
   DecisionsIndexRoute: DecisionsIndexRoute,
   DocumentsIndexRoute: DocumentsIndexRoute,
@@ -644,6 +832,7 @@ const rootRouteChildren: RootRouteChildren = {
   DocumentsIdEditRoute: DocumentsIdEditRoute,
   RepositoriesIdEditRoute: RepositoriesIdEditRoute,
   ToolsIdEditRoute: ToolsIdEditRoute,
+  CasesCaseIdIndexRoute: CasesCaseIdIndexRoute,
   ConversationsIdIndexRoute: ConversationsIdIndexRoute,
   DecisionsIdIndexRoute: DecisionsIdIndexRoute,
   DocumentsIdIndexRoute: DocumentsIdIndexRoute,

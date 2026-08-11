@@ -1,422 +1,416 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, type ReactNode } from "react";
+import { useMemo } from "react";
 import {
-  Archive,
   ArrowRight,
+  CheckCircle,
   ClockCounterClockwise,
   LinkSimple,
   Warning,
 } from "@phosphor-icons/react";
 import { useArchive } from "@/lib/archive";
-import {
-  buildDashboardViewModel,
-  type DashboardBreakdown,
-  type DashboardRecordItem,
-} from "@/lib/dashboard";
-import { PageHeader } from "@/components/page-parts";
-import { recordHref, TypeIcon } from "@/components/record-list";
+import { buildDashboardViewModel } from "@/lib/dashboard";
+import type { ArchiveLink, ArchiveRecord } from "@/lib/types";
 import { RECORD_TYPE_LABEL } from "@/lib/types";
+import { recordHref, TypeIcon } from "@/components/record-list";
 import { useOnlineStatus } from "@/hooks/use-online";
 
-export const Route = createFileRoute("/")({ component: Dashboard, ssr: false });
+export const Route = createFileRoute("/")({ component: CustodianDesk, ssr: false });
 
-function Dashboard() {
-  const query = useArchive(true);
+function CustodianDesk() {
+  const archive = useArchive(true);
   const online = useOnlineStatus();
   const model = useMemo(
-    () => (query.data ? buildDashboardViewModel(query.data.records, query.data.links) : null),
-    [query.data],
+    () => (archive.data ? buildDashboardViewModel(archive.data.records, archive.data.links) : null),
+    [archive.data],
   );
 
-  if (!query.data && query.isPending) {
-    return (
-      <div>
-        <PageHeader title="Dashboard" description="Loading the archive command centre…" />
-        <div className="grid animate-pulse gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {[0, 1, 2, 3].map((item) => (
-            <div key={item} className="h-28 rounded-lg border border-border bg-card" />
-          ))}
-        </div>
-      </div>
-    );
+  if (!archive.data && archive.isPending) {
+    return <DeskLoading />;
   }
 
-  if (!query.data || !model) {
+  if (!archive.data || !model) {
     return (
-      <div>
-        <PageHeader title="Dashboard" />
-        <StateBanner kind="error" title="Archive could not load">
-          <span>{query.recordsError?.message ?? "The records request failed."}</span>
-          <button type="button" className="state-action" onClick={() => void query.refetch()}>
+      <section className="custodian-rule-section">
+        <DeskHeading
+          eyebrow="System state"
+          title="Custodian Desk"
+          description="The archive could not be assembled."
+        />
+        <OperationalNotice tone="risk" title="Archive unavailable">
+          <span>{archive.recordsError?.message ?? "The records request failed."}</span>
+          <button
+            type="button"
+            className="text-white-gold underline"
+            onClick={() => void archive.refetch()}
+          >
             Retry
           </button>
-        </StateBanner>
-      </div>
+        </OperationalNotice>
+      </section>
     );
   }
 
   return (
-    <DashboardSurface
+    <CustodianDeskSurface
+      records={archive.data.records}
+      links={archive.data.links}
       model={model}
       online={online}
-      recordsError={query.recordsError?.message ?? null}
-      linksError={Boolean(query.linksError)}
-      linksPending={query.state.linksPending}
-      isFetching={query.isFetching}
-      lastSuccessfulSync={query.state.lastSuccessfulSync}
-      onRetry={() => void query.refetch()}
+      linksPending={archive.state.linksPending}
+      linksError={Boolean(archive.linksError)}
+      isFetching={archive.isFetching}
+      lastSuccessfulSync={archive.state.lastSuccessfulSync}
+      onRetry={() => void archive.refetch()}
     />
   );
 }
 
-export function DashboardSurface({
+export function CustodianDeskSurface({
+  records,
+  links,
   model,
   online,
-  recordsError,
-  linksError,
   linksPending,
+  linksError,
   isFetching,
   lastSuccessfulSync,
   onRetry,
 }: {
+  records: ArchiveRecord[];
+  links: ArchiveLink[];
   model: ReturnType<typeof buildDashboardViewModel>;
   online: boolean;
-  recordsError: string | null;
-  linksError: boolean;
   linksPending: boolean;
+  linksError: boolean;
   isFetching: boolean;
   lastSuccessfulSync: number | null;
   onRetry: () => void;
 }) {
-  return (
-    <div>
-      <PageHeader title="Dashboard" description="Operational overview of your archive." />
+  const byId = new Map(records.map((record) => [record.id, record]));
+  const workingSets = buildWorkingSets(records);
+  const evidenceTrace = links
+    .map((link) => ({ link, source: byId.get(link.sourceId), target: byId.get(link.targetId) }))
+    .filter((item) => item.source && item.target)
+    .slice(0, 5);
 
-      <div className="mb-4 space-y-2">
+  return (
+    <div className="space-y-7">
+      <DeskHeading
+        eyebrow="Operational brief"
+        title="Custodian Desk"
+        description="Evidence, unfinished judgments, and the archive state that can be verified now."
+      />
+
+      <div className="space-y-2">
         {!online ? (
-          <StateBanner kind="warning" title="Offline">
-            Archive data may be stale. Saving and conversation excavation stay disabled until the
-            connection returns.
-          </StateBanner>
-        ) : null}
-        {recordsError ? (
-          <StateBanner kind="warning" title="Showing the last successful record load">
-            <span>{recordsError}</span>
-            <button type="button" className="ml-2 underline" onClick={onRetry}>
-              Retry
-            </button>
-          </StateBanner>
+          <OperationalNotice tone="risk" title="Offline">
+            Cached archive material may remain visible. Intake and mutation stay disabled.
+          </OperationalNotice>
         ) : null}
         {linksError ? (
-          <StateBanner kind="warning" title="Connections unavailable">
-            Records remain usable, but linked counts and isolated-record results may be incomplete.
-          </StateBanner>
+          <OperationalNotice tone="risk" title="Relationship evidence unavailable">
+            <span>
+              Record content is usable, but connection counts and provenance paths are incomplete.
+            </span>
+            <button type="button" className="text-white-gold underline" onClick={onRetry}>
+              Retry
+            </button>
+          </OperationalNotice>
         ) : null}
-        {isFetching ? (
-          <div className="text-right text-xs text-muted-foreground" role="status">
-            Updating archive…
-          </div>
-        ) : lastSuccessfulSync ? (
-          <div className="text-right text-xs text-muted-foreground">
-            Last synced {formatTimestamp(lastSuccessfulSync)}
-          </div>
-        ) : null}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-y border-border py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+          <span>
+            {isFetching ? "Retrieving archive" : online ? "Archive ready" : "Archive cached"}
+          </span>
+          <span>
+            {lastSuccessfulSync
+              ? `Last verified ${new Date(lastSuccessfulSync).toLocaleString()}`
+              : "No verified sync in this session"}
+          </span>
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Metric icon={<Archive size={25} />} value={model.totalRecords} label="Records in view" />
-        <Metric
-          icon={<Warning size={25} />}
+      <section aria-labelledby="judgment-queue-heading" className="custodian-rule-section">
+        <SectionHeading
+          id="judgment-queue-heading"
+          title="Priority judgment queue"
           value={model.attentionCount}
-          label="Needs attention"
-          tone="warning"
+          action={{ to: "/inbox", label: "Open inbox" }}
         />
-        <Metric
-          icon={<LinkSimple size={25} />}
-          value={linksPending || linksError ? "—" : model.connectedCount}
-          label="Connected records"
-        />
-        <Metric
-          icon={<ClockCounterClockwise size={25} />}
-          value={model.recentCount}
-          label="Updated in 7 days"
-        />
-      </div>
-
-      <div className="mt-5 grid items-start gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
-        <div className="space-y-5">
-          <Panel title="Needs attention" count={model.attentionCount}>
-            {model.attentionItems.length ? (
-              <RecordTable items={model.attentionItems} statusTone="warning" />
-            ) : (
-              <PanelEmpty>No records currently need a verdict, review, or follow-up.</PanelEmpty>
-            )}
-          </Panel>
-
-          <Panel title="Recent activity" count={model.recentItems.length}>
-            {model.recentItems.length ? (
-              <RecordTable items={model.recentItems} />
-            ) : (
-              <PanelEmpty>No activity exists in this view yet.</PanelEmpty>
-            )}
-          </Panel>
-        </div>
-
-        <div className="space-y-5">
-          <Panel title="Archive pulse">
-            <Breakdown title="Record types" items={model.typeBreakdown} />
-            <Breakdown
-              title="Tool and decision states"
-              items={model.statusBreakdown.slice(0, 6)}
-              tone="burgundy"
-            />
-          </Panel>
-
-          <Panel title="Connection health">
-            {linksPending || linksError ? null : (
-              <div className="grid grid-cols-2 border-b border-border">
-                <ConnectionStat label="Connected" value={model.connectedCount} tone="brass" />
-                <ConnectionStat label="Isolated" value={model.isolatedCount} tone="warning" />
-              </div>
-            )}
-            {linksPending ? (
-              <PanelEmpty>Loading connection health…</PanelEmpty>
-            ) : linksError ? (
-              <PanelEmpty>Connection details will return after links reload.</PanelEmpty>
-            ) : model.isolatedRecords.length ? (
-              <div className="divide-y divide-border">
-                {model.isolatedRecords.slice(0, 4).map((record) => (
-                  <Link
-                    key={record.id}
-                    to={recordHref(record)}
-                    className="flex min-h-11 items-center gap-2 px-4 py-2 text-sm hover:bg-[color:var(--record-hover)]"
-                  >
-                    <TypeIcon type={record.recordType} />
-                    <span className="min-w-0 flex-1 truncate">{record.title}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {RECORD_TYPE_LABEL[record.recordType]}
+        {model.attentionItems.length ? (
+          <>
+            <div className="divide-y divide-border md:hidden">
+              {model.attentionItems.map((item) => (
+                <Link key={item.record.id} to={recordHref(item.record)} className="grid gap-2 py-4">
+                  <span className="flex min-w-0 items-start gap-3">
+                    <TypeIcon type={item.record.recordType} />
+                    <span className="line-clamp-2 min-w-0 flex-1 font-serif text-[15px] text-foreground">
+                      {item.record.title}
                     </span>
-                  </Link>
-                ))}
+                    <span className="font-mono text-[11px] text-white-gold">
+                      {item.linkedCount}
+                    </span>
+                  </span>
+                  <span className="line-clamp-2 text-xs leading-5 text-muted-foreground">
+                    {item.context || "No summary recorded."}
+                  </span>
+                  <span className="flex items-center justify-between gap-3">
+                    <span className="custodian-risk-label">{item.status}</span>
+                    <span className="font-mono text-[10px] text-muted-foreground">
+                      {formatDate(item.date)}
+                    </span>
+                  </span>
+                </Link>
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
+              <table className="custodian-table min-w-[760px]">
+                <thead>
+                  <tr>
+                    <th>Record</th>
+                    <th>Reason in view</th>
+                    <th>State</th>
+                    <th>Evidence</th>
+                    <th>Updated</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {model.attentionItems.map((item) => (
+                    <tr key={item.record.id}>
+                      <td>
+                        <Link
+                          to={recordHref(item.record)}
+                          className="group flex items-center gap-3"
+                        >
+                          <TypeIcon type={item.record.recordType} />
+                          <span>
+                            <span className="line-clamp-2 font-serif text-[15px] text-foreground group-hover:text-white-gold">
+                              {item.record.title}
+                            </span>
+                            <span className="text-[11px] text-muted-foreground">
+                              {RECORD_TYPE_LABEL[item.record.recordType]}
+                            </span>
+                          </span>
+                        </Link>
+                      </td>
+                      <td className="max-w-[28rem] text-muted-foreground">
+                        <span className="line-clamp-3">
+                          {item.context || "No summary recorded."}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="custodian-risk-label">{item.status}</span>
+                      </td>
+                      <td className="font-mono text-white-gold">{item.linkedCount}</td>
+                      <td className="font-mono text-xs text-muted-foreground">
+                        {formatDate(item.date)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : (
+          <EmptyRule>No archive records currently meet the existing attention rules.</EmptyRule>
+        )}
+      </section>
+
+      <div className="grid gap-7 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
+        <section aria-labelledby="working-sets-heading" className="custodian-rule-section">
+          <SectionHeading
+            id="working-sets-heading"
+            title="Default working sets"
+            value={workingSets.reduce((sum, set) => sum + set.count, 0)}
+          />
+          <div className="divide-y divide-border">
+            {workingSets.map((set) => (
+              <div key={set.name} className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 py-3">
+                <div>
+                  <h3 className="font-serif text-base text-foreground">{set.name}</h3>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">{set.description}</p>
+                </div>
+                <span className="font-mono text-lg text-white-gold">{set.count}</span>
               </div>
-            ) : (
-              <PanelEmpty>Every record in this view has at least one connection.</PanelEmpty>
-            )}
-          </Panel>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Metric({
-  icon,
-  value,
-  label,
-  tone = "brass",
-}: {
-  icon: ReactNode;
-  value: ReactNode;
-  label: string;
-  tone?: "brass" | "warning";
-}) {
-  const toneClass =
-    tone === "warning" ? "text-[color:var(--warning)]" : "text-[color:var(--brass)]";
-  return (
-    <div className="flex min-h-24 items-center gap-4 rounded-lg border border-border bg-card px-4 py-4">
-      <div className={toneClass}>{icon}</div>
-      <div>
-        <div className="font-serif text-3xl leading-none text-foreground">{value}</div>
-        <div className="mt-1 text-xs text-muted-foreground">{label}</div>
-      </div>
-    </div>
-  );
-}
-
-function Panel({
-  title,
-  count,
-  action,
-  children,
-}: {
-  title: string;
-  count?: number;
-  action?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section className="overflow-hidden rounded-lg border border-border bg-card">
-      <header
-        className={`flex min-h-12 border-b border-border px-4 py-3 ${
-          action
-            ? "flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between"
-            : "items-center justify-between"
-        }`}
-      >
-        <h2 className="font-serif text-lg text-foreground">
-          {title}
-          {typeof count === "number" && action ? (
-            <span className="ml-2 font-mono text-[10px] text-muted-foreground">{count}</span>
-          ) : null}
-        </h2>
-        <div className="flex items-center gap-3">
-          {typeof count === "number" && !action ? (
-            <span className="font-mono text-xs text-muted-foreground">{count}</span>
-          ) : null}
-          {action}
-        </div>
-      </header>
-      {children}
-    </section>
-  );
-}
-
-function RecordTable({
-  items,
-  statusTone = "brass",
-}: {
-  items: DashboardRecordItem[];
-  statusTone?: "brass" | "warning";
-}) {
-  return (
-    <div className="divide-y divide-border">
-      {items.map((item) => (
-        <Link
-          key={item.record.id}
-          to={recordHref(item.record)}
-          className="group grid min-h-[72px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-[color:var(--record-hover)] md:grid-cols-[auto_minmax(0,1fr)_150px_92px_50px]"
-        >
-          <TypeIcon type={item.record.recordType} size={18} />
-          <div className="min-w-0">
-            <div className="truncate text-sm font-medium text-foreground">{item.record.title}</div>
-            <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
-              {item.context || RECORD_TYPE_LABEL[item.record.recordType]}
-            </p>
+            ))}
           </div>
-          <ArrowRight size={16} className="text-muted-foreground md:hidden" />
-          <span
-            className={`hidden text-xs md:block ${
-              statusTone === "warning" ? "text-[color:var(--warning)]" : "text-[color:var(--brass)]"
-            }`}
-          >
-            {item.status}
-          </span>
-          <span className="hidden text-xs text-muted-foreground md:block">
-            {formatDate(item.date)}
-          </span>
-          <span className="hidden items-center justify-end gap-1 text-xs text-muted-foreground md:flex">
-            <LinkSimple size={13} /> {item.linkedCount}
-          </span>
-        </Link>
+          <p className="border-t border-border pt-3 text-xs leading-5 text-muted-foreground">
+            These counts come from existing conversation project routes. Persisted Custodian cases
+            appear only after the owner applies the new migration.
+          </p>
+        </section>
+
+        <section aria-labelledby="trace-heading" className="custodian-rule-section">
+          <SectionHeading
+            id="trace-heading"
+            title="Evidence trace"
+            value={linksPending || linksError ? "—" : links.length}
+            action={{ to: "/graph", label: "Inspect graph" }}
+          />
+          {linksPending ? (
+            <EmptyRule>Retrieving record relationships…</EmptyRule>
+          ) : evidenceTrace.length ? (
+            <ol className="custodian-trace">
+              {evidenceTrace.map(({ link, source, target }) => (
+                <li key={link.id}>
+                  <Link to={recordHref(source!)} className="text-foreground hover:text-white-gold">
+                    {source!.title}
+                  </Link>
+                  <span className="text-muted-foreground">linked evidence</span>
+                  <Link to={recordHref(target!)} className="text-foreground hover:text-white-gold">
+                    {target!.title}
+                  </Link>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <EmptyRule>No record relationships are available in this view.</EmptyRule>
+          )}
+        </section>
+      </div>
+
+      <section aria-labelledby="activity-heading" className="custodian-rule-section">
+        <SectionHeading
+          id="activity-heading"
+          title="Recent archive activity"
+          value={model.recentItems.length}
+          action={{ to: "/timeline", label: "Open timeline" }}
+        />
+        <div className="divide-y divide-border">
+          {model.recentItems.map((item) => (
+            <Link
+              key={item.record.id}
+              to={recordHref(item.record)}
+              className="grid gap-2 py-3 hover:text-white-gold sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center"
+            >
+              <CheckCircle size={17} className="text-luminous-gold" weight="fill" />
+              <span className="min-w-0">
+                <span className="block truncate font-serif text-[15px]">{item.record.title}</span>
+                <span className="text-xs text-muted-foreground">Archive record updated</span>
+              </span>
+              <span className="font-mono text-[11px] text-muted-foreground">
+                {formatDate(item.record.updatedAt)}
+              </span>
+            </Link>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function DeskLoading() {
+  return (
+    <div className="space-y-7 animate-pulse" role="status">
+      <DeskHeading
+        eyebrow="Operational brief"
+        title="Custodian Desk"
+        description="Assembling the archive state…"
+      />
+      {[160, 260, 180].map((height) => (
+        <div key={height} className="border-y border-border bg-card/40" style={{ height }} />
       ))}
     </div>
   );
 }
 
-function Breakdown({
+function DeskHeading({
+  eyebrow,
   title,
-  items,
-  tone = "brass",
+  description,
 }: {
+  eyebrow: string;
   title: string;
-  items: DashboardBreakdown[];
-  tone?: "brass" | "burgundy";
+  description: string;
 }) {
-  const max = Math.max(1, ...items.map((item) => item.count));
   return (
-    <div className="border-b border-border p-4 last:border-0">
-      <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        {title}
-      </h3>
-      <div className="space-y-3">
-        {items.length ? (
-          items.map((item) => (
-            <div key={item.key}>
-              <div className="mb-1 flex justify-between gap-3 text-xs">
-                <span className="truncate text-foreground">{item.label}</span>
-                <span className="font-mono text-muted-foreground">{item.count}</span>
-              </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-[color:var(--secondary)]">
-                <div
-                  className={`h-full rounded-full ${
-                    tone === "burgundy" ? "bg-[color:var(--primary)]" : "bg-[color:var(--brass)]"
-                  }`}
-                  style={{ width: `${Math.max(5, (item.count / max) * 100)}%` }}
-                />
-              </div>
-            </div>
-          ))
-        ) : (
-          <p className="text-xs text-muted-foreground">No status data in this view.</p>
-        )}
-      </div>
-    </div>
+    <header className="border-b border-[color:var(--brass-muted)] pb-5">
+      <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-luminous-gold">
+        {eyebrow}
+      </p>
+      <h1 className="mt-2 text-3xl text-white-gold sm:text-4xl">{title}</h1>
+      <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
+    </header>
   );
 }
 
-function ConnectionStat({
-  label,
+function SectionHeading({
+  id,
+  title,
   value,
-  tone,
+  action,
 }: {
-  label: string;
-  value: number;
-  tone: "brass" | "warning";
+  id: string;
+  title: string;
+  value: number | string;
+  action?: { to: string; label: string };
 }) {
   return (
-    <div className="border-r border-border p-4 last:border-0">
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <span
-          className={`h-2 w-2 rounded-full ${
-            tone === "brass" ? "bg-[color:var(--brass)]" : "bg-[color:var(--warning)]"
-          }`}
-        />
-        {label}
-      </div>
-      <div className="mt-2 font-serif text-2xl text-foreground">{value}</div>
-    </div>
+    <header className="flex min-h-12 flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
+      <h2 id={id} className="text-xl text-foreground">
+        {title} <span className="ml-2 font-mono text-xs text-white-gold">{value}</span>
+      </h2>
+      {action ? (
+        <Link
+          to={action.to}
+          className="inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-white-gold max-sm:w-full"
+        >
+          {action.label}
+          <ArrowRight size={14} />
+        </Link>
+      ) : null}
+    </header>
   );
 }
 
-function PanelEmpty({ children }: { children: ReactNode }) {
-  return <p className="p-5 text-sm text-muted-foreground">{children}</p>;
-}
-
-function StateBanner({
-  kind,
+function OperationalNotice({
+  tone,
   title,
   children,
 }: {
-  kind: "warning" | "error";
+  tone: "risk" | "verified";
   title: string;
-  children: ReactNode;
+  children: React.ReactNode;
 }) {
+  const Icon = tone === "risk" ? Warning : CheckCircle;
   return (
     <div
-      className={`flex flex-col gap-2 rounded-md border p-3 text-sm sm:flex-row sm:items-center sm:justify-between ${
-        kind === "error"
-          ? "border-[color:var(--destructive)]/60 bg-[color:var(--destructive)]/10"
-          : "border-[color:var(--warning)]/60 bg-[color:var(--warning)]/10"
-      }`}
-      role={kind === "error" ? "alert" : "status"}
+      className={
+        tone === "risk"
+          ? "custodian-notice custodian-notice-risk"
+          : "custodian-notice custodian-notice-verified"
+      }
     >
-      <div>
-        <span className="font-medium text-foreground">{title}. </span>
-        <span className="text-muted-foreground">{children}</span>
-      </div>
+      <Icon size={17} weight="fill" />
+      <strong>{title}</strong>
+      <span className="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-muted-foreground">
+        {children}
+      </span>
     </div>
   );
 }
 
-function formatDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(date);
+function EmptyRule({ children }: { children: React.ReactNode }) {
+  return <div className="py-8 text-sm leading-6 text-muted-foreground">{children}</div>;
 }
 
-function formatTimestamp(value: number): string {
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(value));
+function buildWorkingSets(records: ArchiveRecord[]) {
+  const routes = [
+    ["The Forge", "Implementation, systems, and things being made."],
+    ["The Chamber", "Judgment, adversarial review, and consequential decisions."],
+    ["The Book", "Long-form synthesis and material meant to endure."],
+    ["General", "Useful material not yet committed to a narrower working set."],
+  ] as const;
+  return routes.map(([name, description]) => ({
+    name,
+    description,
+    count: records.filter(
+      (record) => record.recordType === "conversation" && record.recordData.projectRoute === name,
+    ).length,
+  }));
+}
+
+function formatDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date);
 }

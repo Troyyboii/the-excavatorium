@@ -6,3 +6,6 @@ verify_jwt = true
 
 [functions.document-save]
 verify_jwt = true
+
+[functions.custodian-run]
+verify_jwt = true

@@ -114,7 +114,7 @@ lists the 13 approved record seed keys.
 
 ## 8. Restore hardening (migration 0008)
 
-Migration `0008_restore_hardening.sql` covers four database protections:
+Migration `20260802150700_restore_hardening.sql` covers four database protections:
 
 - canonical seed keys are constrained to their approved record types;
 - record data is validated strictly by record type, including required
@@ -153,6 +153,34 @@ grep -RIn "SERVICE_ROLE\|service_role\|SUPABASE_JWT_SECRET\|SMTP_\|DATABASE_URL"
 ```
 
 Expected: no matches.
+
+## 11. Migration ledger reconciliation gate
+
+The repository's timestamped migration filenames are the deployment ledger.
+Before the first automated deployment, an authorized operator must verify the
+remote `supabase_migrations.schema_migrations` rows and perform the documented
+one-time legacy-to-timestamp history repair. `supabase migration repair` only
+changes migration bookkeeping; it must not be used to hide a missing schema
+change.
+
+Record the before and after output from:
+
+```text
+supabase migration list
+```
+
+For each legacy row that represents an already-applied migration, use the
+reviewed mapping in [`supabase-setup.md`](./supabase-setup.md):
+
+```text
+supabase migration repair <legacy-version> --status reverted
+supabase migration repair <canonical-version> --status applied
+```
+
+The deploy workflow remains fail-closed until an authorized operator sets the
+GitHub Actions repository variable `SUPABASE_MIGRATION_RECONCILIATION_COMPLETE`
+to `true`. Until then the deploy job is skipped. The variable is not a
+substitute for the retained `migration list` evidence.
 
 ## Gate record
 
@@ -200,25 +228,23 @@ covered by the source-only verification above.
 | ordinary manual Conversation creation       | unchanged form and RPC workflow succeeds without an extraction                     | Not tested |
 | allowed browser origins                     | production, configured preview, and localhost succeed; other origins receive `403` | Not tested |
 
-
-
 ## Conversation Excavation guardrails
 
-Migration `0009_conversation_extraction_guardrails.sql` and the Edge Function
+Migration `20260802153543_conversation_extraction_guardrails.sql` and the Edge Function
 source are required together. It is correct only when the migration has been
 applied before the function version that calls
 `consume_conversation_extraction_quota()` is deployed.
 
-| Scenario | Expected result | Status |
-| --- | --- | --- |
-| oversized body without `Content-Length` | `413`; body is cancelled before JSON parsing | Not tested |
-| forged small `Content-Length` with an oversized body | `413`; actual bytes control the limit | Not tested |
-| valid request inside quota | admitted, then one OpenAI request | Not tested |
-| second valid request within 30 seconds | `429` with `Retry-After`; no OpenAI request | Not tested |
-| eleventh valid request in the rolling hour | `429` with `Retry-After`; no OpenAI request | Not tested |
-| User B reading or consuming User A's quota | denied by RLS / owner scope | Not tested |
+| Scenario                                             | Expected result                              | Status     |
+| ---------------------------------------------------- | -------------------------------------------- | ---------- |
+| oversized body without `Content-Length`              | `413`; body is cancelled before JSON parsing | Not tested |
+| forged small `Content-Length` with an oversized body | `413`; actual bytes control the limit        | Not tested |
+| valid request inside quota                           | admitted, then one OpenAI request            | Not tested |
+| second valid request within 30 seconds               | `429` with `Retry-After`; no OpenAI request  | Not tested |
+| eleventh valid request in the rolling hour           | `429` with `Retry-After`; no OpenAI request  | Not tested |
+| User B reading or consuming User A's quota           | denied by RLS / owner scope                  | Not tested |
 
-Migration `0010_rls_and_fk_advisor_cleanup.sql` should remove the four
+Migration `20260802153559_rls_and_fk_advisor_cleanup.sql` should remove the four
 `auth_rls_initplan` notices and the two unindexed composite-FK notices.
 The existing write-RPC `SECURITY DEFINER` warnings remain intentional and
 must be treated as documented exceptions, not silently removed.
