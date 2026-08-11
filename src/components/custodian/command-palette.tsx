@@ -16,11 +16,27 @@ import { RECORD_TYPE_LABEL } from "@/lib/types";
 import { archiveRecordHref } from "./custodian-format";
 
 const NAVIGATION = [
+  ["Custodian Desk", "/"],
   ["Archive", "/archive"],
+  ["Conversations", "/conversations"],
+  ["Documents", "/documents"],
+  ["Tools", "/tools"],
+  ["Repositories", "/repositories"],
+  ["Decisions", "/decisions"],
   ["Cases", "/cases"],
   ["Graph", "/graph"],
   ["Timeline", "/timeline"],
   ["Inbox", "/inbox"],
+  ["Search", "/search"],
+  ["Settings", "/settings"],
+] as const;
+
+const CREATION_ROUTES = [
+  ["Conversation", "/conversations/new"],
+  ["Document", "/documents/new"],
+  ["Tool", "/tools/new"],
+  ["Repository", "/repositories/new"],
+  ["Decision", "/decisions/new"],
 ] as const;
 
 export function CommandPalette({ enabled = true }: { enabled?: boolean }) {
@@ -73,9 +89,25 @@ export function CommandPalette({ enabled = true }: { enabled?: boolean }) {
             ))}
           </CommandGroup>
           <CommandSeparator />
+          <CommandGroup heading="Create">
+            {CREATION_ROUTES.map(([label, href]) => (
+              <CommandItem
+                key={href}
+                value={`Create ${label}`}
+                disabled={!enabled}
+                onSelect={() => {
+                  if (enabled) navigate(href);
+                }}
+              >
+                <CommandIcon size={16} aria-hidden="true" />
+                <span>New {label}</span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+          <CommandSeparator />
           <CommandGroup heading="Open persisted record">
             {archive.data ? (
-              records.slice(0, 40).map((record) => (
+              records.map((record) => (
                 <CommandItem
                   key={record.id}
                   value={`${record.title} ${record.recordType}`}

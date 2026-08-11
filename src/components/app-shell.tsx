@@ -1,18 +1,16 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   Archive,
-  Binoculars,
   BookOpen,
   ChatCenteredDots,
-  CheckSquareOffset,
   ClockCounterClockwise,
   FileText,
   FolderOpen,
   Gear,
   Graph,
   House,
+  MagnifyingGlass,
   Plus,
-  Pulse,
   Scales,
   SignOut,
   Tray,
@@ -32,11 +30,14 @@ const NAV = [
   { to: "/inbox", label: "Inbox", icon: Tray },
   { to: "/cases", label: "Cases", icon: FolderOpen },
   { to: "/archive", label: "Archive", icon: Archive },
+  { to: "/conversations", label: "Conversations", icon: ChatCenteredDots },
+  { to: "/documents", label: "Documents", icon: FileText },
+  { to: "/tools", label: "Tools", icon: Wrench },
+  { to: "/repositories", label: "Repositories", icon: BookOpen },
+  { to: "/decisions", label: "Decisions", icon: Scales },
   { to: "/graph", label: "Graph", icon: Graph },
   { to: "/timeline", label: "Timeline", icon: ClockCounterClockwise },
-  { to: "/run-room", label: "Run Room", icon: Pulse },
-  { to: "/observatory", label: "Observatory", icon: Binoculars },
-  { to: "/approvals", label: "Approvals", icon: CheckSquareOffset },
+  { to: "/search", label: "Search", icon: MagnifyingGlass },
   { to: "/settings", label: "Settings", icon: Gear },
 ] as const;
 
@@ -121,16 +122,7 @@ export function AppShell({ email, children }: { email: string | null; children: 
         <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-[color:var(--strong-border)] bg-sidebar/98 px-2 pb-[env(safe-area-inset-bottom)] md:hidden">
           <MobileNavLink to="/" label="Desk" icon={House} active={isActive("/", true)} />
           <MobileNavLink to="/inbox" label="Inbox" icon={Tray} active={isActive("/inbox")} />
-          <Link
-            to="/inbox"
-            aria-label="Capture into the inbox"
-            className="flex min-h-16 flex-col items-center justify-center gap-1 text-xs text-white-gold"
-          >
-            <span className="-mt-5 inline-flex h-12 w-12 items-center justify-center rounded-full border border-[color:var(--luminous-gold)] bg-primary text-white-gold shadow-lg">
-              <Plus size={23} weight="bold" />
-            </span>
-            <span>Capture</span>
-          </Link>
+          <MobileExcavateMenu online={online} />
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
@@ -165,7 +157,6 @@ export function AppShell({ email, children }: { email: string | null; children: 
             <StatusRow label="Current task" value="No run active" />
             <StatusRow label="Evidence" value="Authenticated archive" />
             <StatusRow label="Model" value="None selected" />
-            <StatusRow label="Approvals" value="Foundation pending" tone="gold" />
             <StatusRow label="Execution" value="Owner-gated" />
           </dl>
           <p className="mt-5 text-xs leading-5 text-muted-foreground">
@@ -230,6 +221,80 @@ function NewMenu({ compact = false, online }: { compact?: boolean; online: boole
           })}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function MobileExcavateMenu({ online }: { online: boolean }) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open]);
+
+  return (
+    <div className="relative flex min-h-16 flex-col items-center justify-center gap-1 text-xs text-white-gold">
+      {open ? (
+        <div
+          id="mobile-excavate-menu"
+          role="dialog"
+          aria-label="Excavate"
+          className="absolute bottom-[calc(100%-0.5rem)] left-1/2 z-50 w-64 -translate-x-1/2 overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl"
+        >
+          <div
+            role="presentation"
+            className="px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-luminous-gold"
+          >
+            Excavate
+          </div>
+          <Link
+            to="/conversations/new"
+            onClick={() => setOpen(false)}
+            className="flex min-h-11 items-center gap-3 rounded-sm px-3 py-2 text-sm hover:bg-[color:var(--record-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold"
+          >
+            <ChatCenteredDots size={18} className="text-[color:var(--brass)]" />
+            Conversation
+          </Link>
+          <Link
+            to="/documents/new"
+            onClick={() => setOpen(false)}
+            className="flex min-h-11 items-center gap-3 rounded-sm px-3 py-2 text-sm hover:bg-[color:var(--record-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold"
+          >
+            <FileText size={18} className="text-[color:var(--brass)]" />
+            Document
+          </Link>
+          <div className="my-1 border-t border-border" />
+          <Link
+            to="/inbox"
+            onClick={() => setOpen(false)}
+            className="flex min-h-11 items-center gap-3 rounded-sm px-3 py-2 text-sm text-muted-foreground hover:bg-[color:var(--record-hover)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold"
+          >
+            <Tray size={18} className="text-[color:var(--brass)]" />
+            Inbox
+          </Link>
+        </div>
+      ) : null}
+      <button
+        type="button"
+        aria-label="Open Excavate menu"
+        aria-haspopup="dialog"
+        aria-controls="mobile-excavate-menu"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        disabled={!online}
+        className="-mt-5 inline-flex h-12 w-12 items-center justify-center rounded-full border border-[color:var(--luminous-gold)] bg-primary text-white-gold shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <Plus size={23} weight="bold" />
+      </button>
+      <span>Excavate</span>
     </div>
   );
 }
