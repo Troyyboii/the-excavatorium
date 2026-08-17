@@ -1,6 +1,6 @@
 import { useLayoutEffect, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useSession } from "@/lib/session";
+import { retrySessionRestoration, useSession } from "@/lib/session";
 import { LoginScreen } from "./login-screen";
 import { AppShell } from "./app-shell";
 
@@ -59,6 +59,25 @@ export function AuthGate({ children }: { children: ReactNode }) {
       <div className="flex min-h-screen items-center justify-center bg-background text-sm text-muted-foreground">
         Loading…
       </div>
+    );
+  }
+  if (s.status === "restore-error") {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-background px-6 py-12">
+        <section className="w-full max-w-md rounded-lg border border-border bg-card p-6 text-center">
+          <h1 className="font-serif text-2xl text-foreground">Session restoration paused</h1>
+          <p className="mt-3 text-sm text-muted-foreground">
+            The saved session could not be checked. No new sign-in is required; reconnect and retry.
+          </p>
+          <button
+            type="button"
+            onClick={() => void retrySessionRestoration()}
+            className="mt-5 inline-flex min-h-11 w-full items-center justify-center rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground hover:bg-[color:var(--record-hover)]"
+          >
+            Retry session restoration
+          </button>
+        </section>
+      </main>
     );
   }
   if (s.status === "signed-out") {

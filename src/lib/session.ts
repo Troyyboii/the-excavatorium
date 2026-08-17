@@ -2,69 +2,124 @@
 // sync with sign-in / sign-out / user-change events via one shared subscriber
 // so per-page listeners are unnecessary.
 import { useSyncExternalStore } from "react";
-import type { Session } from "@supabase/supabase-js";
+import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 
 export type SessionState =
   | { status: "loading" }
+  | { status: "restore-error" }
   | { status: "signed-out" }
   | { status: "signed-in"; session: Session };
 
-let currentState: SessionState = { status: "loading" };
-const listeners = new Set<() => void>();
-let started = false;
+export type SessionAuthClient = {
+  getSession(): Promise<{
+    data: { session: Session | null };
+    error: unknown;
+  }>;
+  onAuthStateChange(callback: (event: AuthChangeEvent, session: Session | null) => void): unknown;
+};
 
-function emit() {
-  for (const l of listeners) l();
-}
+const SERVER_STATE: SessionState = { status: "loading" };
 
-function setState(next: SessionState) {
-  const prev = currentState;
-  // Reference-equality is fine: Supabase emits fresh session objects on change.
-  if (
-    prev.status === next.status &&
-    (prev.status !== "signed-in" ||
-      (next.status === "signed-in" &&
-        prev.session.user.id === (next as { session: Session }).session.user.id &&
-        prev.session.access_token === (next as { session: Session }).session.access_token))
-  ) {
-    return;
+export function createSessionStore(auth: SessionAuthClient) {
+  let currentState: SessionState = { status: "loading" };
+  const listeners = new Set<() => void>();
+  let started = false;
+  let authEventRevision = 0;
+  let restoreRequestRevision = 0;
+
+  function emit() {
+    for (const listener of listeners) listener();
   }
-  currentState = next;
-  emit();
-}
 
-function ensureStarted() {
-  if (started) return;
-  started = true;
-  supabase.auth.getSession().then(({ data }) => {
-    setState(
-      data.session ? { status: "signed-in", session: data.session } : { status: "signed-out" },
-    );
-  });
-  supabase.auth.onAuthStateChange((_evt, session) => {
-    setState(session ? { status: "signed-in", session } : { status: "signed-out" });
-  });
-}
+  function setState(next: SessionState) {
+    const prev = currentState;
+    if (
+      prev.status === next.status &&
+      (prev.status !== "signed-in" ||
+        (next.status === "signed-in" &&
+          prev.session.user.id === next.session.user.id &&
+          prev.session.access_token === next.session.access_token))
+    ) {
+      return;
+    }
+    currentState = next;
+    emit();
+  }
 
-function subscribe(fn: () => void): () => void {
-  ensureStarted();
-  listeners.add(fn);
-  return () => {
-    listeners.delete(fn);
+  async function restoreSession(eventRevision = authEventRevision) {
+    const requestRevision = ++restoreRequestRevision;
+    if (currentState.status !== "signed-in") {
+      setState({ status: "loading" });
+    }
+
+    try {
+      const { data, error } = await auth.getSession();
+
+      // An auth event is newer and authoritative. This prevents a slow
+      // initial getSession() result from overwriting a later sign-in,
+      // sign-out, token refresh, or account change.
+      if (requestRevision !== restoreRequestRevision || eventRevision !== authEventRevision) {
+        return;
+      }
+
+      if (error) {
+        setState({ status: "restore-error" });
+        return;
+      }
+
+      setState(
+        data.session ? { status: "signed-in", session: data.session } : { status: "signed-out" },
+      );
+    } catch {
+      if (requestRevision === restoreRequestRevision && eventRevision === authEventRevision) {
+        setState({ status: "restore-error" });
+      }
+    }
+  }
+
+  function ensureStarted() {
+    if (started) return;
+    started = true;
+
+    // Subscribe first so every later auth event can invalidate an older
+    // asynchronous restoration result.
+    const preSubscriptionRevision = authEventRevision;
+    auth.onAuthStateChange((_event, session) => {
+      authEventRevision += 1;
+      setState(session ? { status: "signed-in", session } : { status: "signed-out" });
+    });
+    void restoreSession(preSubscriptionRevision);
+  }
+
+  function subscribe(listener: () => void): () => void {
+    listeners.add(listener);
+    ensureStarted();
+    return () => {
+      listeners.delete(listener);
+    };
+  }
+
+  return {
+    subscribe,
+    getSnapshot: () => currentState,
+    getServerSnapshot: () => SERVER_STATE,
+    retry: restoreSession,
   };
 }
 
-function getSnapshot(): SessionState {
-  return currentState;
-}
-
-function getServerSnapshot(): SessionState {
-  return { status: "loading" };
-}
+const sessionStore = createSessionStore(supabase.auth);
 
 export function useSession(): SessionState {
-  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  return useSyncExternalStore(
+    sessionStore.subscribe,
+    sessionStore.getSnapshot,
+    sessionStore.getServerSnapshot,
+  );
+}
+
+export function retrySessionRestoration(): Promise<void> {
+  return sessionStore.retry();
 }
 
 export function useCurrentUserId(): string | null {
