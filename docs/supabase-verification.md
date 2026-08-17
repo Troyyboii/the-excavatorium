@@ -249,6 +249,29 @@ Migration `20260802153559_rls_and_fk_advisor_cleanup.sql` should remove the four
 The existing write-RPC `SECURITY DEFINER` warnings remain intentional and
 must be treated as documented exceptions, not silently removed.
 
+### Custodian `SECURITY DEFINER` classification
+
+Source review of migrations `20260811190000` through `20260811191200` classifies
+29 Custodian `SECURITY DEFINER` functions. Every one sets an empty
+`search_path`. This classification explains the database-linter warnings; it
+does not replace live privilege inspection or cross-owner tests.
+
+| Class                              | Functions                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Required execute state                                               |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Internal trigger and audit helpers | `capture_record_revision`, `custodian_disable_automations_for_account_schema`, `custodian_disable_automations_for_tool_schema`, `custodian_runtime_write_audit`                                                                                                                                                                                                                                                                                                                                                     | Denied to `public`, `anon`, and `authenticated`                      |
+| Release 1 owner APIs               | `custodian_create_case`, `custodian_update_case`, `custodian_create_inbox_item`, `custodian_triage_inbox_item`, `custodian_upsert_claim`, `custodian_upsert_evidence`, `custodian_upsert_action`, `custodian_upsert_finding`, `custodian_link_claim_evidence`, `custodian_promote_inbox_item`                                                                                                                                                                                                                       | Denied to `public` and `anon`; explicitly granted to `authenticated` |
+| Runtime owner APIs                 | `custodian_create_agent_run`, `custodian_get_agent_run`, `custodian_run_budget_status`, `custodian_transition_agent_run`, `custodian_record_agent_step`, `custodian_create_approval_request`, `custodian_respond_approval`, `custodian_create_change_proposal`, `custodian_append_tool_event`, `custodian_request_cancel_agent_run`, `custodian_append_audit_event`, `custodian_upsert_record_embedding`, `custodian_start_automation_run`, `custodian_complete_automation_run`, `custodian_automation_emit_output` | Denied to `public` and `anon`; explicitly granted to `authenticated` |
+
+The 25 authenticated APIs derive the caller from `auth.uid()` through
+`custodian_current_owner()` and repeat owner-qualified checks inside the
+privileged function. The four internal helpers have explicit authenticated
+revokes. No source-level overexposure was demonstrated, so Phase 2A adds no
+grant-changing migration. Reclassify before changing any signature, role grant,
+caller derivation, owner predicate, or `search_path`. Current Supabase guidance
+also requires explicit function privileges and careful review of every
+`SECURITY DEFINER` function:
+<https://supabase.com/docs/guides/database/functions>.
+
 ## Verification evidence notes
 
 - Auth reachability: reachable
