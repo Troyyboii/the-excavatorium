@@ -195,7 +195,7 @@ export function InboxIntake({
                 <select
                   value={captureKind}
                   onChange={(event) => setCaptureKind(event.target.value as InboxCaptureKind)}
-                  className="min-h-10 w-full border border-luminous-gold/30 bg-background px-3 text-sm text-white-gold outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold"
+                  className="min-h-11 w-full border border-luminous-gold/30 bg-background px-3 text-sm text-white-gold outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold"
                 >
                   {INBOX_CAPTURE_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -212,7 +212,7 @@ export function InboxIntake({
                   value={title}
                   onChange={(event) => setTitle(event.target.value)}
                   placeholder="Short title for review"
-                  className="min-h-10 rounded-none border-luminous-gold/30 bg-background text-white-gold placeholder:text-brass-muted focus-visible:ring-luminous-gold"
+                  className="min-h-11 rounded-none border-luminous-gold/30 bg-background text-white-gold placeholder:text-brass-muted focus-visible:ring-luminous-gold"
                 />
               </label>
             </div>
@@ -444,7 +444,7 @@ function InboxItems({
                   type="button"
                   aria-pressed={active}
                   onClick={() => onFilterChange(option)}
-                  className={`min-h-10 border px-3 py-2 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold ${
+                  className={`min-h-11 border px-3 py-2 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold ${
                     active
                       ? "border-luminous-gold bg-burgundy-muted/80 text-white-gold"
                       : "border-luminous-gold/25 text-muted-foreground hover:bg-burgundy-muted/40 hover:text-white-gold"
@@ -661,7 +661,7 @@ function InboxItemCard({
                   })
                 }
                 disabled={promotionBusy}
-                className="min-h-10 w-full border border-luminous-gold/30 bg-background px-3 text-sm text-white-gold outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold disabled:opacity-60"
+                className="min-h-11 w-full border border-luminous-gold/30 bg-background px-3 text-sm text-white-gold outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold disabled:opacity-60"
               >
                 {PROMOTION_TARGETS.map((target) => (
                   <option key={target.value} value={target.value}>
@@ -680,7 +680,7 @@ function InboxItemCard({
                   onPromotionChange({ ...selectedPromotion, caseId: event.target.value })
                 }
                 disabled={promotionBusy || casesLoading || casesError !== null}
-                className="min-h-10 w-full border border-luminous-gold/30 bg-background px-3 text-sm text-white-gold outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold disabled:opacity-60"
+                className="min-h-11 w-full border border-luminous-gold/30 bg-background px-3 text-sm text-white-gold outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold disabled:opacity-60"
               >
                 <option value="">Select a case…</option>
                 {(cases ?? []).map((currentCase) => (
@@ -764,7 +764,7 @@ function ActionButton({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="inline-flex min-h-10 items-center gap-2 border border-luminous-gold/35 px-3 py-2 text-xs text-white-gold transition-colors hover:bg-burgundy-muted/55 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold"
+      className="inline-flex min-h-11 items-center gap-2 border border-luminous-gold/35 px-3 py-2 text-xs text-white-gold transition-colors hover:bg-burgundy-muted/55 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold"
     >
       {busy ? <CircleNotch size={15} className="animate-spin" aria-hidden="true" /> : icon}
       {busy ? `${label}…` : label}
