@@ -12,7 +12,7 @@
   "mcp": {
     "server": {
       "name": "the-excavatorium",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "title": "The Excavatorium"
     },
     "tools": [
@@ -35,7 +35,7 @@
       {
         "name": "list_records",
         "title": "List archive records",
-        "description": "List the signed-in user's archive records, optionally filtered by record type or a text query matching the title, summary, or tags.",
+        "description": "Compatibility alias for search: list the signed-in user's five canonical archive record types by title, summary, or exact tag.",
         "annotations": {
           "readOnlyHint": true,
           "idempotentHint": true,
@@ -53,13 +53,13 @@
                 "decision",
                 "document"
               ],
-              "description": "Restrict results to one record type."
+              "description": "Restrict results to one canonical record type."
             },
             "query": {
               "type": "string",
               "minLength": 1,
               "maxLength": 200,
-              "description": "Text to match in title or summary."
+              "description": "Text to match in title, summary, or tags."
             },
             "limit": {
               "type": "integer",
@@ -76,7 +76,7 @@
       {
         "name": "get_record",
         "title": "Get archive record",
-        "description": "Fetch one archive record by id, including its full structured record data and the ids of records linked to it.",
+        "description": "Compatibility alias for fetch with the safe archive projection.",
         "annotations": {
           "readOnlyHint": true,
           "idempotentHint": true,
@@ -89,6 +89,338 @@
               "type": "string",
               "format": "uuid",
               "description": "The record id."
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "search",
+        "title": "Search archive records",
+        "description": "Search the signed-in user's five canonical archive record types by title, summary, or exact tag.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "recordType": {
+              "type": "string",
+              "enum": [
+                "tool",
+                "repository",
+                "conversation",
+                "decision",
+                "document"
+              ],
+              "description": "Restrict results to one canonical record type."
+            },
+            "query": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Text to match in title, summary, or tags."
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "Maximum rows to return (default 25)."
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "fetch",
+        "title": "Fetch an archive record",
+        "description": "Fetch one signed-in user's archive record with an explicit safe projection and linked record ids.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The record id."
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "get_context",
+        "title": "Get record context",
+        "description": "Fetch one safe archive record and its caller-owned linked records for bounded context.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The anchor record id."
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "description": "Maximum linked records (default 25)."
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_cases",
+        "title": "List Custodian cases",
+        "description": "List caller-owned Custodian cases when the owner-RLS case foundation is available.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "status": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 50
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "get_case",
+        "title": "Get a Custodian case",
+        "description": "Fetch one caller-owned Custodian case when the owner-RLS case foundation is available.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The case id."
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "compare_records",
+        "title": "Compare archive records",
+        "description": "Compare two to four signed-in user's archive records using their safe projected fields.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "ids": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "minItems": 2,
+              "maxItems": 4,
+              "description": "Two to four distinct record ids."
+            }
+          },
+          "required": [
+            "ids"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "get_findings",
+        "title": "Get Custodian findings",
+        "description": "List caller-owned Custodian findings when the owner-RLS case foundation is available.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "get_pending_approvals",
+        "title": "Get pending Custodian approvals",
+        "description": "Read pending caller-owned approvals when the Custodian runtime foundation is available.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "start_analysis",
+        "title": "Start Custodian analysis",
+        "description": "Reserved read-safe boundary for analysis execution; never fakes a run or performs a direct write.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": false,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The case to analyze."
+            },
+            "recordIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "maxItems": 50
+            }
+          },
+          "required": [
+            "caseId"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "get_run",
+        "title": "Get Custodian run status",
+        "description": "Read a caller-owned analysis run status when the agent-runs runtime foundation is available.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The analysis run id."
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "cancel_run",
+        "title": "Cancel Custodian run",
+        "description": "Reserved cancellation boundary; never fakes cancellation or performs a direct write.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": false,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The analysis run id."
             }
           },
           "required": [
