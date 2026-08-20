@@ -1,10 +1,23 @@
 # Custodian design QA
 
+> [!NOTE]
+> This is a historical QA record for the earlier dark Custodian Desk. It is not
+> current production proof and does not govern the whole application. Use
+> [Light archive shell](docs/design/light-archive-shell.md) for the visual
+> constitution, [Custodian roadmap](docs/design/custodian-roadmap.md) for the
+> implementation sequence, and
+> [Release verification](docs/release-verification.md) for live acceptance.
+
 ## Result
 
-**Passed.** No unresolved P0, P1, or P2 visual defects were found in the final local build.
+**Historical result: Passed.** No unresolved P0, P1, or P2 visual defects were
+recorded for that local build.
 
 ## Evidence
+
+The earlier QA session referenced the evidence filenames below. They must not
+be treated as current inspectable artifacts or production evidence unless the
+referenced files and live state are reverified.
 
 - Design source: `docs/design/custodian-desk-concept.png` (1672 x 941)
 - Final desktop render: `07-desk-white-gold-final-desktop.png` (1425 x 990 browser capture at a 1440 x 1000 test viewport)
