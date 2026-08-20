@@ -30,25 +30,25 @@ import {
 } from "./custodian-ui";
 import type { CustodianCase as PersistedCustodianCase } from "@/lib/custodian-types";
 
-export const INBOX_SOURCE_KINDS = [
-  "thought",
-  "conversation",
-  "document",
-  "url",
-  "github",
-  "context7",
-  "record",
-  "clipboard",
-  "mobile_share",
+export const INBOX_CAPTURE_OPTIONS = [
+  { value: "thought", label: "Thought", sourceKind: "thought" },
+  { value: "link", label: "Link", sourceKind: "url" },
+  { value: "conversation", label: "Conversation", sourceKind: "conversation" },
+  { value: "document", label: "Document", sourceKind: "document" },
 ] as const;
 
-export type InboxSourceKind = (typeof INBOX_SOURCE_KINDS)[number];
+export type InboxCaptureKind = (typeof INBOX_CAPTURE_OPTIONS)[number]["value"];
+export type InboxSourceKind = (typeof INBOX_CAPTURE_OPTIONS)[number]["sourceKind"];
 
 export type InboxCreatePayload = {
   sourceKind: InboxSourceKind;
   title: string;
   content: string;
 };
+
+function captureOption(kind: InboxCaptureKind) {
+  return INBOX_CAPTURE_OPTIONS.find((option) => option.value === kind) ?? INBOX_CAPTURE_OPTIONS[0];
+}
 
 type InboxTriageStatus = Exclude<InboxStatus, "new" | "promoted">;
 const STATUS_LABELS: Record<InboxFilter, string> = {
@@ -100,7 +100,7 @@ export function InboxIntake({
     caseId: string,
   ) => Promise<unknown>;
 }) {
-  const [sourceKind, setSourceKind] = useState<InboxSourceKind>("thought");
+  const [captureKind, setCaptureKind] = useState<InboxCaptureKind>("thought");
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [candidate, setCandidate] = useState<InboxCreatePayload | null>(null);
@@ -124,36 +124,52 @@ export function InboxIntake({
 
   const statusCounts = useMemo(() => countInboxStatuses(items ?? []), [items]);
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  function continueToReview(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const normalizedContent = content.trim();
+    if (!normalizedContent) {
+      setMessage("Add a thought, link, conversation, or document before continuing.");
+      return;
+    }
+    const payload = {
+      sourceKind: captureOption(captureKind).sourceKind,
+      title: title.trim(),
+      content: normalizedContent,
+    };
+    setMessage(null);
+    setCandidate(payload);
+  }
+
+  async function saveCandidate() {
+    if (!candidate || submitting) return;
     if (!online) {
-      setMessage("Inbox intake is disabled while the network is unavailable.");
+      setMessage("Save is unavailable while the network is offline. Your draft is still here.");
       return;
     }
     if (foundationPending) {
-      setMessage("Inbox intake is disabled because the connected storage is unavailable.");
+      setMessage(
+        "Save is unavailable because Inbox storage is not connected. Your draft is still here.",
+      );
       return;
     }
-    const normalizedContent = content.trim();
-    if (!normalizedContent) {
-      setMessage("Add the thought, excerpt, link, or context before submitting.");
+    if (!onCreate) {
+      setMessage(
+        "Save is unavailable because the Inbox writer is not connected. Your draft is still here.",
+      );
       return;
     }
-    const payload = { sourceKind, title: title.trim(), content: normalizedContent };
+
     setMessage(null);
     setSubmitting(true);
     try {
-      if (onCreate) {
-        await onCreate(payload);
-        setMessage("Inbox item saved. Review the persisted item below.");
-      } else {
-        setMessage("Review candidate prepared locally. No inbox writer is connected yet.");
-      }
-      setCandidate(payload);
+      await onCreate(candidate);
+      setCandidate(null);
+      setCaptureKind("thought");
       setTitle("");
       setContent("");
+      setMessage("Saved to Inbox.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Inbox item could not be created.");
+      setMessage(error instanceof Error ? error.message : "The draft could not be saved to Inbox.");
     } finally {
       setSubmitting(false);
     }
@@ -162,80 +178,80 @@ export function InboxIntake({
   return (
     <div className="space-y-6">
       {foundationPending ? (
-        <FoundationState title="Inbox unavailable">
-          The protected inbox RPC is not available in the connected Supabase project. No intake was
-          saved.
+        <FoundationState title="Inbox saving unavailable">
+          You can prepare a local review, but saved Inbox storage is currently unavailable.
         </FoundationState>
       ) : null}
 
-      <Section
-        title="Universal intake"
-        description="Capture a source without pretending it is already a verified archive record."
-      >
-        <form onSubmit={submit} className="space-y-4 p-4">
-          <div className="grid gap-4 md:grid-cols-[190px_minmax(0,1fr)]">
-            <label className="space-y-2 text-sm text-muted-foreground">
-              <span>Source kind</span>
-              <select
-                value={sourceKind}
-                onChange={(event) => setSourceKind(event.target.value as InboxSourceKind)}
-                className="min-h-10 w-full border border-luminous-gold/30 bg-background px-3 text-sm text-white-gold outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold"
-              >
-                {INBOX_SOURCE_KINDS.map((kind) => (
-                  <option key={kind} value={kind}>
-                    {kind.replace("_", " ")}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-2 text-sm text-muted-foreground">
-              <span>
-                Working title <span className="text-muted-foreground">(optional)</span>
-              </span>
-              <Input
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-                placeholder="Short title for review"
-                className="min-h-10 rounded-none border-luminous-gold/30 bg-background text-white-gold placeholder:text-brass-muted focus-visible:ring-luminous-gold"
+      {!candidate ? (
+        <Section
+          title="New capture"
+          description="Prepare a thought, link, conversation, or document for review before saving it."
+        >
+          <form onSubmit={continueToReview} className="space-y-4 p-4">
+            <div className="grid gap-4 md:grid-cols-[190px_minmax(0,1fr)]">
+              <label className="space-y-2 text-sm text-muted-foreground">
+                <span>Type</span>
+                <select
+                  value={captureKind}
+                  onChange={(event) => setCaptureKind(event.target.value as InboxCaptureKind)}
+                  className="min-h-10 w-full border border-luminous-gold/30 bg-background px-3 text-sm text-white-gold outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold"
+                >
+                  {INBOX_CAPTURE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-2 text-sm text-muted-foreground">
+                <span>
+                  Working title <span className="text-muted-foreground">(optional)</span>
+                </span>
+                <Input
+                  value={title}
+                  onChange={(event) => setTitle(event.target.value)}
+                  placeholder="Short title for review"
+                  className="min-h-10 rounded-none border-luminous-gold/30 bg-background text-white-gold placeholder:text-brass-muted focus-visible:ring-luminous-gold"
+                />
+              </label>
+            </div>
+            <label className="block space-y-2 text-sm text-muted-foreground">
+              <span>Content</span>
+              <Textarea
+                value={content}
+                onChange={(event) => setContent(event.target.value)}
+                placeholder="Write or paste what you want to review before saving."
+                rows={8}
+                className="resize-y rounded-none border-luminous-gold/30 bg-background text-white-gold placeholder:text-brass-muted focus-visible:ring-luminous-gold"
               />
             </label>
-          </div>
-          <label className="block space-y-2 text-sm text-muted-foreground">
-            <span>Content or locator</span>
-            <Textarea
-              value={content}
-              onChange={(event) => setContent(event.target.value)}
-              placeholder="Paste a thought, conversation excerpt, document note, URL, GitHub issue, Context7 reference, record ID, or mobile share payload."
-              rows={8}
-              className="resize-y rounded-none border-luminous-gold/30 bg-background text-white-gold placeholder:text-brass-muted focus-visible:ring-luminous-gold"
-            />
-          </label>
-          {message ? (
-            <p className="text-sm text-luminous-gold" role="status">
-              {message}
-            </p>
-          ) : null}
-          <button
-            type="submit"
-            disabled={submitting || foundationPending || !online}
-            className="inline-flex min-h-11 items-center gap-2 border border-luminous-gold/40 bg-burgundy-muted/80 px-4 py-2 text-sm text-white-gold transition-colors hover:bg-risk/80 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold"
-          >
-            <PaperPlaneTilt size={16} aria-hidden="true" />
-            {submitting ? "Creating…" : "Create inbox item"}
-          </button>
-        </form>
-      </Section>
+            {message ? (
+              <p className="text-sm text-luminous-gold" role="status">
+                {message}
+              </p>
+            ) : null}
+            <button
+              type="submit"
+              className="inline-flex min-h-11 items-center gap-2 border border-luminous-gold/40 bg-burgundy-muted/80 px-4 py-2 text-sm text-white-gold transition-colors hover:bg-risk/80 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold"
+            >
+              <PaperPlaneTilt size={16} aria-hidden="true" />
+              Continue to review
+            </button>
+          </form>
+        </Section>
+      ) : null}
 
-      <Section
-        title="Review candidate"
-        description="This is the submitted payload. Verification, classification, and promotion belong to the connected data layer."
-      >
-        {candidate ? (
+      {candidate ? (
+        <Section
+          title="Review capture"
+          description="Check this local draft before anything is saved to Inbox."
+        >
           <div className="space-y-4 p-4">
             <dl className="grid gap-4 border-b border-luminous-gold/20 pb-4 sm:grid-cols-2">
               <div>
-                <dt className="text-xs text-muted-foreground">Source kind</dt>
-                <dd className="mt-1 text-sm text-white-gold">{candidate.sourceKind}</dd>
+                <dt className="text-xs text-muted-foreground">Type</dt>
+                <dd className="mt-1 text-sm text-white-gold">{captureOption(captureKind).label}</dd>
               </div>
               <div>
                 <dt className="text-xs text-muted-foreground">Title</dt>
@@ -254,17 +270,42 @@ export function InboxIntake({
             </div>
             <p className="flex items-center gap-2 text-xs text-muted-foreground">
               <Check size={15} className="text-luminous-gold" aria-hidden="true" />
-              {onCreate
-                ? "Submitted to the persisted inbox for review."
-                : "Prepared locally for review. Nothing was persisted."}
+              Nothing has been saved yet.
             </p>
+            {message ? (
+              <p className="text-sm text-luminous-gold" role="status">
+                {message}
+              </p>
+            ) : null}
+            <div className="flex flex-wrap gap-2 border-t border-luminous-gold/15 pt-4">
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={() => {
+                  setCandidate(null);
+                  setMessage(null);
+                }}
+                className="inline-flex min-h-11 items-center border border-luminous-gold/35 px-4 py-2 text-sm text-white-gold transition-colors hover:bg-burgundy-muted/55 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold"
+              >
+                Back to edit
+              </button>
+              <button
+                type="button"
+                disabled={submitting || foundationPending || !online || !onCreate}
+                onClick={() => void saveCandidate()}
+                className="inline-flex min-h-11 items-center gap-2 border border-luminous-gold/40 bg-burgundy-muted/80 px-4 py-2 text-sm text-white-gold transition-colors hover:bg-risk/80 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold"
+              >
+                {submitting ? (
+                  <CircleNotch size={16} className="animate-spin" aria-hidden="true" />
+                ) : (
+                  <FloppyDisk size={16} aria-hidden="true" />
+                )}
+                {submitting ? "Saving…" : "Save to Inbox"}
+              </button>
+            </div>
           </div>
-        ) : (
-          <div className="p-5 text-sm text-muted-foreground">
-            No intake candidate has been submitted in this session.
-          </div>
-        )}
-      </Section>
+        </Section>
+      ) : null}
 
       <InboxItems
         items={filteredItems}
@@ -386,7 +427,7 @@ function InboxItems({
 }) {
   return (
     <Section
-      title="Persisted inbox"
+      title="Saved Inbox"
       description="Saved source material, its current lifecycle status, and the available review actions."
       action={allItemsCount === 1 ? "1 saved item" : `${allItemsCount} saved items`}
     >

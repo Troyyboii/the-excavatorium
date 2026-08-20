@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { CustodianPage, CustodianStatus } from "@/components/custodian/custodian-ui";
-import { InboxIntake } from "@/components/custodian/inbox-intake";
+import { InboxIntake, type InboxCreatePayload } from "@/components/custodian/inbox-intake";
 import { useOnlineStatus } from "@/hooks/use-online";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -35,20 +35,7 @@ function InboxPage() {
     await queryClient.invalidateQueries({ queryKey: ["custodian"] });
   }
 
-  async function create(payload: {
-    sourceKind:
-      | "thought"
-      | "conversation"
-      | "document"
-      | "url"
-      | "github"
-      | "context7"
-      | "record"
-      | "clipboard"
-      | "mobile_share";
-    title: string;
-    content: string;
-  }) {
+  async function create(payload: InboxCreatePayload) {
     await createCustodianInboxItem({
       kind: payload.sourceKind,
       title: payload.title,
