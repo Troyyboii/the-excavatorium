@@ -100,12 +100,12 @@ export function AppShell({ email, children }: { email: string | null; children: 
           <span className="min-w-0 flex-1 truncate font-serif text-xl tracking-tight text-white-gold">
             The Excavatorium
           </span>
-          <CommandPalette enabled={online} />
+          <CommandPalette enabled={online} shortcutScope="mobile" />
           <NewMenu compact online={online} />
         </header>
 
         <header className="z-30 hidden h-16 shrink-0 items-center justify-end gap-3 border-b border-[color:var(--strong-border)] bg-background/95 px-8 backdrop-blur md:flex">
-          <CommandPalette enabled={online} />
+          <CommandPalette enabled={online} shortcutScope="desktop" />
           <NewMenu online={online} />
         </header>
 
