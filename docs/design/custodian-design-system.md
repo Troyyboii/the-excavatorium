@@ -1,8 +1,15 @@
 # The Custodian design system
 
-The visual source of truth is
-[custodian-desk-concept.png](./custodian-desk-concept.png). It extends the
-existing Excavatorium rather than replacing its dark archival identity.
+> [!IMPORTANT]
+> This is a historical dark-shell reference. The current whole-application
+> visual authority is [Light archive shell](./light-archive-shell.md). Preserve
+> the dark palette below for inverse interpretation, refusal, security, code,
+> and execution-boundary panels; it no longer defines the default page ground.
+
+The historical visual reference is
+[custodian-desk-concept.png](./custodian-desk-concept.png). It documents the
+earlier Custodian Desk treatment and remains useful provenance for the retained
+inverse-panel language.
 
 ## Palette
 
