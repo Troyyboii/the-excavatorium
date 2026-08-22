@@ -1,62 +1,32 @@
-# Custodian design QA
-
-> [!NOTE]
-> This is a historical QA record for the earlier dark Custodian Desk. It is not
-> current production proof and does not govern the whole application. Use
-> [Light archive shell](docs/design/light-archive-shell.md) for the visual
-> constitution, [Custodian roadmap](docs/design/custodian-roadmap.md) for the
-> implementation sequence, and
-> [Release verification](docs/release-verification.md) for live acceptance.
+# Core Archive Redesign — design QA
 
 ## Result
 
-**Historical result: Passed.** No unresolved P0, P1, or P2 visual defects were
-recorded for that local build.
+**Blocked.** The authenticated local implementation was inspected at desktop, mobile portrait, and mobile landscape sizes, but the required final source-and-implementation comparison could not be opened as one browser input. The in-app Browser's URL security policy rejected the local comparison document, so this run cannot claim a completed visual comparison.
 
-## Evidence
+## Evidence inspected
 
-The earlier QA session referenced the evidence filenames below. They must not
-be treated as current inspectable artifacts or production evidence unless the
-referenced files and live state are reverified.
+- Selected Concept 1 source: `C:\Users\Robert i Dario\.codex\generated_images\01a02b17-03e3-7522-92c8-e8f2537f6567\exec-65693a13-ba16-42ed-91e6-0000ffe07a73.png`
+- Desktop graph: `C:\Users\Robert i Dario\.codex\visualizations\2026\08\22\01a02b17-03e3-7522-92c8-e8f2537f6567\graph-desktop-final.png`
+- Desktop Desk: `C:\Users\Robert i Dario\.codex\visualizations\2026\08\22\01a02b17-03e3-7522-92c8-e8f2537f6567\desk-desktop.png`
+- Desktop Archive: `C:\Users\Robert i Dario\.codex\visualizations\2026\08\22\01a02b17-03e3-7522-92c8-e8f2537f6567\archive-desktop.png`
+- Desktop Timeline: `C:\Users\Robert i Dario\.codex\visualizations\2026\08\22\01a02b17-03e3-7522-92c8-e8f2537f6567\timeline-desktop.png`
+- Graph mobile portrait: `C:\Users\Robert i Dario\.codex\visualizations\2026\08\22\01a02b17-03e3-7522-92c8-e8f2537f6567\graph-mobile-portrait.png`
+- Graph mobile landscape: `C:\Users\Robert i Dario\.codex\visualizations\2026\08\22\01a02b17-03e3-7522-92c8-e8f2537f6567\graph-mobile-landscape.png`
 
-- Design source: `docs/design/custodian-desk-concept.png` (1672 x 941)
-- Final desktop render: `07-desk-white-gold-final-desktop.png` (1425 x 990 browser capture at a 1440 x 1000 test viewport)
-- Combined comparison: `09-custodian-concept-vs-white-gold-final.png`
-- Mobile render: `04-custodian-desk-mobile.png` (375 x 811)
-- Browser method: authenticated Codex in-app browser against `http://localhost:4174/`
-- Console errors: none during the final desktop check
-- Overflow: no horizontal overflow at the final desktop viewport
+## Verified implementation behavior
 
-The source and implementation are the same Custodian Desk state but not pixel-identical source dimensions, so the comparison is an overview rather than a pixel-diff. Both panels are normalized to the same display width in the combined image.
+- Desktop uses the selected dark grouped navigation, ivory workspace, brass provenance, and burgundy action/selection hierarchy.
+- The former permanent static status rail is absent. Graph owns a selected-record inspector; Desk owns its operational boundary panel.
+- Graph search selected a real record and synchronized `record=<uuid>` in the URL.
+- Record-type filters serialized a sorted `types=` parameter and returned to an omitted parameter when all types were active.
+- Map/Links switching synchronized `view=map|links`; keyboard node selection, zoom, reset, selected-record inspector, direct-neighbor list, and Open Record were exercised.
+- Mobile portrait Previous/Next selection changed the record URL; the Details sheet opened and closed. Page width remained bounded (`scrollWidth <= innerWidth`).
+- Mobile landscape exposed the wider graph canvas with no document-level horizontal overflow.
+- Archive showed exactly five persisted record classes with real counts and latest-update dates.
+- Timeline grouped events by numeric date and its created/updated filter was exercised.
+- Browser-visible dates used `DD/MM/YY` and `DD/MM/YY, HH:mm`; no Croatian month abbreviations were present.
 
-## Comparison findings
+## Remaining visual gate
 
-1. **Information hierarchy:** The implementation preserves the concept's three-part hierarchy: fixed navigation, dense operational workspace, and persistent Custodian state rail.
-2. **Palette:** The final build strengthens the intended white-gold intelligence layer. Primary headings and values use white-gold, provenance and navigation signals use luminous gold, and burgundy remains reserved for active/risk/action states.
-3. **Density:** The concept's compact evidence-led layout is retained. The live archive table uses real records instead of filling the screen with invented agent activity.
-4. **Typography:** Serif display headings and compact uppercase metadata remain consistent with the archive identity. Body copy is brighter and more legible than the initial sepia pass.
-5. **Structure:** Gold keylines now carry the shell, command bar, table header, focus controls, and right rail without introducing gradients, glows, or decorative card stacks.
-6. **State clarity:** Operational state, model selection, approvals, and execution authority are explicit text values rather than color-only signals.
-7. **Responsive behavior:** The mobile capture confirms the shell collapses into a usable narrow layout; the later white-gold pass changed shared color tokens and component emphasis, not responsive geometry.
-
-## Interaction checks
-
-- Primary navigation routes open the intended Custodian surfaces.
-- The command bar opens from both the visible control and keyboard shortcut.
-- Inbox and Cases expose honest foundation-pending states until the owner applies the migrations.
-- No interaction silently mutates the canonical archive.
-- Reduced-motion rules remain in the shared stylesheet.
-
-## Copy differences from the concept
-
-- The concept uses illustrative case queues, costs, approvals, and agent state.
-- The implementation deliberately replaces those invented operational values with authenticated archive counts and explicit `None selected`, `Foundation pending`, and `Owner-gated` states.
-- `Operational Brief` becomes `Archive ready` where the live build can verify archive data but cannot yet verify unapplied Custodian tables.
-
-## Iterations completed
-
-- Increased foreground contrast and separated white-gold from luminous-gold roles.
-- Strengthened structural gold borders and selected navigation treatment.
-- Brightened metadata and table labels while keeping the archive black dominant.
-- Removed remaining hard-coded component color literals in the Custodian surfaces.
-- Compared the final render directly with the design source and retained the real-data differences intentionally.
+Create and inspect one permitted comparison input containing the selected Concept 1 source and the final desktop implementation at matched scale. Until that single-input comparison is inspected, the Product Design visual QA result remains blocked even though the responsive implementation checks above passed.

@@ -13,6 +13,7 @@ import type { ArchiveLink, ArchiveRecord } from "@/lib/types";
 import { RECORD_TYPE_LABEL } from "@/lib/types";
 import { recordHref, TypeIcon } from "@/components/record-list";
 import { useOnlineStatus } from "@/hooks/use-online";
+import { formatArchiveDate, formatArchiveDateTime } from "@/lib/date-format";
 
 export const Route = createFileRoute("/")({ component: CustodianDesk, ssr: false });
 
@@ -101,6 +102,48 @@ export function CustodianDeskSurface({
         description="Evidence, unfinished judgments, and the archive state that can be verified now."
       />
 
+      <section
+        className="grid overflow-hidden border border-strong-border bg-card lg:grid-cols-[minmax(0,1fr)_260px]"
+        aria-labelledby="archive-boundary-heading"
+      >
+        <div className="p-5">
+          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-brass">
+            Verified archive state
+          </p>
+          <h2 id="archive-boundary-heading" className="mt-2 text-2xl">
+            Operational boundary
+          </h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+            This desk reports persisted records and saved links. It does not simulate a running
+            agent or invent activity beyond the archive.
+          </p>
+          <dl className="mt-5 grid grid-cols-2 gap-px overflow-hidden border border-border bg-border sm:grid-cols-4">
+            <BoundaryMetric label="Records" value={records.length} />
+            <BoundaryMetric label="Links" value={linksPending || linksError ? "—" : links.length} />
+            <BoundaryMetric label="In judgment" value={model.attentionCount} />
+            <BoundaryMetric label="Recent" value={model.recentItems.length} />
+          </dl>
+        </div>
+        <div className="border-t border-strong-border bg-[color:var(--canvas)] p-5 lg:border-l lg:border-t-0">
+          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-brass">Boundary</p>
+          <p className="mt-3 font-serif text-lg text-foreground">
+            {isFetching
+              ? "Retrieving persisted state"
+              : online
+                ? "Archive available"
+                : "Cached view only"}
+          </p>
+          <p className="mt-2 text-xs leading-5 text-muted-foreground">
+            {lastSuccessfulSync
+              ? `Last verified ${formatArchiveDateTime(lastSuccessfulSync)}`
+              : "No verified sync in this session."}
+          </p>
+          <p className="mt-4 border-t border-border pt-4 text-xs leading-5 text-muted-foreground">
+            Mutations remain owner-initiated. Provider-disabled features remain inactive.
+          </p>
+        </div>
+      </section>
+
       <div className="space-y-2">
         {!online ? (
           <OperationalNotice tone="risk" title="Offline">
@@ -123,7 +166,7 @@ export function CustodianDeskSurface({
           </span>
           <span>
             {lastSuccessfulSync
-              ? `Last verified ${new Date(lastSuccessfulSync).toLocaleString()}`
+              ? `Last verified ${formatArchiveDateTime(lastSuccessfulSync)}`
               : "No verified sync in this session"}
           </span>
         </div>
@@ -139,9 +182,12 @@ export function CustodianDeskSurface({
         {model.attentionItems.length ? (
           <>
             <div className="divide-y divide-border md:hidden">
-              {model.attentionItems.map((item) => (
+              {model.attentionItems.map((item, index) => (
                 <Link key={item.record.id} to={recordHref(item.record)} className="grid gap-2 py-4">
                   <span className="flex min-w-0 items-start gap-3">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-primary bg-burgundy-muted font-mono text-xs text-foreground">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
                     <TypeIcon type={item.record.recordType} />
                     <span className="line-clamp-2 min-w-0 flex-1 font-serif text-[15px] text-foreground">
                       {item.record.title}
@@ -156,7 +202,7 @@ export function CustodianDeskSurface({
                   <span className="flex items-center justify-between gap-3">
                     <span className="custodian-risk-label">{item.status}</span>
                     <span className="font-mono text-[10px] text-muted-foreground">
-                      {formatDate(item.date)}
+                      {formatArchiveDate(item.date)}
                     </span>
                   </span>
                 </Link>
@@ -166,6 +212,7 @@ export function CustodianDeskSurface({
               <table className="custodian-table min-w-[760px]">
                 <thead>
                   <tr>
+                    <th aria-label="Priority number">No.</th>
                     <th>Record</th>
                     <th>Reason in view</th>
                     <th>State</th>
@@ -174,8 +221,11 @@ export function CustodianDeskSurface({
                   </tr>
                 </thead>
                 <tbody>
-                  {model.attentionItems.map((item) => (
+                  {model.attentionItems.map((item, index) => (
                     <tr key={item.record.id}>
+                      <td className="font-mono text-sm font-semibold text-primary">
+                        {String(index + 1).padStart(2, "0")}
+                      </td>
                       <td>
                         <Link
                           to={recordHref(item.record)}
@@ -202,7 +252,7 @@ export function CustodianDeskSurface({
                       </td>
                       <td className="font-mono text-white-gold">{item.linkedCount}</td>
                       <td className="font-mono text-xs text-muted-foreground">
-                        {formatDate(item.date)}
+                        {formatArchiveDate(item.date)}
                       </td>
                     </tr>
                   ))}
@@ -288,7 +338,7 @@ export function CustodianDeskSurface({
                 <span className="text-xs text-muted-foreground">Archive record updated</span>
               </span>
               <span className="font-mono text-[11px] text-muted-foreground">
-                {formatDate(item.record.updatedAt)}
+                {formatArchiveDateTime(item.record.updatedAt)}
               </span>
             </Link>
           ))}
@@ -409,8 +459,13 @@ function buildWorkingSets(records: ArchiveRecord[]) {
   }));
 }
 
-function formatDate(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date);
+function BoundaryMetric({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="bg-card px-3 py-4">
+      <dt className="font-mono text-[9px] uppercase tracking-[0.14em] text-muted-foreground">
+        {label}
+      </dt>
+      <dd className="mt-1 font-serif text-2xl text-foreground">{value}</dd>
+    </div>
+  );
 }

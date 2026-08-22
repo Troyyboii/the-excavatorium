@@ -1,21 +1,13 @@
 import type { ArchiveRecord } from "@/lib/types";
 import { plural } from "@/components/record-list";
+import { formatArchiveDateTime } from "@/lib/date-format";
 
 export function archiveRecordHref(record: ArchiveRecord): string {
   return `/${plural(record.recordType)}/${record.id}`;
 }
 
 export function formatRecordDate(value: string | null | undefined): string {
-  if (!value) return "Not recorded";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
+  return formatArchiveDateTime(value);
 }
 
 export function valueOrNotRecorded(value: string | number | null | undefined): string {
