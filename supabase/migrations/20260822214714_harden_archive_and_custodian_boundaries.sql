@@ -140,6 +140,119 @@ begin
 end;
 $$;
 
+-- Qualify approval columns in the existing transition RPC so its run_id
+-- parameter cannot make the approval predicates ambiguous in PL/pgSQL.
+create or replace function public.custodian_transition_agent_run(
+  run_id uuid,
+  expected_status text,
+  next_status text,
+  idempotency_key text,
+  patch jsonb default '{}'::jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  caller_id uuid := public.custodian_current_owner();
+  run_row public.agent_runs;
+  updated_run public.agent_runs;
+  patch_value jsonb := coalesce(patch, '{}'::jsonb);
+  request_key text := public.custodian_runtime_require_idempotency(idempotency_key);
+  effective_status text := next_status;
+  tokens_delta integer := 0;
+  tool_events_delta integer := 0;
+  cost_delta numeric := 0;
+  latency_delta integer := 0;
+  failure_code_value text;
+  failure_message_value text;
+  completed_value timestamptz;
+begin
+  perform public.custodian_runtime_require_object(patch_value, 'patch');
+  perform public.custodian_reject_owner_keys(patch_value);
+  perform public.custodian_lock(caller_id);
+  select * into run_row from public.agent_runs r
+   where r.owner_id = caller_id and r.id = run_id for update;
+  if not found then
+    raise exception 'agent run not found' using errcode = 'P0002';
+  end if;
+  if run_row.last_idempotency_key = request_key then
+    return jsonb_build_object('run', to_jsonb(run_row), 'idempotent', true);
+  end if;
+  if run_row.status <> expected_status then
+    raise exception 'agent run state changed; expected %, found %', expected_status, run_row.status using errcode = '40001';
+  end if;
+  if not public.custodian_runtime_transition_allowed(run_row.status, next_status) then
+    raise exception 'invalid agent run transition from % to %', run_row.status, next_status using errcode = '22023';
+  end if;
+  if next_status = 'awaiting_approval'
+     and not exists (
+       select 1 from public.approval_requests a
+        where a.owner_id = caller_id and a.case_id = run_row.case_id
+          and a.run_id = run_row.id and a.status = 'pending'
+     ) then
+    raise exception 'awaiting_approval requires a pending approval request' using errcode = '42501';
+  end if;
+  if next_status = 'executing'
+     and not exists (
+       select 1 from public.approval_requests a
+        where a.owner_id = caller_id and a.case_id = run_row.case_id
+          and a.run_id = run_row.id and a.status = 'approved'
+     ) then
+    raise exception 'executing requires an approved approval request' using errcode = '42501';
+  end if;
+
+  tokens_delta := coalesce((patch_value ->> 'tokens_delta')::integer, 0);
+  tool_events_delta := coalesce((patch_value ->> 'tool_events_delta')::integer, 0);
+  cost_delta := coalesce((patch_value ->> 'cost_delta')::numeric, 0);
+  latency_delta := coalesce((patch_value ->> 'latency_delta')::integer, 0);
+  if tokens_delta < 0 or tool_events_delta < 0 or cost_delta < 0 or latency_delta < 0 then
+    raise exception 'runtime usage deltas cannot be negative' using errcode = '22023';
+  end if;
+  failure_code_value := nullif(pg_catalog.btrim(patch_value ->> 'failure_code'), '');
+  failure_message_value := nullif(pg_catalog.btrim(patch_value ->> 'failure_message'), '');
+
+  if run_row.tokens_used + tokens_delta > run_row.budget_tokens
+     or run_row.cost_usd + cost_delta > run_row.budget_cost_usd
+     or run_row.latency_ms + latency_delta > run_row.budget_latency_ms
+     or run_row.tool_events_count + tool_events_delta > run_row.budget_tool_events then
+    effective_status := 'budget_stopped';
+    if not public.custodian_runtime_transition_allowed(run_row.status, effective_status) then
+      raise exception 'budget stop is not valid from the current run state' using errcode = '22023';
+    end if;
+    failure_code_value := 'budget_exceeded';
+    failure_message_value := 'The persisted run budget stopped execution.';
+  end if;
+
+  completed_value := case when public.custodian_runtime_is_terminal(effective_status) then pg_catalog.now() else run_row.completed_at end;
+  update public.agent_runs r
+     set status = effective_status,
+         tokens_used = run_row.tokens_used + tokens_delta,
+         cost_usd = run_row.cost_usd + cost_delta,
+         latency_ms = run_row.latency_ms + latency_delta,
+         tool_events_count = run_row.tool_events_count + tool_events_delta,
+         started_at = coalesce(run_row.started_at, pg_catalog.now()),
+         completed_at = completed_value,
+         failure_code = failure_code_value,
+         failure_message = failure_message_value,
+         last_idempotency_key = request_key,
+         last_transition_from = run_row.status,
+         last_transition_to = effective_status,
+         last_transition_at = pg_catalog.now(),
+         updated_by = caller_id
+   where r.owner_id = caller_id and r.id = run_row.id
+   returning * into updated_run;
+
+  perform public.custodian_runtime_write_audit(
+    caller_id, updated_run.case_id, updated_run.id, 'transitioned', 'transition_agent_run',
+    'agent_run', updated_run.id,
+    jsonb_build_object('from', run_row.status, 'to', updated_run.status)
+  );
+  return jsonb_build_object('run', to_jsonb(updated_run), 'idempotent', false);
+end;
+$$;
+
 -- A case-scoped policy owns every runtime cap. Requests may choose a smaller
 -- cap or a subset of tools, never broaden that active owner/case policy.
 alter table public.tool_policies
