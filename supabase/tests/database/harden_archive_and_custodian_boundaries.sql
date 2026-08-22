@@ -430,18 +430,18 @@ set local role postgres;
 
 do $$
 begin
-  delete from public.agent_runs
-   where id = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  delete from public.approval_requests
+   where id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
   if exists (
     select 1 from public.tool_events
-     where run_id = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+     where approval_request_id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
   ) then
-    raise exception 'tool event did not cascade with its deleted run';
+    raise exception 'tool event did not cascade with its deleted approval';
   end if;
 end;
 $$;
 
-select ok(true, 'approved tool events do not block run lifecycle deletion');
+select ok(true, 'approved tool events cascade with approval lifecycle deletion');
 
 do $$
 begin
