@@ -448,6 +448,15 @@ export function evaluatePricedProviderResponse(
     pricingVersion: pricing.version,
   };
   const output = extractResponsesJson(upstream);
+  if (output === null) {
+    throw new SafeFailure(
+      502,
+      "openai_invalid_output",
+      "Custodian model returned an invalid bounded result.",
+      latencyMs,
+      accountedUsage,
+    );
+  }
   const invalidOutput = stage === "extract" ? !validExtraction(output) : !validSynthesis(output);
   if (invalidOutput) {
     throw new SafeFailure(
