@@ -122,6 +122,24 @@ revoke execute on function public.export_user_archive_snapshot() from public;
 revoke execute on function public.export_user_archive_snapshot() from anon;
 grant execute on function public.export_user_archive_snapshot() to authenticated;
 
+-- Repair the existing helper before the hardened RPCs invoke it. NULLIF is a
+-- SQL expression and cannot be schema-qualified as a pg_catalog function.
+create or replace function public.custodian_runtime_require_idempotency(value text)
+returns text
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  normalized text := nullif(pg_catalog.btrim(value), '');
+begin
+  if normalized is null or pg_catalog.char_length(normalized) > 300 then
+    raise exception 'idempotency_key is required and must be at most 300 characters' using errcode = '22023';
+  end if;
+  return normalized;
+end;
+$$;
+
 -- A case-scoped policy owns every runtime cap. Requests may choose a smaller
 -- cap or a subset of tools, never broaden that active owner/case policy.
 alter table public.tool_policies
