@@ -263,7 +263,7 @@ function EvidenceEntry({
                   href={sourceUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex min-h-11 items-center rounded-md px-1 underline underline-offset-4 hover:text-sidebar-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+                  className="inline-flex min-h-11 items-center rounded-md px-1 underline underline-offset-4 hover:text-[color:var(--luminous-gold)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold"
                 >
                   {entry.sourceUri}
                 </a>
