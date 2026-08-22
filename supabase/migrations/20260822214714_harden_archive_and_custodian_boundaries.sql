@@ -431,7 +431,8 @@ declare
 begin
   perform public.custodian_reject_owner_keys(payload);
   perform public.custodian_lock(caller_id);
-  select * into run_row from public.agent_runs where owner_id = caller_id and id = run_id for update;
+  select * into run_row from public.agent_runs r
+   where r.owner_id = caller_id and r.id = run_id for update;
   if not found then
     raise exception 'agent run not found' using errcode = 'P0002';
   end if;
@@ -574,7 +575,8 @@ declare
 begin
   perform public.custodian_reject_owner_keys(payload);
   perform public.custodian_lock(caller_id);
-  select * into run_row from public.agent_runs where owner_id = caller_id and id = run_id for update;
+  select * into run_row from public.agent_runs r
+   where r.owner_id = caller_id and r.id = run_id for update;
   if not found then raise exception 'agent run not found' using errcode = 'P0002'; end if;
   select * into current_event from public.tool_events e
    where e.owner_id = caller_id and e.case_id = run_row.case_id and e.run_id = run_row.id
@@ -611,12 +613,12 @@ begin
     if approval_value is null or exact_hash_value is null or exact_hash_value !~ '^[0-9a-fA-F]{32}$' then
       raise exception 'write-capable tool events require an exact approved action hash' using errcode = '42501';
     end if;
-    select * into approval_row from public.approval_requests
-     where owner_id = caller_id
-       and case_id = run_row.case_id
-       and run_id = run_row.id
-       and id = approval_value
-       and exact_action_hash = exact_hash_value;
+    select * into approval_row from public.approval_requests a
+     where a.owner_id = caller_id
+       and a.case_id = run_row.case_id
+       and a.run_id = run_row.id
+       and a.id = approval_value
+       and a.exact_action_hash = exact_hash_value;
     if not found then
       raise exception 'approval request is not bound to this run and exact action' using errcode = 'P0002';
     end if;
