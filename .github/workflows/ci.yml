@@ -39,6 +39,9 @@ jobs:
       - name: Typecheck frontend
         run: bun run typecheck
 
+      - name: Test frontend regressions
+        run: bun test src
+
       - name: Check Edge Function
         working-directory: supabase/functions
         run: deno task check
@@ -49,3 +52,24 @@ jobs:
 
       - name: Build
         run: bun run build
+
+  database:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up pinned Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.84.2
+
+      - name: Start local Supabase services
+        run: supabase start
+
+      - name: Test database migrations and boundaries
+        run: supabase test db supabase/tests/database
+
+      - name: Stop local Supabase services
+        if: always()
+        run: supabase stop --no-backup

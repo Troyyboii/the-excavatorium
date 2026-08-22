@@ -16,6 +16,7 @@ import {
 } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import { useCurrentUserId } from "./session";
+import { useOnlineStatus } from "@/hooks/use-online";
 import { fingerprintFile, validateDocumentData, validateSelectedDocumentFile } from "./document";
 import type {
   ArchiveExport,
@@ -36,7 +37,7 @@ type RecordRow = {
   user_id: string;
   record_type: RecordType;
   title: string;
-  summary: string;
+  summary: string | null;
   tags: string[] | null;
   record_data: Record<string, unknown>;
   is_example: boolean;
@@ -53,6 +54,103 @@ type LinkRow = {
   seed_key: string | null;
   created_at: string;
 };
+
+type ArchiveExportSnapshotPayload = {
+  records: unknown;
+  links: unknown;
+};
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function requiredString(row: Record<string, unknown>, key: string, label: string): string {
+  const value = row[key];
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error(`Archive export contains a malformed ${label}.${key}`);
+  }
+  return value;
+}
+
+function nullableString(row: Record<string, unknown>, key: string, label: string): string | null {
+  const value = row[key];
+  if (value === null) return null;
+  if (typeof value !== "string")
+    throw new Error(`Archive export contains a malformed ${label}.${key}`);
+  return value;
+}
+
+function parseExportRecordRow(value: unknown, index: number): RecordRow {
+  const label = `records[${index}]`;
+  if (!isObject(value)) throw new Error(`Archive export contains a malformed ${label}`);
+  const recordType = requiredString(value, "record_type", label);
+  if (
+    !(["tool", "repository", "conversation", "decision", "document"] as string[]).includes(
+      recordType,
+    )
+  ) {
+    throw new Error(`Archive export contains an invalid ${label}.record_type`);
+  }
+  const tags = value.tags;
+  if (tags !== null && (!Array.isArray(tags) || tags.some((tag) => typeof tag !== "string"))) {
+    throw new Error(`Archive export contains a malformed ${label}.tags`);
+  }
+  if (!isObject(value.record_data)) {
+    throw new Error(`Archive export contains a malformed ${label}.record_data`);
+  }
+  if (typeof value.is_example !== "boolean") {
+    throw new Error(`Archive export contains a malformed ${label}.is_example`);
+  }
+  return {
+    id: requiredString(value, "id", label),
+    user_id: requiredString(value, "user_id", label),
+    record_type: recordType as RecordType,
+    title: requiredString(value, "title", label),
+    summary: nullableString(value, "summary", label),
+    tags: tags as string[] | null,
+    record_data: value.record_data,
+    is_example: value.is_example,
+    seed_key: nullableString(value, "seed_key", label),
+    created_at: requiredString(value, "created_at", label),
+    updated_at: requiredString(value, "updated_at", label),
+  };
+}
+
+function parseExportLinkRow(value: unknown, index: number): LinkRow {
+  const label = `links[${index}]`;
+  if (!isObject(value)) throw new Error(`Archive export contains a malformed ${label}`);
+  return {
+    id: requiredString(value, "id", label),
+    user_id: requiredString(value, "user_id", label),
+    source_record_id: requiredString(value, "source_record_id", label),
+    target_record_id: requiredString(value, "target_record_id", label),
+    seed_key: nullableString(value, "seed_key", label),
+    created_at: requiredString(value, "created_at", label),
+  };
+}
+
+/**
+ * Validates the untyped JSON returned by export_user_archive_snapshot before
+ * it can become a user-downloadable backup. A malformed response is rejected
+ * as a whole; callers never receive a partial snapshot.
+ */
+export function parseArchiveExportSnapshot(value: unknown): ArchiveSnapshot {
+  if (!isObject(value)) throw new Error("Archive export returned an invalid snapshot");
+  const payload = value as ArchiveExportSnapshotPayload;
+  if (!Array.isArray(payload.records) || !Array.isArray(payload.links)) {
+    throw new Error("Archive export returned an invalid records or links collection");
+  }
+  const records = payload.records.map((row, index) => toRecord(parseExportRecordRow(row, index)));
+  const links = payload.links.map((row, index) => toLink(parseExportLinkRow(row, index)));
+  return { records, links, byId: new Map(records.map((record) => [record.id, record])) };
+}
+
+/** Reads the owner-scoped, atomically assembled archive snapshot for backup export. */
+export async function exportArchiveSnapshot(): Promise<ArchiveSnapshot> {
+  const { data, error } = await supabase.rpc("export_user_archive_snapshot");
+  if (error) throw new Error(error.message);
+  return parseArchiveExportSnapshot(data);
+}
 
 function normalizeTimestamp(value: string): string {
   const parsed = new Date(value);
@@ -167,6 +265,10 @@ export type ArchiveLoadState = {
   linksError: Error | null;
   isFetching: boolean;
   lastSuccessfulSync: number | null;
+  /** No network is available and the records query has no cached archive. */
+  isColdOffline: boolean;
+  /** No network is available and the links query has no cached graph evidence. */
+  linksColdOffline: boolean;
 };
 
 // User-scoped query keys. Passing a null user id yields a sentinel key that
@@ -207,8 +309,12 @@ export function useLinks(enabled: boolean) {
 // Records are the render-blocking resource. Links are independently optional,
 // so a transient graph failure never blanks otherwise usable archive content.
 export function useArchive(enabled: boolean) {
-  const recordsQuery = useRecords(enabled);
-  const linksQuery = useLinks(enabled);
+  const online = useOnlineStatus();
+  // Avoid initiating an uncached read while offline, while allowing React Query
+  // to continue rendering an already-cached archive snapshot.
+  const requestsEnabled = enabled && online;
+  const recordsQuery = useRecords(requestsEnabled);
+  const linksQuery = useLinks(requestsEnabled);
   const data = useMemo<ArchiveSnapshot | undefined>(() => {
     if (!recordsQuery.data) return undefined;
     const byId = new Map<string, ArchiveRecord>();
@@ -217,17 +323,19 @@ export function useArchive(enabled: boolean) {
   }, [linksQuery.data, recordsQuery.data]);
 
   const state: ArchiveLoadState = {
-    recordsPending: recordsQuery.isPending,
-    linksPending: linksQuery.isPending,
+    recordsPending: recordsQuery.isPending || (recordsQuery.isFetching && !recordsQuery.data),
+    linksPending: linksQuery.isPending || (linksQuery.isFetching && !linksQuery.data),
     recordsError: recordsQuery.error,
     linksError: linksQuery.error,
     isFetching: recordsQuery.isFetching || linksQuery.isFetching,
     lastSuccessfulSync: Math.max(recordsQuery.dataUpdatedAt, linksQuery.dataUpdatedAt) || null,
+    isColdOffline: enabled && !online && !recordsQuery.data,
+    linksColdOffline: enabled && !online && !linksQuery.data,
   };
 
   return {
     data,
-    isPending: recordsQuery.isPending,
+    isPending: state.recordsPending,
     // Full-snapshot consumers such as Backup must not treat a records-only
     // response as export-ready. Rendering consumers can still use `data` and
     // the split error fields below.
@@ -237,8 +345,10 @@ export function useArchive(enabled: boolean) {
     isFetching: state.isFetching,
     recordsError: recordsQuery.error,
     linksError: linksQuery.error,
+    isColdOffline: state.isColdOffline,
     state,
     refetch: () => Promise.all([recordsQuery.refetch(), linksQuery.refetch()]),
+    refetchLinks: () => linksQuery.refetch(),
   };
 }
 

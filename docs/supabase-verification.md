@@ -249,6 +249,16 @@ Migration `20260802153559_rls_and_fk_advisor_cleanup.sql` should remove the four
 The existing write-RPC `SECURITY DEFINER` warnings remain intentional and
 must be treated as documented exceptions, not silently removed.
 
+The production acceptance baseline is exactly 32 signed-in
+`SECURITY DEFINER` advisories: the 25 authenticated Custodian APIs classified
+below plus seven archive lifecycle/write RPCs (`delete_record_safely`,
+`initialize_user_archive`, `remove_example_data`, `reset_user_archive`,
+`restore_missing_examples`, `restore_user_archive`, and
+`save_record_with_links`). Accept that set only after release-time catalog
+checks reconfirm function ownership, empty `search_path`, authenticated-only
+grants, and caller-owner predicates. `export_user_archive_snapshot` is a
+`SECURITY INVOKER` function and must not increase this advisory count.
+
 ### Custodian `SECURITY DEFINER` classification
 
 Source review of migrations `20260811190000` through `20260811191200` classifies

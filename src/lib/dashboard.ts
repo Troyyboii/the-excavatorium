@@ -140,7 +140,7 @@ export function buildDashboardViewModel(
     isolatedCount: isolatedRecords.length,
     recentCount: recentRecords.length,
     attentionItems: attentionRecords.slice(0, 7).map(toItem),
-    recentItems: [...records].sort(byUpdated).slice(0, 7).map(toItem),
+    recentItems: recentRecords.sort(byUpdated).slice(0, 7).map(toItem),
     isolatedRecords,
     typeBreakdown: TYPES.map((type) => ({
       key: type,

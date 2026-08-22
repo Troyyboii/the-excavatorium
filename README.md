@@ -136,6 +136,14 @@ secrets in browser code or committed files. Conversation and File Excavation
 require the existing `OPENAI_API_KEY` configured as a Supabase Edge Function
 secret; see the setup guide below.
 
+The MCP server also requires a server-only `MCP_ALLOWED_CLIENT_IDS` value: a
+comma-separated UUID allow-list of explicitly approved OAuth clients. Do not
+prefix it with `VITE_` or expose it to browser code. Custodian provider
+execution remains disabled; any future activation additionally requires a
+server-only, versioned `CUSTODIAN_MODEL_PRICING_JSON` configuration and a
+database-backed per-run provider-call reservation so concurrent invocations
+cannot spend the same remaining budget.
+
 ## Detailed setup and verification
 
 - [Supabase setup](./docs/supabase-setup.md) — migrations, owner-account

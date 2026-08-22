@@ -108,6 +108,8 @@ remains blocked until all of the following are implemented and verified:
 - allowed model tiers are explicit;
 - exact per-run and cumulative token, cost, latency, and tool-event ceilings
   are enforced;
+- concurrent provider calls reserve or serialize the same run budget before
+  any paid request;
 - retries, duplicate invocation, interruption, and resume are idempotent;
 - write-capable tools always pause for owner approval;
 - refusal, failure, budget stop, and cancellation are durable and inspectable;

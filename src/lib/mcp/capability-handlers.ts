@@ -23,7 +23,7 @@ export async function handleListCases(
   { query, status, limit }: { query?: string; status?: string; limit?: number },
   ctx: ToolContext,
 ): Promise<JsonToolResult> {
-  const authError = authResult(ctx);
+  const authError = await authResult(ctx);
   if (authError) return authError;
   if (query !== undefined && (query.trim().length === 0 || query.length > 200)) {
     return errorResult("INVALID_INPUT");
@@ -60,7 +60,7 @@ export async function handleGetCase(
   { id }: { id: string },
   ctx: ToolContext,
 ): Promise<JsonToolResult> {
-  const authError = authResult(ctx);
+  const authError = await authResult(ctx);
   if (authError) return authError;
   try {
     const supabase = supabaseForUser(ctx);
@@ -81,7 +81,7 @@ export async function handleGetFindings(
   { caseId, limit }: { caseId?: string; limit?: number },
   ctx: ToolContext,
 ): Promise<JsonToolResult> {
-  const authError = authResult(ctx);
+  const authError = await authResult(ctx);
   if (authError) return authError;
   let rowLimit: number;
   try {
@@ -117,7 +117,7 @@ export async function handleGetRun(
   { id }: { id: string },
   ctx: ToolContext,
 ): Promise<JsonToolResult> {
-  const authError = authResult(ctx);
+  const authError = await authResult(ctx);
   if (authError) return authError;
   try {
     const supabase = supabaseForUser(ctx);
@@ -138,7 +138,7 @@ export async function handleStartAnalysis(
   _input: { caseId: string; recordIds?: string[] },
   ctx: ToolContext,
 ): Promise<JsonToolResult> {
-  const authError = authResult(ctx);
+  const authError = await authResult(ctx);
   if (authError) return authError;
   return errorResult("RUNTIME_UNAVAILABLE");
 }
@@ -147,7 +147,7 @@ export async function handleCancelRun(
   _input: { id: string },
   ctx: ToolContext,
 ): Promise<JsonToolResult> {
-  const authError = authResult(ctx);
+  const authError = await authResult(ctx);
   if (authError) return authError;
   return errorResult("RUNTIME_UNAVAILABLE");
 }
@@ -160,7 +160,7 @@ async function readRuntimeTable(
   limit: number | undefined,
   resultKey: "approvals",
 ): Promise<JsonToolResult> {
-  const authError = authResult(ctx);
+  const authError = await authResult(ctx);
   if (authError) return authError;
   let rowLimit: number;
   try {

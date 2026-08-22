@@ -28,7 +28,7 @@ export async function handleSearchRecords(
   { recordType, query, limit }: SearchInput,
   ctx: ToolContext,
 ): Promise<JsonToolResult> {
-  const authError = authResult(ctx);
+  const authError = await authResult(ctx);
   if (authError) return authError;
   if (recordType && !isCanonicalRecordType(recordType)) return errorResult("INVALID_INPUT");
   if (query !== undefined && (query.trim().length === 0 || query.length > 200)) {
@@ -98,7 +98,7 @@ export async function handleFetchRecord(
   { id }: { id: string },
   ctx: ToolContext,
 ): Promise<JsonToolResult> {
-  const authError = authResult(ctx);
+  const authError = await authResult(ctx);
   if (authError) return authError;
   try {
     const supabase = supabaseForUser(ctx);
@@ -116,7 +116,7 @@ export async function handleGetContext(
   { id, limit }: { id: string; limit?: number },
   ctx: ToolContext,
 ): Promise<JsonToolResult> {
-  const authError = authResult(ctx);
+  const authError = await authResult(ctx);
   if (authError) return authError;
   let rowLimit: number;
   try {
@@ -150,7 +150,7 @@ export async function handleCompareRecords(
   { ids }: { ids: string[] },
   ctx: ToolContext,
 ): Promise<JsonToolResult> {
-  const authError = authResult(ctx);
+  const authError = await authResult(ctx);
   if (authError) return authError;
   if (ids.length < 2 || ids.length > 4 || new Set(ids).size !== ids.length) {
     return errorResult("INVALID_INPUT");

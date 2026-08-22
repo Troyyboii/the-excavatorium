@@ -10,6 +10,8 @@ export const corsHeaders = {
 export function allowedOrigin(origin: string | null): string | null {
   if (!origin) return null;
   const origins = new Set(["https://the-excavatorium.lovable.app", "http://localhost:8080"]);
+  if (origins.has(origin)) return origin;
+  if (!origin.startsWith("https://") || !origin.endsWith(".lovable.app")) return null;
   const preview = Deno.env.get("LOVABLE_PREVIEW_ORIGIN");
   if (preview) {
     try {
@@ -45,9 +47,10 @@ export async function authenticatedSupabase(
   request: Request,
 ): Promise<AuthenticatedSupabase | null> {
   const authorization = request.headers.get("Authorization");
+  if (!authorization) return null;
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
-  if (!authorization || !supabaseUrl || !supabaseAnonKey) return null;
+  if (!supabaseUrl || !supabaseAnonKey) return null;
   const client = createClient(supabaseUrl, supabaseAnonKey, {
     global: { headers: { Authorization: authorization } },
   });

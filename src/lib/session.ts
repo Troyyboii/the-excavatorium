@@ -32,9 +32,10 @@ export function createSessionStore(auth: SessionAuthClient) {
     for (const listener of listeners) listener();
   }
 
-  function setState(next: SessionState) {
+  function setState(next: SessionState, force = false) {
     const prev = currentState;
     if (
+      !force &&
       prev.status === next.status &&
       (prev.status !== "signed-in" ||
         (next.status === "signed-in" &&
@@ -85,9 +86,15 @@ export function createSessionStore(auth: SessionAuthClient) {
     // Subscribe first so every later auth event can invalidate an older
     // asynchronous restoration result.
     const preSubscriptionRevision = authEventRevision;
-    auth.onAuthStateChange((_event, session) => {
+    auth.onAuthStateChange((event, session) => {
       authEventRevision += 1;
-      setState(session ? { status: "signed-in", session } : { status: "signed-out" });
+      // USER_UPDATED can retain both the user id and token while changing
+      // profile/email metadata. It is still authoritative and must reach
+      // subscribers so account-dependent UI does not remain stale.
+      setState(
+        session ? { status: "signed-in", session } : { status: "signed-out" },
+        event === "USER_UPDATED",
+      );
     });
     void restoreSession(preSubscriptionRevision);
   }

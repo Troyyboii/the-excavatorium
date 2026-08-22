@@ -134,7 +134,7 @@ function referencesMatchNormalized(data: DocumentRecordData, knownIds: Set<strin
 
 async function removeObjects(auth: AuthenticatedSupabase, paths: string[]): Promise<void> {
   if (paths.length === 0) return;
-  const { error } = await auth.client.storage.from(BUCKET).remove(paths);
+  const { error } = await auth.client.storage.from(BUCKET).remove([...paths]);
   if (error) {
     // Diagnostics stay limited to phase and category metadata. Never expose the
     // upstream error payload, object paths, or any file contents.
@@ -158,287 +158,318 @@ async function loadStoredNormalized(
   return validateNormalizedDocument(value) && value.contentHash === expectedHash ? value : null;
 }
 
-Deno.serve(async (request) => {
-  const requestStartedAt = Date.now();
-  const origin = originFor(request);
-  if (origin === "__denied__") return jsonResponse({ error: "Origin is not allowed." }, 403);
-  if (request.method === "OPTIONS") return new Response("ok", { headers: responseHeaders(origin) });
-  if (request.method !== "POST") return jsonResponse({ error: "Method not allowed." }, 405, origin);
-  if (declaredLengthTooLarge(request.headers.get("content-length"), DOCUMENT_MAX_REQUEST_BYTES))
-    return jsonResponse({ error: "Request is too large." }, 413, origin);
+export function createDocumentSaveHandler(
+  authenticate: (request: Request) => Promise<AuthenticatedSupabase | null> = authenticatedSupabase,
+) {
+  return async (request: Request): Promise<Response> => {
+    const requestStartedAt = Date.now();
+    const origin = originFor(request);
+    if (origin === "__denied__") return jsonResponse({ error: "Origin is not allowed." }, 403);
+    if (request.method === "OPTIONS")
+      return new Response("ok", { headers: responseHeaders(origin) });
+    if (request.method !== "POST")
+      return jsonResponse({ error: "Method not allowed." }, 405, origin);
+    if (declaredLengthTooLarge(request.headers.get("content-length"), DOCUMENT_MAX_REQUEST_BYTES))
+      return jsonResponse({ error: "Request is too large." }, 413, origin);
 
-  const auth = await authenticatedSupabase(request);
-  if (!auth) return jsonResponse({ error: "Sign in is required." }, 401, origin);
-  const createdPaths: string[] = [];
-  try {
-    const bytes = await readBoundedBody(request, DOCUMENT_MAX_REQUEST_BYTES);
-    const replay = new Request(request.url, {
-      method: "POST",
-      headers: request.headers,
-      body: toBinaryData(bytes),
-    });
-    const form = await replay.formData();
-    const fileValue = form.get("file");
-    const file = fileValue instanceof File ? fileValue : null;
-    const payload = parsePayload(parseJson(form.get("record")), file !== null);
-    const targetIds = parseTargetIds(parseJson(form.get("selectedTargetIds")));
-    const removeFile = form.get("removeFile") === "true";
-    if (!payload || !targetIds || (!file && !removeFile && payload.recordData.storagePath === null))
-      return jsonResponse({ error: "Document save input is invalid." }, 400, origin);
-
-    const recordId = payload.id?.toLowerCase() ?? crypto.randomUUID();
-    let existingData: DocumentRecordData | null = null;
-    if (payload.id) {
-      const { data, error } = await auth.client
-        .from("records")
-        .select("id,record_type,record_data")
-        .eq("id", recordId)
-        .maybeSingle();
-      if (error)
-        return jsonResponse({ error: "The existing document could not be verified." }, 403, origin);
-      if (data) {
-        if (data.record_type !== "document" || !validateDocumentRecordData(data.record_data))
-          return jsonResponse({ error: "The existing document is invalid." }, 409, origin);
-        existingData = data.record_data;
-      }
+    let auth: AuthenticatedSupabase | null;
+    try {
+      auth = await authenticate(request);
+    } catch {
+      return jsonResponse({ error: "Authentication is temporarily unavailable." }, 503, origin);
     }
-
-    const previousPaths = existingData
-      ? [existingData.storagePath, existingData.extractedContentPath].filter(
-          (path): path is string =>
-            typeof path === "string" && validGeneratedPath(path, auth.user.id, recordId),
-        )
-      : [];
-    let nextData: DocumentRecordData = { ...payload.recordData };
-    let newPaths: { original: string; extracted: string } | null = null;
-
-    if (file) {
-      const fileBytes = await readFileBytes(file);
-      const expectedHashValue = form.get("contentHash");
+    if (!auth) return jsonResponse({ error: "Sign in is required." }, 401, origin);
+    const createdPaths: string[] = [];
+    try {
+      const bytes = await readBoundedBody(request, DOCUMENT_MAX_REQUEST_BYTES);
+      const replay = new Request(request.url, {
+        method: "POST",
+        headers: request.headers,
+        body: toBinaryData(bytes),
+      });
+      const form = await replay.formData();
+      const fileValue = form.get("file");
+      const file = fileValue instanceof File ? fileValue : null;
+      const payload = parsePayload(parseJson(form.get("record")), file !== null);
+      const targetIds = parseTargetIds(parseJson(form.get("selectedTargetIds")));
+      const removeFile = form.get("removeFile") === "true";
       if (
-        expectedHashValue !== null &&
-        (typeof expectedHashValue !== "string" || !isHash(expectedHashValue))
-      ) {
-        return jsonResponse({ error: "The file fingerprint is invalid." }, 400, origin);
-      }
-      const expectedHash = typeof expectedHashValue === "string" ? expectedHashValue : undefined;
-      const normalized = await normalizeDocumentFile(fileBytes, file.name, file.type, expectedHash);
-      if (
-        !referencesMatchNormalized(
-          payload.recordData,
-          new Set(normalized.units.map((unit) => unit.id)),
-        )
-      ) {
-        return jsonResponse(
-          { error: "Document source references do not match the selected file." },
-          400,
-          origin,
-        );
-      }
-      const reusablePath =
-        existingData &&
-        existingData.contentHash === normalized.contentHash &&
-        typeof existingData.storagePath === "string" &&
-        typeof existingData.extractedContentPath === "string" &&
-        validGeneratedPath(existingData.storagePath, auth.user.id, recordId) &&
-        validGeneratedPath(existingData.extractedContentPath, auth.user.id, recordId)
-          ? existingData.extractedContentPath
-          : null;
-      const sameExistingFile = reusablePath !== null;
-      const existingNormalized = reusablePath
-        ? await loadStoredNormalized(auth, reusablePath, normalized.contentHash)
-        : null;
-      if (sameExistingFile && existingNormalized) {
-        nextData = {
-          ...nextData,
-          ...existingData,
-          highSignalFindings: payload.recordData.highSignalFindings,
-          keyClaims: payload.recordData.keyClaims,
-          contradictions: payload.recordData.contradictions,
-          uncertainties: payload.recordData.uncertainties,
-          sourceReferences: payload.recordData.sourceReferences,
-          documentDate: payload.recordData.documentDate,
-          pageCount: existingNormalized.pageCount,
-          projectRoute: payload.recordData.projectRoute,
-        };
-      } else {
-        newPaths = generatedPaths(auth.user.id, recordId, crypto.randomUUID(), file.name);
-        const canonicalMime =
-          normalized.kind === "pdf"
-            ? "application/pdf"
-            : normalized.kind === "markdown"
-              ? "text/markdown"
-              : "text/plain";
-        const originalUpload = await auth.client.storage
-          .from(BUCKET)
-          .upload(newPaths.original, fileBytes, { contentType: canonicalMime, upsert: false });
-        if (originalUpload.error)
+        !payload ||
+        !targetIds ||
+        (!file && !removeFile && payload.recordData.storagePath === null)
+      )
+        return jsonResponse({ error: "Document save input is invalid." }, 400, origin);
+
+      const recordId = payload.id?.toLowerCase() ?? crypto.randomUUID();
+      let existingData: DocumentRecordData | null = null;
+      if (payload.id) {
+        const { data, error } = await auth.client
+          .from("records")
+          .select("id,record_type,record_data")
+          .eq("id", recordId)
+          .maybeSingle();
+        if (error)
           return jsonResponse(
-            { error: "The original file could not be stored. No archive record was created." },
-            502,
+            { error: "The existing document could not be verified." },
+            403,
             origin,
           );
-        createdPaths.push(newPaths.original);
-        const normalizedBytes = new TextEncoder().encode(JSON.stringify(normalized));
-        const extractedUpload = await auth.client.storage
-          .from(BUCKET)
-          .upload(newPaths.extracted, normalizedBytes, {
-            contentType: "application/json",
-            metadata: {
-              document_version: "1",
-              document_content_hash: normalized.contentHash,
-              document_source_reference_ids: JSON.stringify(
-                normalized.units.map((unit) => unit.id),
-              ),
-            },
-            upsert: false,
-          });
-        if (extractedUpload.error) {
-          await removeObjects(auth, createdPaths);
-          createdPaths.length = 0;
+        if (data) {
+          if (data.record_type !== "document" || !validateDocumentRecordData(data.record_data))
+            return jsonResponse({ error: "The existing document is invalid." }, 409, origin);
+          existingData = data.record_data;
+        }
+      }
+
+      const previousPaths = existingData
+        ? [existingData.storagePath, existingData.extractedContentPath].filter(
+            (path): path is string =>
+              typeof path === "string" && validGeneratedPath(path, auth.user.id, recordId),
+          )
+        : [];
+      let nextData: DocumentRecordData = { ...payload.recordData };
+      let newPaths: { original: string; extracted: string } | null = null;
+
+      if (file) {
+        const fileBytes = await readFileBytes(file);
+        const expectedHashValue = form.get("contentHash");
+        if (
+          expectedHashValue !== null &&
+          (typeof expectedHashValue !== "string" || !isHash(expectedHashValue))
+        ) {
+          return jsonResponse({ error: "The file fingerprint is invalid." }, 400, origin);
+        }
+        const expectedHash = typeof expectedHashValue === "string" ? expectedHashValue : undefined;
+        const normalized = await normalizeDocumentFile(
+          fileBytes,
+          file.name,
+          file.type,
+          expectedHash,
+        );
+        if (
+          !referencesMatchNormalized(
+            payload.recordData,
+            new Set(normalized.units.map((unit) => unit.id)),
+          )
+        ) {
           return jsonResponse(
-            {
-              error:
-                "The extracted representation could not be stored. No archive record was created.",
-            },
-            502,
+            { error: "Document source references do not match the selected file." },
+            400,
             origin,
           );
         }
-        createdPaths.push(newPaths.extracted);
+        const reusablePath =
+          existingData &&
+          existingData.contentHash === normalized.contentHash &&
+          typeof existingData.storagePath === "string" &&
+          typeof existingData.extractedContentPath === "string" &&
+          validGeneratedPath(existingData.storagePath, auth.user.id, recordId) &&
+          validGeneratedPath(existingData.extractedContentPath, auth.user.id, recordId)
+            ? existingData.extractedContentPath
+            : null;
+        const sameExistingFile = reusablePath !== null;
+        const existingNormalized = reusablePath
+          ? await loadStoredNormalized(auth, reusablePath, normalized.contentHash)
+          : null;
+        if (sameExistingFile && existingNormalized) {
+          nextData = {
+            ...nextData,
+            ...existingData,
+            highSignalFindings: payload.recordData.highSignalFindings,
+            keyClaims: payload.recordData.keyClaims,
+            contradictions: payload.recordData.contradictions,
+            uncertainties: payload.recordData.uncertainties,
+            sourceReferences: payload.recordData.sourceReferences,
+            documentDate: payload.recordData.documentDate,
+            pageCount: existingNormalized.pageCount,
+            projectRoute: payload.recordData.projectRoute,
+          };
+        } else {
+          newPaths = generatedPaths(auth.user.id, recordId, crypto.randomUUID(), file.name);
+          const canonicalMime =
+            normalized.kind === "pdf"
+              ? "application/pdf"
+              : normalized.kind === "markdown"
+                ? "text/markdown"
+                : "text/plain";
+          const originalUpload = await auth.client.storage
+            .from(BUCKET)
+            .upload(newPaths.original, fileBytes, { contentType: canonicalMime, upsert: false });
+          if (originalUpload.error)
+            return jsonResponse(
+              { error: "The original file could not be stored. No archive record was created." },
+              502,
+              origin,
+            );
+          createdPaths.push(newPaths.original);
+          const normalizedBytes = new TextEncoder().encode(JSON.stringify(normalized));
+          const extractedUpload = await auth.client.storage
+            .from(BUCKET)
+            .upload(newPaths.extracted, normalizedBytes, {
+              contentType: "application/json",
+              metadata: {
+                document_version: "1",
+                document_content_hash: normalized.contentHash,
+                document_source_reference_ids: JSON.stringify(
+                  normalized.units.map((unit) => unit.id),
+                ),
+              },
+              upsert: false,
+            });
+          if (extractedUpload.error) {
+            await removeObjects(auth, createdPaths);
+            createdPaths.length = 0;
+            return jsonResponse(
+              {
+                error:
+                  "The extracted representation could not be stored. No archive record was created.",
+              },
+              502,
+              origin,
+            );
+          }
+          createdPaths.push(newPaths.extracted);
+          nextData = {
+            ...payload.recordData,
+            originalFileName: displayFileName(file.name),
+            mimeType: canonicalMime,
+            fileSizeBytes: fileBytes.byteLength,
+            pageCount: normalized.pageCount,
+            storagePath: newPaths.original,
+            extractedContentPath: newPaths.extracted,
+            contentHash: normalized.contentHash,
+          };
+        }
+      } else if (removeFile) {
         nextData = {
           ...payload.recordData,
-          originalFileName: displayFileName(file.name),
-          mimeType: canonicalMime,
-          fileSizeBytes: fileBytes.byteLength,
-          pageCount: normalized.pageCount,
-          storagePath: newPaths.original,
-          extractedContentPath: newPaths.extracted,
-          contentHash: normalized.contentHash,
+          originalFileName: null,
+          mimeType: null,
+          fileSizeBytes: null,
+          pageCount: null,
+          storagePath: null,
+          extractedContentPath: null,
+          contentHash: null,
+        };
+      } else {
+        if (
+          !existingData ||
+          existingData.storagePath === null ||
+          existingData.extractedContentPath === null ||
+          existingData.contentHash === null ||
+          !validGeneratedPath(existingData.storagePath, auth.user.id, recordId) ||
+          !validGeneratedPath(existingData.extractedContentPath, auth.user.id, recordId) ||
+          payload.recordData.storagePath !== existingData.storagePath ||
+          payload.recordData.extractedContentPath !== existingData.extractedContentPath ||
+          payload.recordData.contentHash !== existingData.contentHash
+        ) {
+          return jsonResponse(
+            { error: "The existing document file could not be verified." },
+            409,
+            origin,
+          );
+        }
+        const normalizedValue = await loadStoredNormalized(
+          auth,
+          existingData.extractedContentPath,
+          existingData.contentHash,
+        );
+        if (
+          !normalizedValue ||
+          !referencesMatchNormalized(
+            payload.recordData,
+            new Set(normalizedValue.units.map((unit) => unit.id)),
+          )
+        ) {
+          return jsonResponse(
+            { error: "The existing document provenance could not be verified." },
+            409,
+            origin,
+          );
+        }
+        nextData = {
+          ...payload.recordData,
+          originalFileName: existingData.originalFileName,
+          mimeType: existingData.mimeType,
+          fileSizeBytes: existingData.fileSizeBytes,
+          pageCount: normalizedValue.pageCount,
+          storagePath: existingData.storagePath,
+          extractedContentPath: existingData.extractedContentPath,
+          contentHash: normalizedValue.contentHash,
         };
       }
-    } else if (removeFile) {
-      nextData = {
-        ...payload.recordData,
-        originalFileName: null,
-        mimeType: null,
-        fileSizeBytes: null,
-        pageCount: null,
-        storagePath: null,
-        extractedContentPath: null,
-        contentHash: null,
-      };
-    } else {
+      if (!validateDocumentRecordData(nextData))
+        return jsonResponse({ error: "Document data is malformed." }, 400, origin);
+      if (nextData.storagePath && !validGeneratedPath(nextData.storagePath, auth.user.id, recordId))
+        return jsonResponse({ error: "Document storage path is invalid." }, 400, origin);
       if (
-        !existingData ||
-        existingData.storagePath === null ||
-        existingData.extractedContentPath === null ||
-        existingData.contentHash === null ||
-        !validGeneratedPath(existingData.storagePath, auth.user.id, recordId) ||
-        !validGeneratedPath(existingData.extractedContentPath, auth.user.id, recordId) ||
-        payload.recordData.storagePath !== existingData.storagePath ||
-        payload.recordData.extractedContentPath !== existingData.extractedContentPath ||
-        payload.recordData.contentHash !== existingData.contentHash
-      ) {
-        return jsonResponse(
-          { error: "The existing document file could not be verified." },
-          409,
-          origin,
-        );
-      }
-      const normalizedValue = await loadStoredNormalized(
-        auth,
-        existingData.extractedContentPath,
-        existingData.contentHash,
-      );
-      if (
-        !normalizedValue ||
-        !referencesMatchNormalized(
-          payload.recordData,
-          new Set(normalizedValue.units.map((unit) => unit.id)),
-        )
-      ) {
-        return jsonResponse(
-          { error: "The existing document provenance could not be verified." },
-          409,
-          origin,
-        );
-      }
-      nextData = {
-        ...payload.recordData,
-        originalFileName: existingData.originalFileName,
-        mimeType: existingData.mimeType,
-        fileSizeBytes: existingData.fileSizeBytes,
-        pageCount: normalizedValue.pageCount,
-        storagePath: existingData.storagePath,
-        extractedContentPath: existingData.extractedContentPath,
-        contentHash: normalizedValue.contentHash,
-      };
-    }
-    if (!validateDocumentRecordData(nextData))
-      return jsonResponse({ error: "Document data is malformed." }, 400, origin);
-    if (nextData.storagePath && !validGeneratedPath(nextData.storagePath, auth.user.id, recordId))
-      return jsonResponse({ error: "Document storage path is invalid." }, 400, origin);
-    if (
-      nextData.extractedContentPath &&
-      !validGeneratedPath(nextData.extractedContentPath, auth.user.id, recordId)
-    )
-      return jsonResponse({ error: "Document extracted path is invalid." }, 400, origin);
+        nextData.extractedContentPath &&
+        !validGeneratedPath(nextData.extractedContentPath, auth.user.id, recordId)
+      )
+        return jsonResponse({ error: "Document extracted path is invalid." }, 400, origin);
 
-    const { data: saveResult, error: saveError } = await auth.client.rpc("save_record_with_links", {
-      record_payload: {
-        id: recordId,
-        recordType: "document",
-        title: payload.title,
-        summary: payload.summary,
-        tags: payload.tags,
-        recordData: nextData,
-      },
-      selected_target_ids: targetIds,
-    });
-    if (saveError || !saveResult || typeof saveResult !== "object") {
-      await removeObjects(auth, createdPaths);
-      return jsonResponse(
+      const { data: saveResult, error: saveError } = await auth.client.rpc(
+        "save_record_with_links",
         {
-          error:
-            "The archive record could not be saved. Newly uploaded files were discarded where possible.",
+          record_payload: {
+            id: recordId,
+            recordType: "document",
+            title: payload.title,
+            summary: payload.summary,
+            tags: payload.tags,
+            recordData: nextData,
+          },
+          selected_target_ids: targetIds,
         },
+      );
+      if (saveError || !saveResult || typeof saveResult !== "object") {
+        await removeObjects(auth, createdPaths);
+        return jsonResponse(
+          {
+            error:
+              "The archive record could not be saved. Newly uploaded files were discarded where possible.",
+          },
+          502,
+          origin,
+        );
+      }
+      const result = saveResult as { id?: unknown; isNew?: unknown };
+      if (typeof result.id !== "string") {
+        await removeObjects(auth, createdPaths);
+        return jsonResponse({ error: "The archive save returned an invalid result." }, 502, origin);
+      }
+      const pathsToRemove = previousPaths.filter(
+        (path) => ![nextData.storagePath, nextData.extractedContentPath].includes(path),
+      );
+      await removeObjects(auth, pathsToRemove);
+      return jsonResponse({ id: result.id, isNew: result.isNew === true }, 200, origin);
+    } catch (error) {
+      await removeObjects(auth, createdPaths);
+      const durationMs = Date.now() - requestStartedAt;
+      if (
+        error &&
+        typeof error === "object" &&
+        "status" in error &&
+        typeof (error as { status?: unknown }).status === "number"
+      ) {
+        const input = error as { message?: unknown; status: number };
+        logDiagnostic("request", "input", { status: input.status, durationMs });
+        return jsonResponse(
+          {
+            error: typeof input.message === "string" ? input.message : "Document input is invalid.",
+          },
+          input.status,
+          origin,
+        );
+      }
+      logDiagnostic("request", "unhandled", { status: 502, durationMs });
+      return jsonResponse(
+        { error: "Document files could not be saved. Existing data was not changed." },
         502,
         origin,
       );
     }
-    const result = saveResult as { id?: unknown; isNew?: unknown };
-    if (typeof result.id !== "string") {
-      await removeObjects(auth, createdPaths);
-      return jsonResponse({ error: "The archive save returned an invalid result." }, 502, origin);
-    }
-    const pathsToRemove = previousPaths.filter(
-      (path) => ![nextData.storagePath, nextData.extractedContentPath].includes(path),
-    );
-    await removeObjects(auth, pathsToRemove);
-    return jsonResponse({ id: result.id, isNew: result.isNew === true }, 200, origin);
-  } catch (error) {
-    await removeObjects(auth, createdPaths);
-    const durationMs = Date.now() - requestStartedAt;
-    if (
-      error &&
-      typeof error === "object" &&
-      "status" in error &&
-      typeof (error as { status?: unknown }).status === "number"
-    ) {
-      const input = error as { message?: unknown; status: number };
-      logDiagnostic("request", "input", { status: input.status, durationMs });
-      return jsonResponse(
-        { error: typeof input.message === "string" ? input.message : "Document input is invalid." },
-        input.status,
-        origin,
-      );
-    }
-    logDiagnostic("request", "unhandled", { status: 502, durationMs });
-    return jsonResponse(
-      { error: "Document files could not be saved. Existing data was not changed." },
-      502,
-      origin,
-    );
-  }
-});
+  };
+}
+
+if (import.meta.main) Deno.serve(createDocumentSaveHandler());
