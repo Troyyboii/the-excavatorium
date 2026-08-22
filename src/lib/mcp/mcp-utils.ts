@@ -1,4 +1,5 @@
 import type { ToolContext } from "@lovable.dev/mcp-js";
+import { mcpClientAccess } from "./security";
 
 export const CANONICAL_RECORD_TYPES = [
   "tool",
@@ -93,6 +94,8 @@ export type SafeRecord = {
 
 export type ErrorCode =
   | "AUTH_REQUIRED"
+  | "AUTH_CONFIGURATION_ERROR"
+  | "CLIENT_NOT_ALLOWED"
   | "INVALID_INPUT"
   | "NOT_FOUND"
   | "DATA_UNAVAILABLE"
@@ -114,6 +117,8 @@ export type JsonToolResult = {
 
 const SAFE_ERROR_MESSAGES: Record<ErrorCode, string> = {
   AUTH_REQUIRED: "An authenticated OAuth session is required.",
+  AUTH_CONFIGURATION_ERROR: "MCP authorization is temporarily unavailable.",
+  CLIENT_NOT_ALLOWED: "This OAuth client is not permitted to access this server.",
   INVALID_INPUT: "The request input is invalid or exceeds the supported limit.",
   NOT_FOUND: "The requested archive item was not found.",
   DATA_UNAVAILABLE: "Archive data is temporarily unavailable.",
@@ -137,8 +142,11 @@ export function errorResult(code: ErrorCode, message = SAFE_ERROR_MESSAGES[code]
   };
 }
 
-export function authResult(ctx: ToolContext): JsonToolResult | null {
-  return ctx.isAuthenticated() ? null : errorResult("AUTH_REQUIRED");
+export async function authResult(ctx: ToolContext): Promise<JsonToolResult | null> {
+  if (!ctx.isAuthenticated()) return errorResult("AUTH_REQUIRED");
+  const access = await mcpClientAccess(ctx);
+  if (access === "configuration_invalid") return errorResult("AUTH_CONFIGURATION_ERROR");
+  return access === "allowed" ? null : errorResult("CLIENT_NOT_ALLOWED");
 }
 
 export function isCanonicalRecordType(value: unknown): value is CanonicalRecordType {

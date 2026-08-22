@@ -8,17 +8,22 @@ import {
 import {
   boundedOutputBudget,
   buildResponsesRequest,
+  calculateUsageCost,
+  CUSTODIAN_MODEL_PRICING_ENV,
   DEFAULT_ALLOWED_MODEL_TIERS,
   extractResponsesJson,
   isAllowedModelTiers,
   isApprovalOutput,
+  maximumPotentialUsageCost,
   readUsage,
+  resolveModelPricing,
   resolveSystemPrompt,
   selectRuntimeModel,
   stepKey,
   transitionKey,
   EXTRACTION_SCHEMA,
   SYNTHESIS_SCHEMA,
+  type ModelPricing,
   type ModelTier,
   type RunStage,
 } from "./runtime.ts";
@@ -72,6 +77,7 @@ type BudgetStatus = {
   allowed: boolean;
   reason: string;
   run_tokens_remaining: number;
+  run_cost_remaining: number;
   run_latency_remaining: number;
   daily_token_remaining: number | null;
   monthly_token_remaining: number | null;
@@ -85,12 +91,20 @@ type ApprovalSummary = {
   exact_action_hash: string;
 };
 
+type RecordedUsage = {
+  tokens: number;
+  costUsd: number;
+  latencyMs: number;
+  pricingVersion?: string;
+};
+
 class SafeFailure extends Error {
   constructor(
     readonly status: 502 | 503 | 504,
     readonly code: string,
     readonly publicMessage: string,
     readonly latencyMs = 0,
+    readonly usage?: RecordedUsage,
   ) {
     super(code);
   }
@@ -225,6 +239,7 @@ function budgetFromRpc(value: unknown): BudgetStatus {
     typeof value.allowed !== "boolean" ||
     typeof value.reason !== "string" ||
     typeof value.run_tokens_remaining !== "number" ||
+    typeof value.run_cost_remaining !== "number" ||
     typeof value.run_latency_remaining !== "number" ||
     (value.daily_token_remaining !== null && typeof value.daily_token_remaining !== "number") ||
     (value.monthly_token_remaining !== null && typeof value.monthly_token_remaining !== "number")
@@ -282,7 +297,7 @@ async function recordStep(
   inputPayload: JsonRecord,
   outputPayload: JsonRecord,
   status: "completed" | "failed" | "blocked" = "completed",
-  usage: { tokens: number; costUsd: number; latencyMs: number } = {
+  usage: RecordedUsage = {
     tokens: 0,
     costUsd: 0,
     latencyMs: 0,
@@ -302,7 +317,11 @@ async function recordStep(
       tokens_used: usage.tokens,
       cost_usd: usage.costUsd,
       latency_ms: usage.latencyMs,
-      provenance: { runtime: "custodian-run", evidence_untrusted: true },
+      ...(usage.pricingVersion ? { pricing_version: usage.pricingVersion } : {}),
+      provenance: {
+        runtime: "custodian-run",
+        evidence_untrusted: true,
+      },
     },
   });
   return runFromRpc(value);
@@ -395,6 +414,53 @@ function validSynthesis(value: unknown): value is JsonRecord {
   );
 }
 
+export function evaluatePricedProviderResponse(
+  upstream: unknown,
+  stage: RunStage,
+  pricing: ModelPricing,
+  latencyMs: number,
+): {
+  output: JsonRecord;
+  usage: RecordedUsage & { pricingVersion: string };
+} {
+  const usage = readUsage(upstream);
+  if (!usage) {
+    throw new SafeFailure(
+      502,
+      "openai_usage_missing",
+      "Custodian model response did not include complete usage accounting.",
+      latencyMs,
+    );
+  }
+  const costUsd = calculateUsageCost(usage, pricing);
+  if (costUsd === null) {
+    throw new SafeFailure(
+      502,
+      "model_pricing_invalid",
+      "Custodian model pricing could not be applied safely.",
+      latencyMs,
+    );
+  }
+  const accountedUsage: RecordedUsage & { pricingVersion: string } = {
+    tokens: usage.tokens,
+    costUsd,
+    latencyMs,
+    pricingVersion: pricing.version,
+  };
+  const output = extractResponsesJson(upstream);
+  const invalidOutput = stage === "extract" ? !validExtraction(output) : !validSynthesis(output);
+  if (invalidOutput) {
+    throw new SafeFailure(
+      502,
+      "openai_invalid_output",
+      "Custodian model returned an invalid bounded result.",
+      latencyMs,
+      accountedUsage,
+    );
+  }
+  return { output, usage: accountedUsage };
+}
+
 function publicRun(run: AgentRun): JsonRecord {
   return {
     id: run.id,
@@ -479,9 +545,10 @@ async function callResponses(
   run: AgentRun,
   stage: RunStage,
   remainingTokens: number,
+  remainingCostUsd: number,
 ): Promise<{
   output: JsonRecord;
-  usage: { tokens: number; costUsd: number; latencyMs: number };
+  usage: { tokens: number; costUsd: number; latencyMs: number; pricingVersion: string };
   tier: ModelTier;
 }> {
   const allowedTiers = await resolveAllowedModelTiers(auth.client, auth.user.id, run);
@@ -493,6 +560,14 @@ async function callResponses(
       502,
       "model_tier_not_allowed",
       "The persisted Custodian model tier is not allowed by its owner policy.",
+    );
+  }
+  const pricing = resolveModelPricing(Deno.env.get(CUSTODIAN_MODEL_PRICING_ENV), selected.model);
+  if (!pricing) {
+    throw new SafeFailure(
+      503,
+      "model_pricing_unavailable",
+      "Custodian model pricing is unavailable, so provider execution remains blocked.",
     );
   }
   let systemPrompt: string;
@@ -513,6 +588,7 @@ async function callResponses(
       "Custodian model service is not configured.",
     );
   const evidence = boundedEvidence({ objective: run.objective, evidence: run.input_snapshot });
+  const maxOutputTokens = boundedOutputBudget(remainingTokens);
   const request = buildResponsesRequest({
     stage,
     model: selected.model,
@@ -520,8 +596,17 @@ async function callResponses(
     untrustedEvidence: evidence,
     schemaName: stage === "extract" ? "custodian_extraction" : "custodian_synthesis",
     schema: stage === "extract" ? EXTRACTION_SCHEMA : SYNTHESIS_SCHEMA,
-    maxOutputTokens: boundedOutputBudget(remainingTokens),
+    maxOutputTokens,
   });
+  const inputBytes = new TextEncoder().encode(JSON.stringify(request)).byteLength;
+  const maximumCost = maximumPotentialUsageCost(inputBytes, maxOutputTokens, pricing);
+  if (maximumCost === null || maximumCost > remainingCostUsd) {
+    throw new SafeFailure(
+      503,
+      "run_cost_budget_insufficient",
+      "The remaining Custodian cost budget cannot safely cover a provider call.",
+    );
+  }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS);
   const startedAt = performance.now();
@@ -548,36 +633,27 @@ async function callResponses(
         "Custodian model returned an invalid response.",
       );
     }
-    const output = extractResponsesJson(upstream);
-    if (stage === "extract") {
-      if (!validExtraction(output)) {
-        throw new SafeFailure(
-          502,
-          "openai_invalid_output",
-          "Custodian model returned an invalid bounded result.",
-        );
-      }
-    } else if (!validSynthesis(output)) {
-      throw new SafeFailure(
-        502,
-        "openai_invalid_output",
-        "Custodian model returned an invalid bounded result.",
-      );
-    }
-    const usage = readUsage(upstream);
+    const evaluated = evaluatePricedProviderResponse(
+      upstream,
+      stage,
+      pricing,
+      Math.max(0, Math.round(performance.now() - startedAt)),
+    );
     return {
-      output,
+      output: evaluated.output,
       tier: selected.tier,
-      usage: {
-        tokens: usage.tokens,
-        costUsd: usage.costUsd,
-        latencyMs: Math.max(0, Math.round(performance.now() - startedAt)),
-      },
+      usage: evaluated.usage,
     };
   } catch (error) {
     const latencyMs = Math.max(0, Math.round(performance.now() - startedAt));
     if (error instanceof SafeFailure) {
-      throw new SafeFailure(error.status, error.code, error.publicMessage, latencyMs);
+      throw new SafeFailure(
+        error.status,
+        error.code,
+        error.publicMessage,
+        latencyMs,
+        error.usage ? { ...error.usage, latencyMs } : undefined,
+      );
     }
     if (controller.signal.aborted)
       throw new SafeFailure(504, "openai_timeout", "Custodian model service timed out.", latencyMs);
@@ -610,7 +686,11 @@ async function failModelStage(
     { stage },
     { errorCode: failure.code },
     "failed",
+    failure.usage,
   );
+  if (TERMINAL_STATES.has(failedStep.status)) {
+    return result(200, "stopped", failedStep, {}, origin);
+  }
   const failedRun = await transitionRun(client, failedStep, invocationKey, "failed", {
     failure_code: failure.code,
     failure_message: failure.publicMessage,
@@ -703,7 +783,8 @@ async function processInvocation(
         auth,
         run,
         stage,
-        Math.min(budget.run_tokens_remaining, budget.run_latency_remaining),
+        budget.run_tokens_remaining,
+        budget.run_cost_remaining,
       );
     } catch (error) {
       if (error instanceof SafeFailure)

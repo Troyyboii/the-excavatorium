@@ -1,20 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { LoginScreen } from "@/components/login-screen";
+import {
+  performOAuthDecision,
+  safeOAuthConsentError,
+  type AuthorizationDetails,
+  type OAuthNamespace,
+} from "@/lib/oauth-consent";
 import { supabase } from "@/lib/supabase";
-
-type AuthorizationDetails = {
-  client?: { name?: string | null } | null;
-  redirect_url?: string | null;
-  redirect_to?: string | null;
-};
-
-type OAuthResult = { data: AuthorizationDetails | null; error: { message: string } | null };
-
-type OAuthNamespace = {
-  getAuthorizationDetails: (id: string) => Promise<OAuthResult>;
-  approveAuthorization: (id: string) => Promise<OAuthResult>;
-  denyAuthorization: (id: string) => Promise<OAuthResult>;
-};
 
 function oauthApi(): OAuthNamespace {
   return (supabase.auth as unknown as { oauth: OAuthNamespace }).oauth;
@@ -26,23 +18,32 @@ export function OAuthConsentPage({ authorizationId }: { authorizationId: string 
   const [details, setDetails] = useState<AuthorizationDetails | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sessionRetry, setSessionRetry] = useState(0);
 
   useEffect(() => {
     let active = true;
-    supabase.auth.getSession().then(({ data }) => {
-      if (!active) return;
-      setSignedIn(Boolean(data.session));
-      setCheckedSession(true);
-    });
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (!active) return;
+        setSignedIn(Boolean(data.session));
+        setCheckedSession(true);
+      })
+      .catch((cause: unknown) => {
+        if (!active) return;
+        setError(safeOAuthConsentError(cause));
+        setCheckedSession(true);
+      });
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       setSignedIn(Boolean(session));
+      if (session) setError(null);
       setCheckedSession(true);
     });
     return () => {
       active = false;
       sub.subscription.unsubscribe();
     };
-  }, []);
+  }, [sessionRetry]);
 
   useEffect(() => {
     if (!signedIn || !authorizationId) return;
@@ -52,7 +53,7 @@ export function OAuthConsentPage({ authorizationId }: { authorizationId: string 
       .then(({ data, error: detailsError }) => {
         if (!active) return;
         if (detailsError) {
-          setError(detailsError.message);
+          setError(safeOAuthConsentError(detailsError));
           return;
         }
         const immediate = data?.redirect_url ?? data?.redirect_to;
@@ -63,7 +64,7 @@ export function OAuthConsentPage({ authorizationId }: { authorizationId: string 
         setDetails(data);
       })
       .catch((cause: unknown) => {
-        if (active) setError(cause instanceof Error ? cause.message : String(cause));
+        if (active) setError(safeOAuthConsentError(cause));
       });
     return () => {
       active = false;
@@ -74,22 +75,18 @@ export function OAuthConsentPage({ authorizationId }: { authorizationId: string 
     async (approve: boolean) => {
       setBusy(true);
       setError(null);
-      const api = oauthApi();
-      const { data, error: decisionError } = approve
-        ? await api.approveAuthorization(authorizationId)
-        : await api.denyAuthorization(authorizationId);
-      if (decisionError) {
-        setBusy(false);
-        setError(decisionError.message);
-        return;
+      let navigating = false;
+      try {
+        const decision = await performOAuthDecision(oauthApi(), authorizationId, approve);
+        if (!decision.redirect) {
+          setError(decision.error);
+          return;
+        }
+        navigating = true;
+        window.location.href = decision.redirect;
+      } finally {
+        if (!navigating) setBusy(false);
       }
-      const target = data?.redirect_url ?? data?.redirect_to;
-      if (!target) {
-        setBusy(false);
-        setError("No redirect was returned by the authorization server.");
-        return;
-      }
-      window.location.href = target;
     },
     [authorizationId],
   );
@@ -109,6 +106,27 @@ export function OAuthConsentPage({ authorizationId }: { authorizationId: string 
     return (
       <main className="mx-auto max-w-md px-4 py-16">
         <p className="text-sm text-muted-foreground">Checking your session…</p>
+      </main>
+    );
+  }
+
+  if (!signedIn && error) {
+    return (
+      <main className="mx-auto max-w-md px-4 py-16">
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+        <button
+          type="button"
+          className="mt-4 rounded-md border px-4 py-2 text-sm font-medium"
+          onClick={() => {
+            setCheckedSession(false);
+            setError(null);
+            setSessionRetry((value) => value + 1);
+          }}
+        >
+          Retry session check
+        </button>
       </main>
     );
   }

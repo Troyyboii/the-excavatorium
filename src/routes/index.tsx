@@ -25,6 +25,22 @@ function CustodianDesk() {
     [archive.data],
   );
 
+  if (archive.state.isColdOffline) {
+    return (
+      <section className="custodian-rule-section">
+        <DeskHeading
+          eyebrow="System state"
+          title="Custodian Desk"
+          description="The archive is unavailable on this device while offline."
+        />
+        <OperationalNotice tone="risk" title="No cached archive">
+          Reconnect to retrieve persisted records. Cached archive material will remain visible when
+          available.
+        </OperationalNotice>
+      </section>
+    );
+  }
+
   if (!archive.data && archive.isPending) {
     return <DeskLoading />;
   }

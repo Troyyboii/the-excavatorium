@@ -62,10 +62,11 @@ git diff --check
 ```
 
 Report the test totals and distinguish lint warnings from errors. The hosted
-[`Validate application`](../.github/workflows/ci.yml) workflow runs lint,
-frontend typecheck, Deno Edge Function checks and guardrail tests, and the
-production build. It does **not** run `bun test src`, so a green hosted job does
-not replace the local frontend suite.
+[`Validate application`](../.github/workflows/ci.yml) workflow runs the
+frontend suite, lint, frontend typecheck, Deno Edge Function checks and
+guardrail tests, the production build, and pgTAP database tests against a
+fresh local Supabase stack. A green hosted job still does not replace direct
+production verification.
 
 ## 3. GitHub and Lovable
 
@@ -123,8 +124,9 @@ Unless a separately approved provider-activation phase has completed, verify:
 
 Provider activation remains blocked until tool policy is mandatory and
 non-null, per-run and cumulative budgets are enforced, allowed model tiers are
-explicit, retries are idempotent, write-capable operations pause for approval,
-and safe resume and audit evidence are verified.
+explicit, concurrent provider calls reserve budget per run, retries are
+idempotent, write-capable operations pause for approval, and safe resume and
+audit evidence are verified.
 
 ## 6. Connector and owner isolation
 

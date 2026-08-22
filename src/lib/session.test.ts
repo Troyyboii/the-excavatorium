@@ -122,6 +122,23 @@ describe("session restoration ordering", () => {
     expect(store.getSnapshot()).toEqual({ status: "signed-in", session: otherUser });
     unsubscribe();
   });
+
+  test("accepts USER_UPDATED even when the user id and token are unchanged", async () => {
+    const first = session("user-a", "token-a");
+    const updated: Session = {
+      ...first,
+      user: { ...first.user, user_metadata: { display_name: "Updated name" } },
+    };
+    const auth = authClient(async () => ({ data: { session: first }, error: null }));
+    const store = createSessionStore(auth);
+    const unsubscribe = store.subscribe(() => {});
+    await settle();
+
+    auth.emit("USER_UPDATED", updated);
+
+    expect(store.getSnapshot()).toEqual({ status: "signed-in", session: updated });
+    unsubscribe();
+  });
 });
 
 describe("session restoration failures", () => {

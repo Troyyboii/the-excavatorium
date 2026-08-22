@@ -3,7 +3,13 @@ import { useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { useSession } from "@/lib/session";
-import { useArchive, useAppMetadata, useResetArchive, useRestoreArchive } from "@/lib/archive";
+import {
+  exportArchiveSnapshot,
+  useArchive,
+  useAppMetadata,
+  useResetArchive,
+  useRestoreArchive,
+} from "@/lib/archive";
 import { PageHeader, Banner, Toast } from "@/components/page-parts";
 import {
   backupFilename,
@@ -48,7 +54,7 @@ function Page() {
       <fieldset disabled={!online} className="space-y-6 disabled:opacity-75">
         <AccountSection email={email} setToast={setToast} setError={setError} />
         <PasswordSection />
-        <BackupSection q={q} setToast={setToast} setError={setError} />
+        <BackupSection q={q} online={online} setToast={setToast} setError={setError} />
         <StorageSection />
         <DestructiveSection setToast={setToast} setError={setError} />
         <DiagnosticsSection
@@ -224,10 +230,12 @@ function PasswordSection() {
 
 function BackupSection({
   q,
+  online,
   setToast,
   setError,
 }: {
   q: ReturnType<typeof useArchive>;
+  online: boolean;
   setToast: (m: string) => void;
   setError: (m: string | null) => void;
 }) {
@@ -238,25 +246,27 @@ function BackupSection({
     payload: ReturnType<typeof buildBackup>;
   } | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
-  // Backup is only safe to generate when the complete paginated archive
-  // has loaded successfully. A pending or errored archive must not become
-  // an empty "backup" on disk.
+  // Import and restore need a complete locally loaded archive for their
+  // destructive confirmation boundary. Export uses a separate fresh RPC.
   const archiveReady = q.isSuccess && !!q.data;
+  const archiveColdOffline = q.state.isColdOffline;
+  const linksColdOffline = q.state.linksColdOffline && !!q.data;
   const archiveError = q.isError
     ? q.error instanceof Error
       ? q.error.message
       : String(q.error)
     : null;
 
-  function onExport() {
+  async function onExport() {
     setError(null);
-    if (!archiveReady || !q.data) {
-      setError("Backup unavailable: the current archive has not finished loading.");
-      return;
-    }
+    setExporting(true);
     try {
-      const data = buildBackup(q.data.records, q.data.links);
+      const snapshot = await exportArchiveSnapshot();
+      // buildBackup intentionally detaches private document Storage paths;
+      // validate only that detached, downloadable artifact.
+      const data = buildBackup(snapshot.records, snapshot.links);
       // Validate the freshly built backup before offering it for download.
       const check = validateBackup(data);
       if (!check.ok) {
@@ -267,6 +277,8 @@ function BackupSection({
       setToast("Backup downloaded");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Export failed.");
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -313,22 +325,35 @@ function BackupSection({
     <Card title="Backup and restore">
       {archiveError ? (
         <Banner kind="error" title="Archive failed to load">
-          Backup and restore are disabled until the archive loads. {archiveError}
+          Import and restore are disabled until the archive loads. A fresh export remains available
+          while online. {archiveError}
         </Banner>
       ) : null}
-      {!archiveReady && !archiveError ? (
+      {archiveColdOffline ? (
+        <Banner kind="warning" title="Archive unavailable offline">
+          This device has no cached archive. Reconnect before importing or restoring data. Export
+          remains disabled offline because it creates a fresh server snapshot.
+        </Banner>
+      ) : null}
+      {linksColdOffline ? (
+        <Banner kind="warning" title="Cached archive has no link evidence">
+          Cached records remain visible, but links were not cached. Reconnect before importing or
+          restoring data.
+        </Banner>
+      ) : null}
+      {!archiveReady && !archiveError && !archiveColdOffline && !linksColdOffline ? (
         <p className="text-sm text-muted-foreground">
-          Loading the complete archive… Backup and restore will enable once it is ready.
+          Loading the complete archive… Import and restore enable once it is ready.
         </p>
       ) : null}
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          onClick={onExport}
-          disabled={!archiveReady}
+          onClick={() => void onExport()}
+          disabled={!online || exporting}
           className="inline-flex min-h-11 items-center rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground hover:bg-[color:var(--record-hover)] disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Export JSON backup
+          {exporting ? "Exporting…" : "Export JSON backup"}
         </button>
         <label
           className={`inline-flex min-h-11 items-center rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground hover:bg-[color:var(--record-hover)] ${
@@ -385,8 +410,8 @@ function BackupSection({
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={onExport}
-              disabled={!archiveReady}
+              onClick={() => void onExport()}
+              disabled={!online || exporting}
               className="inline-flex min-h-11 items-center rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-60"
             >
               Download current backup first

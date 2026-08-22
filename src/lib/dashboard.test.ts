@@ -99,4 +99,22 @@ describe("buildDashboardViewModel", () => {
     expect(decision?.date).toBe("2025-01-01");
     expect(model.recentItems[0]?.record.title).toBe("Awaiting repository");
   });
+
+  test("excludes records older than seven days from recent activity", () => {
+    const staleRecord: ArchiveRecord = {
+      ...records[0],
+      id: "stale-conversation",
+      title: "Stale conversation",
+      updatedAt: "2026-07-31T23:59:59.000Z",
+    };
+
+    const model = buildDashboardViewModel(
+      [...records, staleRecord],
+      links,
+      new Date("2026-08-08T12:00:00.000Z"),
+    );
+
+    expect(model.recentCount).toBe(3);
+    expect(model.recentItems.map((item) => item.record.id)).not.toContain("stale-conversation");
+  });
 });

@@ -25,12 +25,21 @@ import { archiveRecordHref } from "@/components/custodian/custodian-format";
 import { FoundationState } from "@/components/custodian/custodian-ui";
 import { useOnlineStatus } from "@/hooks/use-online";
 import { cn } from "@/lib/utils";
+import {
+  getGraphLinkReadState,
+  graphLinkEvidenceLabel,
+  type GraphLinkReadState,
+} from "@/lib/graph-read-state";
 
 type GraphSearch = {
   record?: string;
   view: "map" | "links";
   types?: string;
 };
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
 
 export const Route = createFileRoute("/graph")({
   ssr: false,
@@ -64,6 +73,11 @@ function GraphPage() {
   const [term, setTerm] = useState("");
   const [zoom, setZoom] = useState(1.15);
   const [mobileSheet, setMobileSheet] = useState<"details" | "links" | null>(null);
+  const linkReadState = getGraphLinkReadState({
+    pending: query.state.linksPending,
+    error: query.linksError,
+    coldOffline: query.state.linksColdOffline,
+  });
   const selectedTypes = useMemo(() => parseTypes(search.types), [search.types]);
   const graph = useMemo(
     () => buildArchiveGraph(query.data?.records ?? [], query.data?.links ?? [], selectedTypes),
@@ -118,6 +132,17 @@ function GraphPage() {
     });
   }
 
+  if (query.state.isColdOffline) {
+    return (
+      <div className="p-4 md:p-8">
+        <FoundationState title="Archive unavailable offline">
+          Network unavailable and no cached archive is available on this device. Reconnect to read
+          persisted records and links.
+        </FoundationState>
+      </div>
+    );
+  }
+
   if (!query.data) {
     return (
       <div className="p-4 md:p-8">
@@ -150,7 +175,15 @@ function GraphPage() {
           <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-muted-foreground">
             <span>{query.data.records.length} records</span>
             <span aria-hidden="true">·</span>
-            <span>{query.data.links.length} persisted links</span>
+            <span>
+              {linkReadState === "pending"
+                ? "Retrieving persisted links"
+                : linkReadState === "cold-offline"
+                  ? "No cached link evidence"
+                  : linkReadState === "error"
+                    ? "Link evidence unavailable"
+                    : `${query.data.links.length} persisted links`}
+            </span>
             <span aria-hidden="true">·</span>
             <span>{online ? "Archive available" : "Cached view"}</span>
           </div>
@@ -250,6 +283,7 @@ function GraphPage() {
               setZoom={setZoom}
               selectRecord={selectRecord}
               setMobileSheet={setMobileSheet}
+              linkReadState={linkReadState}
             />
           ) : null}
 
@@ -258,6 +292,9 @@ function GraphPage() {
             records={query.data.byId}
             selected={Boolean(selectedId)}
             emphasized={search.view === "links"}
+            linkReadState={linkReadState}
+            linksError={query.linksError}
+            onRetry={online ? () => void query.refetchLinks() : undefined}
           />
         </div>
 
@@ -295,7 +332,15 @@ function GraphPage() {
                 onSelect={selectRecord}
               />
             ) : (
-              <LinkLedger edges={incidentLinks} records={query.data.byId} selected emphasized />
+              <LinkLedger
+                edges={incidentLinks}
+                records={query.data.byId}
+                selected
+                emphasized
+                linkReadState={linkReadState}
+                linksError={query.linksError}
+                onRetry={online ? () => void query.refetchLinks() : undefined}
+              />
             )}
           </div>
         </div>
@@ -316,6 +361,7 @@ function GraphCanvas({
   setZoom,
   selectRecord,
   setMobileSheet,
+  linkReadState,
 }: {
   graph: ReturnType<typeof buildArchiveGraph>;
   projected: GraphNode[];
@@ -328,6 +374,7 @@ function GraphCanvas({
   setZoom: React.Dispatch<React.SetStateAction<number>>;
   selectRecord: (id: string) => void;
   setMobileSheet: (value: "details" | "links") => void;
+  linkReadState: GraphLinkReadState;
 }) {
   return (
     <section
@@ -355,7 +402,7 @@ function GraphCanvas({
         <svg
           viewBox="-500 -340 1000 680"
           className="h-[520px] w-full md:h-[620px]"
-          aria-label={`${projected.length} persisted archive records connected by ${graph.edges.length} persisted links`}
+          aria-label={`${projected.length} persisted archive records; ${graphLinkEvidenceLabel(linkReadState, graph.edges.length)}`}
         >
           <g
             transform={`translate(${selectedId ? -(projectedById.get(selectedId)?.x ?? 0) : 0} ${selectedId ? -(projectedById.get(selectedId)?.y ?? 0) : 0}) scale(${zoom})`}
@@ -646,11 +693,17 @@ function LinkLedger({
   records,
   selected,
   emphasized,
+  linkReadState,
+  linksError,
+  onRetry,
 }: {
   edges: ReturnType<typeof buildArchiveGraph>["edges"];
   records: Map<string, ArchiveRecord>;
   selected: boolean;
   emphasized?: boolean;
+  linkReadState: GraphLinkReadState;
+  linksError: unknown;
+  onRetry?: () => void;
 }) {
   return (
     <section
@@ -667,46 +720,94 @@ function LinkLedger({
           </h2>
         </div>
         <span className="font-mono text-[11px] text-muted-foreground">
-          {edges.length} persisted
+          {linkReadState === "pending"
+            ? "Retrieving…"
+            : linkReadState === "cold-offline"
+              ? "No cached links"
+              : linkReadState === "error"
+                ? `${edges.length} cached`
+                : `${edges.length} persisted`}
         </span>
       </header>
-      {edges.length ? (
-        <div className="overflow-x-auto">
-          <table className="custodian-table min-w-[760px]">
-            <thead>
-              <tr>
-                <th>Source</th>
-                <th>Target</th>
-                <th>Type</th>
-                <th>Created</th>
-              </tr>
-            </thead>
-            <tbody>
-              {edges.map((edge) => (
-                <tr key={edge.id}>
-                  <td>
-                    <LedgerRecord record={records.get(edge.source.id)} id={edge.source.id} />
-                  </td>
-                  <td>
-                    <LedgerRecord record={records.get(edge.target.id)} id={edge.target.id} />
-                  </td>
-                  <td>
-                    <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-                      <LinkSimple size={15} className="text-brass" /> Persisted link
-                    </span>
-                  </td>
-                  <td className="font-mono text-xs text-muted-foreground">
-                    {formatArchiveDate(edge.link.createdAt)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {linkReadState === "cold-offline" ? (
+        <p className="px-4 py-8 text-sm text-muted-foreground md:px-7">
+          Network unavailable. This device has no cached persisted link evidence.
+        </p>
+      ) : linkReadState === "pending" ? (
+        <p className="px-4 py-8 text-sm text-muted-foreground md:px-7">
+          Retrieving persisted links…
+        </p>
+      ) : linkReadState === "error" && edges.length === 0 ? (
+        <div className="space-y-3 px-4 py-8 text-sm text-muted-foreground md:px-7">
+          <p>{errorMessage(linksError, "Persisted links could not be retrieved.")}</p>
+          {onRetry ? (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="inline-flex min-h-11 items-center border border-input px-3 py-2 text-sm text-foreground hover:bg-record-hover"
+            >
+              Retry links
+            </button>
+          ) : null}
         </div>
       ) : (
-        <p className="px-4 py-8 text-sm text-muted-foreground md:px-7">
-          No persisted links are available in this view.
-        </p>
+        <>
+          {linkReadState === "error" ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 text-sm text-muted-foreground md:px-7">
+              <span>
+                Showing cached links. The latest refresh failed:{" "}
+                {errorMessage(linksError, "unknown error")}
+              </span>
+              {onRetry ? (
+                <button
+                  type="button"
+                  onClick={onRetry}
+                  className="inline-flex min-h-11 items-center border border-input px-3 py-2 text-sm text-foreground hover:bg-record-hover"
+                >
+                  Retry links
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+          {edges.length ? (
+            <div className="overflow-x-auto">
+              <table className="custodian-table min-w-[760px]">
+                <thead>
+                  <tr>
+                    <th>Source</th>
+                    <th>Target</th>
+                    <th>Type</th>
+                    <th>Created</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {edges.map((edge) => (
+                    <tr key={edge.id}>
+                      <td>
+                        <LedgerRecord record={records.get(edge.source.id)} id={edge.source.id} />
+                      </td>
+                      <td>
+                        <LedgerRecord record={records.get(edge.target.id)} id={edge.target.id} />
+                      </td>
+                      <td>
+                        <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                          <LinkSimple size={15} className="text-brass" /> Persisted link
+                        </span>
+                      </td>
+                      <td className="font-mono text-xs text-muted-foreground">
+                        {formatArchiveDate(edge.link.createdAt)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="px-4 py-8 text-sm text-muted-foreground md:px-7">
+              No persisted links are available in this view.
+            </p>
+          )}
+        </>
       )}
     </section>
   );
