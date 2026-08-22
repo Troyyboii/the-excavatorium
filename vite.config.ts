@@ -14,9 +14,7 @@ import { mcpPlugin } from "@lovable.dev/mcp-js/stacks/tanstack/vite";
 // @lovable.dev/mcp-js 0.26.1 also rejects Vite's slash-normalized root on
 // Windows, where the committed project-owned routes are used directly.
 const mcpVitePlugins =
-  process.platform === "win32"
-    ? []
-    : [mcpPlugin({ routesDir: ".lovable/mcp-generated-routes" })];
+  process.platform === "win32" ? [] : [mcpPlugin({ routesDir: ".lovable/mcp-generated-routes" })];
 
 export default defineConfig({
   tanstackStart: {
