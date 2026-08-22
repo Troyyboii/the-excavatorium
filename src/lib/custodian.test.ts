@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import {
   CustodianFoundationMissingError,
   classifyCustodianError,
+  composeCustodianRecordContext,
+  custodianRecordContextKey,
   isClaimStatus,
   isCustodianFoundationMissing,
   mapClaimRow,
@@ -11,6 +13,7 @@ import {
   upsertCustodianClaim,
   validateConfidence,
 } from "./custodian";
+import type { Claim, ClaimEvidence, CustodianCase, EvidenceItem } from "./custodian-types";
 
 const timestamps = {
   created_at: "2026-08-11T19:00:00.000Z",
@@ -112,6 +115,98 @@ describe("Custodian foundation and pagination", () => {
       { from: 0, to: 1 },
       { from: 2, to: 3 },
     ]);
+  });
+});
+
+describe("Custodian record context", () => {
+  test("keeps the query key isolated by owner and record", () => {
+    expect(custodianRecordContextKey("owner-1", "record-1")).toEqual([
+      "custodian",
+      "record-context",
+      "owner-1",
+      "record-1",
+    ]);
+    expect(custodianRecordContextKey(null, null)).toEqual([
+      "custodian",
+      "record-context",
+      "__anonymous__",
+      "__unknown__",
+    ]);
+  });
+
+  test("groups only returned cases and relationships for the bounded record context", () => {
+    const claim = {
+      id: "claim-1",
+      caseId: "case-1",
+      statement: "A scoped claim",
+      status: "observed",
+      confidence: 80,
+      whatWouldChangeMind: "A contrary source",
+      revisitCondition: "Next review",
+      sourceRecordId: "record-1",
+      lifecycleStatus: "active",
+      createdBy: "owner-1",
+      updatedBy: "owner-1",
+      createdAt: timestamps.created_at,
+      updatedAt: timestamps.updated_at,
+    } satisfies Claim;
+    const evidence = {
+      id: "evidence-1",
+      caseId: "case-1",
+      title: "Scoped evidence",
+      content: "source",
+      contentHash: "hash-1",
+      sourceClassification: "primary",
+      sourceUri: "https://example.com/source",
+      sourceRecordId: "record-1",
+      provenance: {},
+      lifecycleStatus: "active",
+      immutable: true,
+      capturedAt: timestamps.created_at,
+      supersedesId: null,
+      createdBy: "owner-1",
+      updatedBy: "owner-1",
+      createdAt: timestamps.created_at,
+      updatedAt: timestamps.updated_at,
+    } satisfies EvidenceItem;
+    const linked = {
+      id: "link-1",
+      caseId: "case-1",
+      claimId: "claim-1",
+      evidenceId: "evidence-1",
+      relationshipNote: "supports",
+      lifecycleStatus: "active",
+      createdBy: "owner-1",
+      updatedBy: "owner-1",
+      createdAt: timestamps.created_at,
+      updatedAt: timestamps.updated_at,
+    } satisfies ClaimEvidence;
+    const unrelated = { ...linked, id: "link-2", evidenceId: "other-record-evidence" };
+    const context = composeCustodianRecordContext({
+      cases: [
+        {
+          id: "case-1",
+          title: "Scoped case",
+          objective: "Test scope",
+          currentQuestion: "What is true?",
+          defaultWorkingSet: [],
+          status: "open",
+          closedAt: null,
+          createdBy: "owner-1",
+          updatedBy: "owner-1",
+          createdAt: timestamps.created_at,
+          updatedAt: timestamps.updated_at,
+        } satisfies CustodianCase,
+        { id: "case-2" } as CustodianCase,
+      ],
+      claims: [claim],
+      evidence: [evidence],
+      claimEvidence: [linked, unrelated],
+      findings: [],
+    });
+
+    expect(context.cases.map((item) => item.id)).toEqual(["case-1"]);
+    expect(context.claimEvidence.map((item) => item.id)).toEqual(["link-1"]);
   });
 });
 

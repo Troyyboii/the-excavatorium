@@ -31,7 +31,7 @@ export function CustodianScaffold({
           ))}
         </div>
       </Section>
-      <p className="flex items-center gap-2 text-xs text-brass-muted">
+      <p className="flex items-center gap-2 text-xs text-luminous-gold">
         <Flag size={15} aria-hidden="true" />
         No execution, model, cost, approval, or health value is being claimed here.
       </p>

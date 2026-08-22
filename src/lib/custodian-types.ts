@@ -342,6 +342,14 @@ export type CustodianFinding = {
   updatedAt: string;
 };
 
+export type CustodianRecordContext = {
+  cases: CustodianCase[];
+  claims: Claim[];
+  evidence: EvidenceItem[];
+  claimEvidence: ClaimEvidence[];
+  findings: CustodianFinding[];
+};
+
 export type RecordRevisionRow = {
   id: string;
   owner_id: string;

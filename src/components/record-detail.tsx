@@ -7,6 +7,9 @@ import { plural, recordHref, TypeIcon, TombstoneIfBuried } from "./record-list";
 import { PageHeader, Toast } from "./page-parts";
 import { download, toMarkdown } from "@/lib/format";
 import { supabase } from "@/lib/supabase";
+import { useOnlineStatus } from "@/hooks/use-online";
+import { isCustodianFoundationMissing, useCustodianRecordContext } from "@/lib/custodian";
+import { RecordEvidenceReader } from "./custodian/record-evidence-reader";
 
 function editRoute(record: ArchiveRecord) {
   switch (record.recordType) {
@@ -35,6 +38,8 @@ export function RecordDetail({
   byId: Map<string, ArchiveRecord>;
 }) {
   const [toast, setToast] = useState<string | null>(null);
+  const online = useOnlineStatus();
+  const contextQuery = useCustodianRecordContext(record.id, online);
 
   const linked = allLinks
     .filter((l) => l.sourceId === record.id)
@@ -99,17 +104,37 @@ export function RecordDetail({
         <p className="mb-6 whitespace-pre-wrap text-sm text-foreground">{record.summary}</p>
       ) : null}
 
-      <div className="space-y-6">
-        {record.recordType === "tool" ? <ToolDetail r={record} byId={byId} /> : null}
-        {record.recordType === "repository" ? <RepositoryDetail r={record} /> : null}
-        {record.recordType === "conversation" ? (
-          <ConversationDetail r={record} onToast={setToast} />
-        ) : null}
-        {record.recordType === "decision" ? <DecisionDetail r={record} byId={byId} /> : null}
-        {record.recordType === "document" ? <DocumentDetail r={record} onToast={setToast} /> : null}
+      <div className="grid min-w-0 gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)]">
+        <div className="min-w-0 space-y-6">
+          <section className="border-b border-border pb-2">
+            <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[color:var(--luminous-gold)]">
+              Canonical record
+            </p>
+          </section>
+          {record.recordType === "tool" ? <ToolDetail r={record} byId={byId} /> : null}
+          {record.recordType === "repository" ? <RepositoryDetail r={record} /> : null}
+          {record.recordType === "conversation" ? (
+            <ConversationDetail r={record} onToast={setToast} />
+          ) : null}
+          {record.recordType === "decision" ? <DecisionDetail r={record} byId={byId} /> : null}
+          {record.recordType === "document" ? (
+            <DocumentDetail r={record} onToast={setToast} />
+          ) : null}
 
-        <LinkedSection title="Linked records" items={linked} />
-        <LinkedSection title="Backlinks" items={backlinked} />
+          <LinkedSection title="Linked records" items={linked} />
+          <LinkedSection title="Backlinks" items={backlinked} />
+        </div>
+
+        <RecordEvidenceReader
+          record={record}
+          context={contextQuery.data}
+          linkedRecordCount={linked.length}
+          backlinkCount={backlinked.length}
+          loading={online && contextQuery.isPending}
+          online={online}
+          foundationPending={isCustodianFoundationMissing(contextQuery.error)}
+          error={contextQuery.error instanceof Error ? contextQuery.error.message : null}
+        />
       </div>
 
       {toast ? <Toast message={toast} onClose={() => setToast(null)} /> : null}
@@ -454,7 +479,7 @@ function LinkedSection({ title, items }: { title: string; items: ArchiveRecord[]
                   <li key={r.id}>
                     <Link
                       to={recordHref(r)}
-                      className="inline-flex items-center gap-2 text-sm text-foreground hover:text-[color:var(--brass)]"
+                      className="inline-flex min-h-11 items-center gap-2 rounded-md px-2 py-1 text-sm text-foreground hover:text-[color:var(--brass)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold"
                     >
                       <TypeIcon type={r.recordType} />
                       {r.title}

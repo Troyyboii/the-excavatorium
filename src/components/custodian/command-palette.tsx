@@ -42,9 +42,14 @@ const CREATION_ROUTES = [
 type CommandPaletteProps = {
   enabled?: boolean;
   shortcutScope?: "all" | "mobile" | "desktop";
+  inverse?: boolean;
 };
 
-export function CommandPalette({ enabled = true, shortcutScope = "all" }: CommandPaletteProps) {
+export function CommandPalette({
+  enabled = true,
+  shortcutScope = "all",
+  inverse = false,
+}: CommandPaletteProps) {
   const [open, setOpen] = useState(false);
   const archive = useArchive(enabled);
   const records = useMemo(
@@ -85,11 +90,23 @@ export function CommandPalette({ enabled = true, shortcutScope = "all" }: Comman
         <button
           type="button"
           aria-label="Open Custodian command palette"
-          className="inline-flex min-h-10 items-center gap-3 border border-luminous-gold/30 bg-background px-3 text-sm text-muted-foreground transition-colors hover:border-luminous-gold/60 hover:text-white-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold"
+          className={`inline-flex min-h-11 items-center gap-3 border px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold ${
+            inverse
+              ? "border-sidebar-border bg-sidebar text-sidebar-foreground hover:border-sidebar-ring hover:text-sidebar-foreground"
+              : "border-luminous-gold/30 bg-background text-muted-foreground hover:border-luminous-gold/60 hover:text-white-gold"
+          }`}
         >
           <MagnifyingGlass size={16} aria-hidden="true" />
           <span className="hidden sm:inline">Command the archive…</span>
-          <span className="font-mono text-[10px] text-luminous-gold">⌘K</span>
+          <span
+            className={
+              inverse
+                ? "font-mono text-[10px] text-sidebar-foreground/70"
+                : "font-mono text-[10px] text-luminous-gold"
+            }
+          >
+            ⌘K
+          </span>
         </button>
       }
     >

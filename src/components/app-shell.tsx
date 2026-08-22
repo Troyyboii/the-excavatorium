@@ -25,20 +25,40 @@ import { useOnlineStatus } from "@/hooks/use-online";
 import { CommandPalette } from "@/components/custodian/command-palette";
 import { CustodianStatus } from "@/components/custodian/custodian-ui";
 
-const NAV = [
-  { to: "/", label: "Custodian Desk", icon: House, end: true },
-  { to: "/inbox", label: "Inbox", icon: Tray },
-  { to: "/cases", label: "Cases", icon: FolderOpen },
-  { to: "/archive", label: "Archive", icon: Archive },
-  { to: "/conversations", label: "Conversations", icon: ChatCenteredDots },
-  { to: "/documents", label: "Documents", icon: FileText },
-  { to: "/tools", label: "Tools", icon: Wrench },
-  { to: "/repositories", label: "Repositories", icon: BookOpen },
-  { to: "/decisions", label: "Decisions", icon: Scales },
-  { to: "/graph", label: "Graph", icon: Graph },
-  { to: "/timeline", label: "Timeline", icon: ClockCounterClockwise },
-  { to: "/search", label: "Search", icon: MagnifyingGlass },
-  { to: "/settings", label: "Settings", icon: Gear },
+const NAV_GROUPS = [
+  {
+    label: "Work",
+    items: [
+      { to: "/", label: "Custodian Desk", icon: House, end: true },
+      { to: "/inbox", label: "Inbox", icon: Tray },
+      { to: "/cases", label: "Cases", icon: FolderOpen },
+    ],
+  },
+  {
+    label: "Records",
+    items: [
+      { to: "/archive", label: "Archive", icon: Archive },
+      { to: "/conversations", label: "Conversations", icon: ChatCenteredDots },
+      { to: "/documents", label: "Documents", icon: FileText },
+      { to: "/repositories", label: "Repositories", icon: BookOpen },
+    ],
+  },
+  {
+    label: "Judgment",
+    items: [
+      { to: "/decisions", label: "Decisions", icon: Scales },
+      { to: "/graph", label: "Graph", icon: Graph },
+      { to: "/timeline", label: "Timeline", icon: ClockCounterClockwise },
+    ],
+  },
+  {
+    label: "System",
+    items: [
+      { to: "/tools", label: "Tools", icon: Wrench },
+      { to: "/search", label: "Search", icon: MagnifyingGlass },
+      { to: "/settings", label: "Settings", icon: Gear },
+    ],
+  },
 ] as const;
 
 const NEW_LINKS = [
@@ -68,7 +88,7 @@ export function AppShell({ email, children }: { email: string | null; children: 
 
   return (
     <div className="flex min-h-screen bg-background text-foreground">
-      <aside className="hidden w-[232px] shrink-0 flex-col border-r border-[color:var(--strong-border)] bg-sidebar md:flex">
+      <aside className="hidden w-[232px] shrink-0 flex-col border-r border-sidebar-border bg-sidebar md:flex">
         <SidebarInner email={email} onSignOut={onSignOut} isActive={isActive} />
       </aside>
 
@@ -81,7 +101,7 @@ export function AppShell({ email, children }: { email: string | null; children: 
             aria-label="Close navigation"
           />
           <aside
-            className="fixed inset-y-0 left-0 z-50 flex w-[min(300px,82vw)] max-w-full flex-col border-r border-border bg-sidebar md:hidden"
+            className="fixed inset-y-0 left-0 z-50 flex w-[min(300px,82vw)] max-w-full flex-col border-r border-sidebar-border bg-sidebar md:hidden"
             role="dialog"
             aria-label="Browse archive"
           >
@@ -96,11 +116,11 @@ export function AppShell({ email, children }: { email: string | null; children: 
       ) : null}
 
       <div className="relative flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-[color:var(--strong-border)] bg-background/95 px-4 backdrop-blur md:hidden">
-          <span className="min-w-0 flex-1 truncate font-serif text-xl tracking-tight text-white-gold">
+        <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-sidebar-border bg-sidebar/95 px-4 text-sidebar-foreground backdrop-blur md:hidden">
+          <span className="min-w-0 flex-1 truncate font-serif text-xl tracking-tight text-sidebar-foreground">
             The Excavatorium
           </span>
-          <CommandPalette enabled={online} shortcutScope="mobile" />
+          <CommandPalette enabled={online} shortcutScope="mobile" inverse />
           <NewMenu compact online={online} />
         </header>
 
@@ -126,7 +146,7 @@ export function AppShell({ email, children }: { email: string | null; children: 
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
-            className="flex min-h-16 flex-col items-center justify-center gap-1 text-xs text-muted-foreground"
+            className="flex min-h-16 flex-col items-center justify-center gap-1 text-xs text-sidebar-foreground/70"
           >
             <Archive size={22} />
             <span>More</span>
@@ -140,20 +160,20 @@ export function AppShell({ email, children }: { email: string | null; children: 
         </nav>
       </div>
 
-      <aside className="hidden w-[286px] shrink-0 border-l border-[color:var(--strong-border)] bg-sidebar xl:block">
+      <aside className="hidden w-[286px] shrink-0 border-l border-border bg-card text-card-foreground xl:block">
         <div className="sticky top-0 p-5">
           <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-luminous-gold">
             Custodian status
           </p>
-          <h2 className="mt-2 font-serif text-xl text-white-gold">Operational presence</h2>
-          <div className="mt-4 border-y border-[color:var(--strong-border)] py-3">
+          <h2 className="mt-2 font-serif text-xl text-foreground">Operational presence</h2>
+          <div className="mt-4 border-y border-border py-3">
             <CustodianStatus
               status="Dormant"
               online={online}
               detail={online ? "No agent run is active." : "Network unavailable."}
             />
           </div>
-          <dl className="mt-4 divide-y divide-[color:var(--border)] text-xs">
+          <dl className="mt-4 divide-y divide-border text-xs">
             <StatusRow label="Current task" value="No run active" />
             <StatusRow label="Evidence" value="Authenticated archive" />
             <StatusRow label="Model" value="None selected" />
@@ -191,7 +211,7 @@ function NewMenu({ compact = false, online }: { compact?: boolean; online: boole
     <div className="relative">
       <button
         type="button"
-        aria-label="Create a record"
+        aria-label="Create a new capture"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
         disabled={!online}
@@ -201,7 +221,7 @@ function NewMenu({ compact = false, online }: { compact?: boolean; online: boole
         )}
       >
         <Plus size={19} weight="bold" />
-        {compact ? null : <span className="text-sm font-medium">New</span>}
+        {compact ? null : <span className="text-sm font-medium">New capture</span>}
       </button>
       {open ? (
         <div className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-52 overflow-hidden rounded-md border border-border bg-popover shadow-xl">
@@ -241,7 +261,7 @@ function MobileExcavateMenu({ online }: { online: boolean }) {
   }, [open]);
 
   return (
-    <div className="relative flex min-h-16 flex-col items-center justify-center gap-1 text-xs text-white-gold">
+    <div className="relative flex min-h-16 flex-col items-center justify-center gap-1 text-xs text-sidebar-foreground">
       {open ? (
         <div
           id="mobile-excavate-menu"
@@ -290,7 +310,7 @@ function MobileExcavateMenu({ online }: { online: boolean }) {
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
         disabled={!online}
-        className="-mt-5 inline-flex h-12 w-12 items-center justify-center rounded-full border border-[color:var(--luminous-gold)] bg-primary text-white-gold shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold disabled:cursor-not-allowed disabled:opacity-50"
+        className="-mt-5 inline-flex h-12 w-12 items-center justify-center rounded-full border border-[color:var(--luminous-gold)] bg-primary text-sidebar-foreground shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold disabled:cursor-not-allowed disabled:opacity-50"
       >
         <Plus size={23} weight="bold" />
       </button>
@@ -315,7 +335,7 @@ function MobileNavLink({
       to={to}
       className={cn(
         "flex min-h-16 flex-col items-center justify-center gap-1 rounded-md text-xs",
-        active ? "bg-[color:var(--burgundy-muted)] text-white-gold" : "text-muted-foreground",
+        active ? "bg-[color:var(--burgundy-muted)] text-foreground" : "text-sidebar-foreground/70",
       )}
     >
       <Icon size={22} weight={active ? "fill" : "regular"} />
@@ -337,52 +357,57 @@ function SidebarInner({
 }) {
   return (
     <>
-      <div className="flex min-h-16 items-center justify-between border-b border-[color:var(--strong-border)] px-4">
-        <span className="font-serif text-lg tracking-tight text-white-gold">The Excavatorium</span>
+      <div className="flex min-h-16 items-center justify-between border-b border-sidebar-border px-4">
+        <span className="font-serif text-lg tracking-tight text-sidebar-foreground">
+          The Excavatorium
+        </span>
         {onClose ? (
           <button
             type="button"
             aria-label="Close navigation"
-            className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-border text-foreground"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-sidebar-border text-sidebar-foreground"
             onClick={onClose}
           >
             <X size={18} />
           </button>
         ) : null}
       </div>
-      <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 py-3">
-        {NAV.map((item) => {
-          const active = isActive(item.to, "end" in item ? item.end : undefined);
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.to}
-              to={item.to}
-              className={cn(
-                "flex min-h-11 items-center gap-3 rounded-md border-l-2 px-3 py-2 text-sm transition-colors",
-                active
-                  ? "border-[color:var(--luminous-gold)] bg-[color:var(--burgundy-muted)] text-white-gold"
-                  : "border-transparent text-muted-foreground hover:border-[color:var(--brass-muted)] hover:bg-sidebar-accent hover:text-white-gold",
-              )}
-            >
-              <Icon
-                size={18}
-                weight={active ? "fill" : "regular"}
-                className="text-[color:var(--brass)]"
-              />
-              <span>{item.label}</span>
-            </Link>
-          );
-        })}
+      <nav className="min-h-0 flex-1 space-y-5 overflow-y-auto px-2 py-4" aria-label="Primary">
+        {NAV_GROUPS.map((group) => (
+          <div key={group.label} className="space-y-1">
+            <p className="px-3 pb-1 font-mono text-[10px] uppercase tracking-[0.18em] text-sidebar-foreground/70">
+              {group.label}
+            </p>
+            {group.items.map((item) => {
+              const active = isActive(item.to, "end" in item ? item.end : undefined);
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  className={cn(
+                    "flex min-h-11 items-center gap-3 rounded-md border-l-2 px-3 py-2 text-sm transition-colors",
+                    active
+                      ? "border-sidebar-ring bg-sidebar-accent text-sidebar-foreground"
+                      : "border-transparent text-sidebar-foreground/70 hover:border-sidebar-ring/70 hover:bg-sidebar-accent hover:text-sidebar-foreground",
+                  )}
+                >
+                  <Icon size={18} weight={active ? "fill" : "regular"} className="text-brass" />
+                  <span>{item.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        ))}
       </nav>
-      <div className="border-t border-[color:var(--strong-border)] px-3 py-3 text-xs text-muted-foreground">
+      <div className="border-t border-sidebar-border px-3 py-3 text-xs text-sidebar-foreground/70">
         <div className="mb-2 truncate font-mono" title={email ?? ""}>
           {email ?? "—"}
         </div>
         <button
           type="button"
           onClick={onSignOut}
-          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-[color:var(--brass-muted)] bg-card px-3 py-2 text-sm text-white-gold transition-colors hover:border-[color:var(--luminous-gold)] hover:bg-[color:var(--record-hover)]"
+          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-sidebar-border bg-sidebar-accent px-3 py-2 text-sm text-sidebar-foreground transition-colors hover:border-sidebar-ring hover:bg-sidebar-accent/80"
         >
           <SignOut size={16} /> Sign out
         </button>

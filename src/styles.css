@@ -5,9 +5,9 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * The Excavatorium — warm dark archive palette.
- * Colors are declared as raw hex tokens (spec §22) and mapped into the
- * shadcn semantic tokens via @theme inline.
+ * The Excavatorium — light archive shell.
+ * The default surface is warm ivory; the dark values remain available behind
+ * .dark for inverse interpretation, security, and future optional dark mode.
  */
 
 @theme inline {
@@ -64,10 +64,61 @@
   --font-serif: "Libre Caslon Text", "Iowan Old Style", Georgia, serif;
 }
 
-:root,
-.dark {
+:root {
   --radius: 8px;
 
+  --background: #f3eee3;
+  --foreground: #2c2721;
+
+  --card: #fffdf8;
+  --card-foreground: #2c2721;
+  --popover: #fffdf8;
+  --popover-foreground: #2c2721;
+
+  --primary: #852f43;
+  --primary-foreground: #fff9e8;
+
+  --secondary: #e8dfd1;
+  --secondary-foreground: #40372e;
+
+  --muted: #ece5da;
+  --muted-foreground: #6e665d;
+
+  --accent: #e8dfd1;
+  --accent-foreground: #40372e;
+
+  --destructive: #9b3e43;
+  --destructive-foreground: #fff5ea;
+
+  --border: #d4c7b5;
+  --input: #8f7655;
+  --ring: #9a7437;
+
+  --sidebar: #13110f;
+  --sidebar-foreground: #f7ebc8;
+  --sidebar-primary: #852f43;
+  --sidebar-primary-foreground: #fff9e8;
+  --sidebar-accent: #29231c;
+  --sidebar-accent-foreground: #f7ebc8;
+  --sidebar-border: #5b4c38;
+  --sidebar-ring: #e2c477;
+
+  --record: #fffdf8;
+  --record-hover: #eee4d4;
+  --white-gold: #2c2721;
+  --luminous-gold: #795a28;
+  --intelligence: #2c2721;
+  --verified: #4f7b60;
+  --risk: #852f43;
+  --brass: #9a7437;
+  --brass-muted: #9b8669;
+  --burgundy-muted: #f0dce0;
+  --strong-border: #b9a27d;
+  --success: #4f7b60;
+  --warning: #9a672f;
+}
+
+.dark {
   --background: #100f0d;
   --foreground: #faf6ea;
 
@@ -94,15 +145,6 @@
   --border: #5b4c38;
   --input: #5b4c38;
   --ring: #e2c477;
-
-  --sidebar: #13110f;
-  --sidebar-foreground: #f7ebc8;
-  --sidebar-primary: #852f43;
-  --sidebar-primary-foreground: #fff9e8;
-  --sidebar-accent: #29231c;
-  --sidebar-accent-foreground: #f7ebc8;
-  --sidebar-border: #5b4c38;
-  --sidebar-ring: #e2c477;
 
   --record: #1f1b16;
   --record-hover: #30281d;
@@ -267,7 +309,7 @@
     bottom: 0.8rem;
     left: 0.24rem;
     width: 1px;
-    background: linear-gradient(var(--luminous-gold), var(--brass-muted));
+    background: var(--brass-muted);
     content: "";
   }
 

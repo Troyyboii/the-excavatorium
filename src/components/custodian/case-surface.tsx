@@ -63,7 +63,7 @@ export function CaseListSurface({
           type="button"
           disabled={!online}
           onClick={() => setCreating((value) => !value)}
-          className="inline-flex min-h-11 items-center gap-2 border border-luminous-gold/55 bg-primary px-4 text-sm text-white-gold transition-colors hover:border-white-gold disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex min-h-11 items-center gap-2 border border-luminous-gold/55 bg-primary px-4 text-sm text-primary-foreground transition-colors hover:border-white-gold disabled:cursor-not-allowed disabled:opacity-50"
         >
           {creating ? <X size={17} /> : <Plus size={17} weight="bold" />}
           {creating ? "Close case form" : "Create case"}
@@ -207,6 +207,7 @@ export function CaseDetailSurface({
             id: claim.id,
             title: claim.statement,
             meta: `${claim.status} · ${claim.confidence}% confidence`,
+            sourceRecord: claim.sourceRecordId ? recordsById.get(claim.sourceRecordId) : undefined,
           }))}
         />
         <CaseCollection
@@ -217,6 +218,7 @@ export function CaseDetailSurface({
             id: entry.id,
             title: entry.title || "Untitled evidence",
             meta: `${entry.sourceClassification} · captured ${formatRecordDate(entry.capturedAt)}`,
+            sourceRecord: entry.sourceRecordId ? recordsById.get(entry.sourceRecordId) : undefined,
           }))}
         />
         <CaseCollection
@@ -227,6 +229,9 @@ export function CaseDetailSurface({
             id: finding.id,
             title: finding.title,
             meta: `${finding.analysisMode} · ${finding.status}`,
+            sourceRecord: finding.sourceRecordId
+              ? recordsById.get(finding.sourceRecordId)
+              : undefined,
           }))}
         />
         <CaseCollection
@@ -368,7 +373,7 @@ function CaseEditor({
           <button
             type="submit"
             disabled={saving || !title.trim()}
-            className="inline-flex min-h-11 items-center gap-2 border border-luminous-gold/55 bg-primary px-4 text-sm text-white-gold disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex min-h-11 items-center gap-2 border border-luminous-gold/55 bg-primary px-4 text-sm text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
           >
             <FloppyDisk size={17} />
             {saving ? "Saving…" : submitLabel}
@@ -411,7 +416,12 @@ function CaseCollection({
   title: string;
   icon: typeof MagnifyingGlass;
   empty: string;
-  items: readonly { id: string; title: string; meta: string }[];
+  items: readonly {
+    id: string;
+    title: string;
+    meta: string;
+    sourceRecord?: ArchiveRecord;
+  }[];
 }) {
   return (
     <Section title={title}>
@@ -421,10 +431,24 @@ function CaseCollection({
             <li key={item.id} className="flex items-start gap-3 px-4 py-3">
               <Icon size={17} className="mt-0.5 shrink-0 text-luminous-gold" aria-hidden="true" />
               <span className="min-w-0">
-                <span className="block text-sm text-white-gold">{item.title}</span>
+                {item.sourceRecord ? (
+                  <Link
+                    to={recordHref(item.sourceRecord)}
+                    className="flex min-h-11 items-center text-sm text-white-gold underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold"
+                  >
+                    {item.title}
+                  </Link>
+                ) : (
+                  <span className="block text-sm text-white-gold">{item.title}</span>
+                )}
                 <span className="mt-1 block font-mono text-[10px] text-muted-foreground">
                   {item.meta}
                 </span>
+                {item.sourceRecord ? (
+                  <span className="mt-1 block text-[10px] text-muted-foreground">
+                    Source record: {item.sourceRecord.title}
+                  </span>
+                ) : null}
               </span>
             </li>
           ))}
@@ -439,7 +463,7 @@ function CaseCollection({
 function CaseValue({ label, value }: { label: string; value?: string | number | null }) {
   return (
     <span className="hidden min-w-0 md:block">
-      <span className="block text-[10px] uppercase tracking-wide text-brass-muted">{label}</span>
+      <span className="block text-[10px] uppercase tracking-wide text-luminous-gold">{label}</span>
       <span className="mt-1 block truncate text-xs text-foreground">
         {valueOrNotRecorded(value)}
       </span>

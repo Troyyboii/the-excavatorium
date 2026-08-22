@@ -27,6 +27,7 @@ import {
   type CustodianCaseRow,
   type CustodianFinding,
   type CustodianFindingRow,
+  type CustodianRecordContext,
   type EvidenceItem,
   type EvidenceItemRow,
   type EvidenceLifecycleStatus,
@@ -54,6 +55,15 @@ export type CustodianResource =
   | "actions"
   | "custodian_findings"
   | "record_revisions";
+
+export type CustodianCollectionOptions = {
+  pageSize?: number;
+  maxPages?: number;
+  sourceRecordId?: string;
+  ids?: readonly string[];
+  claimIds?: readonly string[];
+  evidenceIds?: readonly string[];
+};
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -412,15 +422,28 @@ async function fetchOwnerCollection<Row, Domain>(
   resource: CustodianResource,
   select: string,
   mapper: (row: unknown) => Domain,
-  options?: { pageSize?: number; maxPages?: number },
+  options?: CustodianCollectionOptions,
 ): Promise<Domain[]> {
   if (!ownerId.trim()) throw new Error("ownerId is required for Custodian reads");
+  if (
+    options?.ids?.length === 0 ||
+    options?.claimIds?.length === 0 ||
+    options?.evidenceIds?.length === 0
+  ) {
+    return [];
+  }
   try {
     return await paginateOwnerRows(async (range) => {
-      const { data, error } = await supabase
-        .from(resource)
-        .select(select)
-        .eq("owner_id", ownerId)
+      let query = supabase.from(resource).select(select).eq("owner_id", ownerId);
+      if (options?.sourceRecordId !== undefined) {
+        query = query.eq("source_record_id", options.sourceRecordId);
+      }
+      if (options?.ids !== undefined) query = query.in("id", options.ids);
+      if (options?.claimIds !== undefined) query = query.in("claim_id", options.claimIds);
+      if (options?.evidenceIds !== undefined) {
+        query = query.in("evidence_id", options.evidenceIds);
+      }
+      const { data, error } = await query
         .order("id", { ascending: true })
         .range(range.from, range.to);
       if (error) throw error;
@@ -454,11 +477,10 @@ export const custodianCasesKey = (userId: string | null) =>
   ["custodian", "cases", userId ?? "__anonymous__"] as const;
 export const custodianInboxKey = (userId: string | null) =>
   ["custodian", "inbox", userId ?? "__anonymous__"] as const;
+export const custodianRecordContextKey = (userId: string | null, recordId: string | null) =>
+  ["custodian", "record-context", userId ?? "__anonymous__", recordId ?? "__unknown__"] as const;
 
-export function fetchCustodianCases(
-  ownerId: string,
-  options?: { pageSize?: number; maxPages?: number },
-) {
+export function fetchCustodianCases(ownerId: string, options?: CustodianCollectionOptions) {
   return fetchOwnerCollection<CustodianCaseRow, CustodianCase>(
     ownerId,
     "cases",
@@ -467,10 +489,7 @@ export function fetchCustodianCases(
     options,
   );
 }
-export function fetchCustodianInboxItems(
-  ownerId: string,
-  options?: { pageSize?: number; maxPages?: number },
-) {
+export function fetchCustodianInboxItems(ownerId: string, options?: CustodianCollectionOptions) {
   return fetchOwnerCollection<InboxItemRow, InboxItem>(
     ownerId,
     "inbox_items",
@@ -479,10 +498,7 @@ export function fetchCustodianInboxItems(
     options,
   );
 }
-export function fetchCustodianCaseMembers(
-  ownerId: string,
-  options?: { pageSize?: number; maxPages?: number },
-) {
+export function fetchCustodianCaseMembers(ownerId: string, options?: CustodianCollectionOptions) {
   return fetchOwnerCollection<CaseMemberRow, CaseMember>(
     ownerId,
     "case_members",
@@ -491,10 +507,7 @@ export function fetchCustodianCaseMembers(
     options,
   );
 }
-export function fetchCustodianClaims(
-  ownerId: string,
-  options?: { pageSize?: number; maxPages?: number },
-) {
+export function fetchCustodianClaims(ownerId: string, options?: CustodianCollectionOptions) {
   return fetchOwnerCollection<ClaimRow, Claim>(
     ownerId,
     "claims",
@@ -503,10 +516,7 @@ export function fetchCustodianClaims(
     options,
   );
 }
-export function fetchCustodianEvidence(
-  ownerId: string,
-  options?: { pageSize?: number; maxPages?: number },
-) {
+export function fetchCustodianEvidence(ownerId: string, options?: CustodianCollectionOptions) {
   return fetchOwnerCollection<EvidenceItemRow, EvidenceItem>(
     ownerId,
     "evidence_items",
@@ -515,10 +525,7 @@ export function fetchCustodianEvidence(
     options,
   );
 }
-export function fetchCustodianClaimEvidence(
-  ownerId: string,
-  options?: { pageSize?: number; maxPages?: number },
-) {
+export function fetchCustodianClaimEvidence(ownerId: string, options?: CustodianCollectionOptions) {
   return fetchOwnerCollection<ClaimEvidenceRow, ClaimEvidence>(
     ownerId,
     "claim_evidence",
@@ -527,10 +534,7 @@ export function fetchCustodianClaimEvidence(
     options,
   );
 }
-export function fetchCustodianActions(
-  ownerId: string,
-  options?: { pageSize?: number; maxPages?: number },
-) {
+export function fetchCustodianActions(ownerId: string, options?: CustodianCollectionOptions) {
   return fetchOwnerCollection<ActionRow, CustodianAction>(
     ownerId,
     "actions",
@@ -539,10 +543,7 @@ export function fetchCustodianActions(
     options,
   );
 }
-export function fetchCustodianFindings(
-  ownerId: string,
-  options?: { pageSize?: number; maxPages?: number },
-) {
+export function fetchCustodianFindings(ownerId: string, options?: CustodianCollectionOptions) {
   return fetchOwnerCollection<CustodianFindingRow, CustodianFinding>(
     ownerId,
     "custodian_findings",
@@ -551,9 +552,64 @@ export function fetchCustodianFindings(
     options,
   );
 }
+
+export async function fetchCustodianRecordContext(
+  ownerId: string,
+  recordId: string,
+): Promise<CustodianRecordContext> {
+  if (!ownerId.trim()) throw new Error("ownerId is required for Custodian reads");
+  if (!recordId.trim()) throw new Error("recordId is required for Custodian reads");
+
+  const [claims, evidence, findings] = await Promise.all([
+    fetchCustodianClaims(ownerId, { sourceRecordId: recordId }),
+    fetchCustodianEvidence(ownerId, { sourceRecordId: recordId }),
+    fetchCustodianFindings(ownerId, { sourceRecordId: recordId }),
+  ]);
+
+  const caseIds = [...new Set([...claims, ...evidence, ...findings].map((entry) => entry.caseId))];
+  const claimIds = claims.map((claim) => claim.id);
+  const evidenceIds = evidence.map((entry) => entry.id);
+
+  const [cases, linksByClaim, linksByEvidence] = await Promise.all([
+    fetchCustodianCases(ownerId, { ids: caseIds }),
+    fetchCustodianClaimEvidence(ownerId, { claimIds }),
+    fetchCustodianClaimEvidence(ownerId, { evidenceIds }),
+  ]);
+  return composeCustodianRecordContext({
+    cases,
+    claims,
+    evidence,
+    findings,
+    claimEvidence: [...linksByClaim, ...linksByEvidence],
+  });
+}
+
+export function composeCustodianRecordContext({
+  cases,
+  claims,
+  evidence,
+  claimEvidence,
+  findings,
+}: CustodianRecordContext): CustodianRecordContext {
+  const caseIds = new Set([...claims, ...evidence, ...findings].map((entry) => entry.caseId));
+  const claimIds = new Set(claims.map((claim) => claim.id));
+  const evidenceIds = new Set(evidence.map((entry) => entry.id));
+  const scopedLinks = claimEvidence.filter(
+    (link) => claimIds.has(link.claimId) && evidenceIds.has(link.evidenceId),
+  );
+
+  return {
+    cases: cases.filter((item) => caseIds.has(item.id)),
+    claims,
+    evidence,
+    claimEvidence: Array.from(new Map(scopedLinks.map((link) => [link.id, link])).values()),
+    findings,
+  };
+}
+
 export function fetchCustodianRecordRevisions(
   ownerId: string,
-  options?: { pageSize?: number; maxPages?: number },
+  options?: CustodianCollectionOptions,
 ) {
   return fetchOwnerCollection<RecordRevisionRow, RecordRevision>(
     ownerId,
@@ -572,6 +628,17 @@ export function useCustodianCases(enabled = true) {
     staleTime: 30_000,
     retry: (failureCount, error) => !isCustodianFoundationMissing(error) && failureCount < 2,
     queryFn: () => fetchCustodianCases(userId as string),
+  });
+}
+
+export function useCustodianRecordContext(recordId: string | null, enabled = true) {
+  const userId = useCurrentUserId();
+  return useQuery<CustodianRecordContext>({
+    queryKey: custodianRecordContextKey(userId, recordId),
+    enabled: enabled && userId !== null && recordId !== null,
+    staleTime: 30_000,
+    retry: (failureCount, error) => !isCustodianFoundationMissing(error) && failureCount < 2,
+    queryFn: () => fetchCustodianRecordContext(userId as string, recordId as string),
   });
 }
 

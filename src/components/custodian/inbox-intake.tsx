@@ -212,7 +212,7 @@ export function InboxIntake({
                   value={title}
                   onChange={(event) => setTitle(event.target.value)}
                   placeholder="Short title for review"
-                  className="min-h-11 rounded-none border-luminous-gold/30 bg-background text-white-gold placeholder:text-brass-muted focus-visible:ring-luminous-gold"
+                  className="min-h-11 rounded-none border-luminous-gold/30 bg-background text-white-gold placeholder:text-muted-foreground focus-visible:ring-luminous-gold"
                 />
               </label>
             </div>
@@ -223,7 +223,7 @@ export function InboxIntake({
                 onChange={(event) => setContent(event.target.value)}
                 placeholder="Write or paste what you want to review before saving."
                 rows={8}
-                className="resize-y rounded-none border-luminous-gold/30 bg-background text-white-gold placeholder:text-brass-muted focus-visible:ring-luminous-gold"
+                className="resize-y rounded-none border-luminous-gold/30 bg-background text-white-gold placeholder:text-muted-foreground focus-visible:ring-luminous-gold"
               />
             </label>
             {message ? (
@@ -740,7 +740,7 @@ function InboxItemCard({
 function InboxMeta({ label, value }: { label: string; value: string | null }) {
   return (
     <div>
-      <dt className="text-[10px] uppercase tracking-wide text-brass-muted">{label}</dt>
+      <dt className="text-[10px] uppercase tracking-wide text-luminous-gold">{label}</dt>
       <dd className="mt-1 text-foreground">{value ? formatRecordDate(value) : "Not recorded"}</dd>
     </div>
   );

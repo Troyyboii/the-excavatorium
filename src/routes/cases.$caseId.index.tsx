@@ -86,6 +86,9 @@ function CaseDetailPage() {
         onUpdate={async (value) => {
           await updateCustodianCase(caseId, value);
           await queryClient.invalidateQueries({ queryKey: custodianCasesKey(userId) });
+          await queryClient.invalidateQueries({
+            queryKey: ["custodian", "record-context", userId],
+          });
         }}
       />
     </CustodianPage>
