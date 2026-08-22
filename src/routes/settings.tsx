@@ -64,10 +64,28 @@ function Page() {
   );
 }
 
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
+function Card({
+  title,
+  children,
+  tone = "default",
+}: {
+  title: string;
+  children: React.ReactNode;
+  tone?: "default" | "destructive";
+}) {
   return (
-    <section className="rounded-lg border border-border bg-card p-4 md:p-6">
-      <h2 className="mb-3 font-serif text-lg text-foreground">{title}</h2>
+    <section
+      className={
+        tone === "destructive"
+          ? "rounded-lg border border-destructive/55 bg-burgundy-muted/35 p-4 md:p-6"
+          : "rounded-lg border border-border bg-card p-4 md:p-6"
+      }
+    >
+      <h2
+        className={`mb-3 font-serif text-lg ${tone === "destructive" ? "text-destructive" : "text-foreground"}`}
+      >
+        {title}
+      </h2>
       <div className="space-y-3">{children}</div>
     </section>
   );
@@ -192,7 +210,7 @@ function PasswordSection() {
             role={msg.kind === "err" ? "alert" : "status"}
             className={
               msg.kind === "err"
-                ? "text-sm text-[color:var(--destructive-foreground)]"
+                ? "text-sm font-medium text-destructive"
                 : "text-sm text-muted-foreground"
             }
           >
@@ -421,12 +439,12 @@ function DestructiveSection({
   const [confirmText, setConfirmText] = useState("");
   const [open, setOpen] = useState(false);
   return (
-    <Card title="Destructive action">
+    <Card title="Destructive action" tone="destructive">
       {!open ? (
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="inline-flex min-h-11 items-center rounded-md border border-[color:var(--destructive)]/60 px-3 py-2 text-sm text-[color:var(--destructive-foreground)] hover:bg-[color:var(--destructive)]/10"
+          className="inline-flex min-h-11 items-center rounded-md border border-destructive bg-card px-3 py-2 text-sm font-medium text-destructive hover:bg-destructive hover:text-destructive-foreground"
         >
           Reset all data
         </button>

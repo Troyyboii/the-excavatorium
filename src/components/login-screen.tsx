@@ -94,7 +94,7 @@ export function LoginScreen() {
           </button>
 
           {pwError ? (
-            <p role="alert" className="mt-3 text-sm text-[color:var(--destructive-foreground)]">
+            <p role="alert" className="mt-3 text-sm font-medium text-destructive">
               {pwError}
             </p>
           ) : null}

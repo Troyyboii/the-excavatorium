@@ -23,7 +23,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { useOnlineStatus } from "@/hooks/use-online";
 import { CommandPalette } from "@/components/custodian/command-palette";
-import { CustodianStatus } from "@/components/custodian/custodian-ui";
 
 const NAV_GROUPS = [
   {
@@ -74,6 +73,7 @@ export function AppShell({ email, children }: { email: string | null; children: 
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const qc = useQueryClient();
   const online = useOnlineStatus();
+  const isGraph = pathname === "/graph";
 
   useEffect(() => setMobileOpen(false), [pathname]);
 
@@ -135,8 +135,15 @@ export function AppShell({ email, children }: { email: string | null; children: 
           </div>
         ) : null}
 
-        <main className="min-w-0 max-w-full flex-1 px-4 py-6 pb-28 md:px-8 md:py-6">
-          <div className="mx-auto w-full max-w-[1500px] min-w-0">{children}</div>
+        <main
+          className={cn(
+            "min-w-0 max-w-full flex-1 pb-28 md:pb-6",
+            isGraph ? "px-0 py-0" : "px-4 py-6 md:px-8 md:py-6",
+          )}
+        >
+          <div className={cn("w-full min-w-0", !isGraph && "mx-auto max-w-[1500px]")}>
+            {children}
+          </div>
         </main>
 
         <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-[color:var(--strong-border)] bg-sidebar/98 px-2 pb-[env(safe-area-inset-bottom)] md:hidden">
@@ -159,48 +166,6 @@ export function AppShell({ email, children }: { email: string | null; children: 
           />
         </nav>
       </div>
-
-      <aside className="hidden w-[286px] shrink-0 border-l border-border bg-card text-card-foreground xl:block">
-        <div className="sticky top-0 p-5">
-          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-luminous-gold">
-            Custodian status
-          </p>
-          <h2 className="mt-2 font-serif text-xl text-foreground">Operational presence</h2>
-          <div className="mt-4 border-y border-border py-3">
-            <CustodianStatus
-              status="Dormant"
-              online={online}
-              detail={online ? "No agent run is active." : "Network unavailable."}
-            />
-          </div>
-          <dl className="mt-4 divide-y divide-border text-xs">
-            <StatusRow label="Current task" value="No run active" />
-            <StatusRow label="Evidence" value="Authenticated archive" />
-            <StatusRow label="Model" value="None selected" />
-            <StatusRow label="Execution" value="Owner-gated" />
-          </dl>
-          <p className="mt-5 text-xs leading-5 text-muted-foreground">
-            The rail reports persisted or directly observable state only. It does not simulate agent
-            activity.
-          </p>
-        </div>
-      </aside>
-    </div>
-  );
-}
-
-function StatusRow({ label, value, tone }: { label: string; value: string; tone?: "gold" }) {
-  return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-3">
-      <dt className="text-[color:var(--brass)]">{label}</dt>
-      <dd
-        className={cn(
-          "text-right font-mono text-[11px]",
-          tone ? "text-luminous-gold" : "text-white-gold",
-        )}
-      >
-        {value}
-      </dd>
     </div>
   );
 }
@@ -388,11 +353,15 @@ function SidebarInner({
                   className={cn(
                     "flex min-h-11 items-center gap-3 rounded-md border-l-2 px-3 py-2 text-sm transition-colors",
                     active
-                      ? "border-sidebar-ring bg-sidebar-accent text-sidebar-foreground"
+                      ? "border-sidebar-primary bg-sidebar-primary text-sidebar-primary-foreground"
                       : "border-transparent text-sidebar-foreground/70 hover:border-sidebar-ring/70 hover:bg-sidebar-accent hover:text-sidebar-foreground",
                   )}
                 >
-                  <Icon size={18} weight={active ? "fill" : "regular"} className="text-brass" />
+                  <Icon
+                    size={18}
+                    weight={active ? "fill" : "regular"}
+                    className={active ? "text-sidebar-primary-foreground" : "text-brass"}
+                  />
                   <span>{item.label}</span>
                 </Link>
               );

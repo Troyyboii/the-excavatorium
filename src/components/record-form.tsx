@@ -509,7 +509,7 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
                 <span className="text-xs text-muted-foreground">Delete this record?</span>
                 <button
                   type="button"
-                  className="inline-flex min-h-11 items-center rounded-md border border-[color:var(--destructive)] bg-[color:var(--destructive)]/10 px-3 py-2 text-sm text-[color:var(--destructive-foreground)]"
+                  className="inline-flex min-h-11 items-center rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive"
                   onClick={onDelete}
                   disabled={del.isPending || !online}
                 >
@@ -526,7 +526,7 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
             ) : (
               <button
                 type="button"
-                className="inline-flex min-h-11 items-center rounded-md border border-[color:var(--destructive)]/60 px-3 py-2 text-sm text-[color:var(--destructive-foreground)] hover:bg-[color:var(--destructive)]/10"
+                className="inline-flex min-h-11 items-center rounded-md border border-destructive/60 px-3 py-2 text-sm font-medium text-destructive hover:bg-destructive/10"
                 onClick={() => setShowDeleteConfirm(true)}
                 disabled={!online}
               >
@@ -743,7 +743,7 @@ function DocumentExcavationPanel({
           ) : null}
         </div>
       ) : null}
-      {error ? <p className="text-sm text-[color:var(--destructive-foreground)]">{error}</p> : null}
+      {error ? <p className="text-sm font-medium text-destructive">{error}</p> : null}
       {draft ? (
         <div className="space-y-4 border-t border-border pt-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -935,7 +935,7 @@ function DocumentInsightEditor({
               <button
                 type="button"
                 onClick={() => onChange(items.filter((_, i) => i !== index))}
-                className="mt-2 text-xs text-[color:var(--destructive-foreground)]"
+                className="mt-2 text-xs font-medium text-destructive"
               >
                 Remove entry
               </button>
@@ -1130,7 +1130,7 @@ function DocumentReferenceEditor({
               <button
                 type="button"
                 onClick={() => onChange(references.filter((_, i) => i !== index))}
-                className="mt-2 text-xs text-[color:var(--destructive-foreground)]"
+                className="mt-2 text-xs font-medium text-destructive"
               >
                 Remove reference
               </button>
@@ -1642,7 +1642,7 @@ function ConversationExcavationPanel({
         </div>
       ) : null}
       {rawConversationText.length > MAX_CONVERSATION_TRANSCRIPT_CHARS ? (
-        <p className="mt-3 text-sm text-[color:var(--destructive-foreground)]">
+        <p className="mt-3 text-sm font-medium text-destructive">
           The conversation exceeds the {MAX_CONVERSATION_TRANSCRIPT_CHARS.toLocaleString()}{" "}
           character excavation limit.
         </p>
