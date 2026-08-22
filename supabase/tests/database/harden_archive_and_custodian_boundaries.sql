@@ -172,16 +172,6 @@ select ok(true, 'agent run budgets and tools may only narrow an exact-case polic
 
 do $$
 begin
-  perform public.custodian_record_agent_step(
-    'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
-    jsonb_build_object(
-      'step_kind', 'execute',
-      'model_tier', 'terra',
-      'prompt_version', 'boundary-v1'
-    ),
-    'boundary-policy-stage-tier'
-  );
-
   begin
     perform public.custodian_create_agent_run(
       jsonb_build_object(
@@ -312,6 +302,16 @@ select ok(true, 'provider cost requires and persists a pricing version');
 
 do $$
 begin
+  perform public.custodian_record_agent_step(
+    'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+    jsonb_build_object(
+      'step_kind', 'execute',
+      'model_tier', 'terra',
+      'prompt_version', 'boundary-v1'
+    ),
+    'boundary-policy-stage-tier'
+  );
+
   begin
     perform public.custodian_record_agent_step(
       'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
