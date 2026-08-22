@@ -365,8 +365,8 @@ begin
   end if;
 
   select * into current_run
-    from public.agent_runs
-   where owner_id = caller_id and idempotency_key = request_key
+    from public.agent_runs r
+   where r.owner_id = caller_id and r.idempotency_key = request_key
    for update;
   if found then
     if current_run.request_hash <> request_hash_value then
@@ -447,9 +447,9 @@ begin
     raise exception 'the run tool policy is not active for this case' using errcode = '42501';
   end if;
   select * into step_row
-    from public.agent_steps
-   where owner_id = caller_id and case_id = run_row.case_id
-     and run_id = run_row.id and idempotency_key = request_key;
+    from public.agent_steps s
+   where s.owner_id = caller_id and s.case_id = run_row.case_id
+     and s.run_id = run_row.id and s.idempotency_key = request_key;
   if found then
     return jsonb_build_object('step', to_jsonb(step_row), 'run', to_jsonb(run_row), 'idempotent', true);
   end if;
@@ -576,9 +576,9 @@ begin
   perform public.custodian_lock(caller_id);
   select * into run_row from public.agent_runs where owner_id = caller_id and id = run_id for update;
   if not found then raise exception 'agent run not found' using errcode = 'P0002'; end if;
-  select * into current_event from public.tool_events
-   where owner_id = caller_id and case_id = run_row.case_id and run_id = run_row.id
-     and idempotency_key = request_key;
+  select * into current_event from public.tool_events e
+   where e.owner_id = caller_id and e.case_id = run_row.case_id and e.run_id = run_row.id
+     and e.idempotency_key = request_key;
   if found then return jsonb_build_object('event', to_jsonb(current_event), 'run', to_jsonb(run_row), 'idempotent', true); end if;
 
   tool_name_value := public.custodian_require_text(payload ->> 'tool_name', 'tool_name', 300);
