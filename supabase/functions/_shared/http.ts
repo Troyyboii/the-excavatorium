@@ -10,6 +10,8 @@ export const corsHeaders = {
 export function allowedOrigin(origin: string | null): string | null {
   if (!origin) return null;
   const origins = new Set(["https://the-excavatorium.lovable.app", "http://localhost:8080"]);
+  if (origins.has(origin)) return origin;
+  if (!origin.startsWith("https://") || !origin.endsWith(".lovable.app")) return null;
   const preview = Deno.env.get("LOVABLE_PREVIEW_ORIGIN");
   if (preview) {
     try {

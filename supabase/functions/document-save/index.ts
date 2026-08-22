@@ -134,7 +134,7 @@ function referencesMatchNormalized(data: DocumentRecordData, knownIds: Set<strin
 
 async function removeObjects(auth: AuthenticatedSupabase, paths: string[]): Promise<void> {
   if (paths.length === 0) return;
-  const { error } = await auth.client.storage.from(BUCKET).remove(paths);
+  const { error } = await auth.client.storage.from(BUCKET).remove([...paths]);
   if (error) {
     // Diagnostics stay limited to phase and category metadata. Never expose the
     // upstream error payload, object paths, or any file contents.
