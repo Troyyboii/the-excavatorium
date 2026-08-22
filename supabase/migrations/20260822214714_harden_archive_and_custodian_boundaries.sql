@@ -45,10 +45,12 @@ begin
       from public.agent_steps s
       join public.agent_runs r
         on r.owner_id = s.owner_id and r.case_id = s.case_id and r.id = s.run_id
-     where s.model_tier is distinct from r.model_tier
+      join public.tool_policies p
+        on p.owner_id = r.owner_id and p.id = r.tool_policy_id and p.case_id = r.case_id
+     where not (s.model_tier = any(p.allowed_model_tiers))
         or s.prompt_version is distinct from r.prompt_version
   ) then
-    raise exception 'agent_steps conflict with immutable run model or prompt policy';
+    raise exception 'agent_steps conflict with the bound model or prompt policy';
   end if;
   if exists (select 1 from public.tool_events) then
     raise exception 'existing tool_events cannot be safely backfilled with an exact approval hash';
@@ -391,6 +393,7 @@ declare
   caller_id uuid := public.custodian_current_owner();
   payload jsonb := public.custodian_runtime_require_object(step_payload, 'step_payload');
   run_row public.agent_runs;
+  policy_row public.tool_policies;
   step_row public.agent_steps;
   inserted_step public.agent_steps;
   sequence_value integer;
@@ -413,6 +416,17 @@ begin
   select * into run_row from public.agent_runs where owner_id = caller_id and id = run_id for update;
   if not found then
     raise exception 'agent run not found' using errcode = 'P0002';
+  end if;
+  select * into policy_row
+    from public.tool_policies
+   where owner_id = caller_id
+     and id = run_row.tool_policy_id
+     and case_id = run_row.case_id
+     and status = 'active'
+     and lifecycle_status = 'active'
+     and not kill_switch;
+  if not found then
+    raise exception 'the run tool policy is not active for this case' using errcode = '42501';
   end if;
   select * into step_row
     from public.agent_steps
@@ -443,8 +457,9 @@ begin
   end if;
   model_value := coalesce(payload ->> 'model_tier', run_row.model_tier);
   prompt_value := coalesce(payload ->> 'prompt_version', run_row.prompt_version);
-  if model_value <> run_row.model_tier or prompt_value <> run_row.prompt_version then
-    raise exception 'step model tier and prompt version must match the immutable run policy'
+  if not (model_value = any(policy_row.allowed_model_tiers))
+     or prompt_value <> run_row.prompt_version then
+    raise exception 'step model tier and prompt version must match the bound run policy'
       using errcode = '42501';
   end if;
   input_value := coalesce(payload -> 'input_payload', '{}'::jsonb);

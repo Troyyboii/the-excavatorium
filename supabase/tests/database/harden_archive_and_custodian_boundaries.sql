@@ -123,7 +123,7 @@ insert into public.tool_policies (
   'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
   '11111111-1111-4111-8111-111111111111',
   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-  'Boundary policy', 'active', array['luna']::text[], array['safe_read', 'write_tool']::text[],
+  'Boundary policy', 'active', array['luna', 'terra']::text[], array['safe_read', 'write_tool']::text[],
   100, 1.0000, 2000, 2,
   '11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-111111111111'
 ), (
@@ -172,6 +172,16 @@ select ok(true, 'agent run budgets and tools may only narrow an exact-case polic
 
 do $$
 begin
+  perform public.custodian_record_agent_step(
+    'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+    jsonb_build_object(
+      'step_kind', 'execute',
+      'model_tier', 'terra',
+      'prompt_version', 'boundary-v1'
+    ),
+    'boundary-policy-stage-tier'
+  );
+
   begin
     perform public.custodian_create_agent_run(
       jsonb_build_object(
@@ -319,7 +329,7 @@ begin
 end;
 $$;
 
-select ok(true, 'agent steps cannot override the run model tier or prompt version');
+select ok(true, 'agent steps accept policy-approved stage tiers and reject unapproved tiers or prompt changes');
 
 -- A same-case approval cannot be replayed on another run, and a same-run
 -- approval cannot be used for a different action hash.
