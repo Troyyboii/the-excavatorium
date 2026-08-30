@@ -10,11 +10,14 @@ import type { DocumentData, RecordType } from "../types";
 const DOWNLOAD_TIMEOUT_MS = 20_000;
 const MAX_DOWNLOAD_REDIRECTS = 2;
 const MAX_CANDIDATE_RECORDS = 75;
-// The fileParams contract guarantees a temporary HTTPS download_url but does
-// not promise a fixed hostname. Keep this evidence-backed list narrow and
-// fail closed if OpenAI introduces another file origin; every redirect is
-// checked against the same list before it is fetched.
-const APPROVED_CHATGPT_FILE_HOSTS = new Set(["files.oaiusercontent.com", "files.openai.com"]);
+// OpenAI's published ChatGPT network guidance lists these OpenAI-controlled
+// wildcard domains. Accept each suffix root and dot-delimited descendants;
+// every redirect is checked against the same policy before it is fetched.
+const TRUSTED_CHATGPT_FILE_DOMAIN_SUFFIXES = [
+  "oaiusercontent.com",
+  "openai.com",
+  "chatgpt.com",
+] as const;
 const SUPPORTED_RECORD_TYPES: readonly RecordType[] = [
   "tool",
   "repository",
@@ -371,10 +374,16 @@ function validateDownloadUrl(value: string): string {
   ) {
     throw new DocumentIngestionError("FILE_UNAVAILABLE", undefined, "rejected_address");
   }
-  if (!APPROVED_CHATGPT_FILE_HOSTS.has(hostname)) {
+  if (!isTrustedChatGptFileHostname(hostname)) {
     throw new DocumentIngestionError("FILE_UNAVAILABLE", undefined, "rejected_hostname");
   }
   return url.toString();
+}
+
+function isTrustedChatGptFileHostname(hostname: string): boolean {
+  return TRUSTED_CHATGPT_FILE_DOMAIN_SUFFIXES.some(
+    (suffix) => hostname === suffix || hostname.endsWith(`.${suffix}`),
+  );
 }
 
 function isUnsafeLiteralAddress(hostname: string): boolean {
