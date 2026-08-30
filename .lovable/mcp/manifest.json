@@ -12,7 +12,7 @@
   "mcp": {
     "server": {
       "name": "the-excavatorium",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "title": "The Excavatorium"
     },
     "tools": [
@@ -430,6 +430,101 @@
           "$schema": "http://json-schema.org/draft-07/schema#"
         },
         "outputSchema": null
+      },
+      {
+        "name": "excavate_document",
+        "title": "Excavate and save document",
+        "description": "Take the user-supplied PDF, Markdown document, or UTF-8 text file, excavate it through The Excavatorium's existing File Excavation system, and save the resulting Document in the authenticated owner's archive.",
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "openWorldHint": false,
+          "idempotentHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "file": {
+              "type": "object",
+              "properties": {
+                "download_url": {
+                  "type": "string",
+                  "format": "uri"
+                },
+                "file_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "mime_type": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                "file_name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 240
+                }
+              },
+              "required": [
+                "download_url",
+                "file_id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "file"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "isNew": {
+              "type": "boolean"
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 240
+            },
+            "recordType": {
+              "type": "string",
+              "const": "document"
+            },
+            "originalFileName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 240
+            },
+            "contentHash": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "id",
+            "isNew",
+            "title",
+            "recordType",
+            "originalFileName",
+            "contentHash"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "_meta": {
+          "openai/fileParams": [
+            "file"
+          ]
+        }
       }
     ]
   }

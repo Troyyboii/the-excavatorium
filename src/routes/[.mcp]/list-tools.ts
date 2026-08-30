@@ -7,6 +7,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { createTanStackListToolsHandler } from "@lovable.dev/mcp-js/stacks/tanstack";
 
 import mcp from "../../lib/mcp/index";
+import { decorateOpenAiFileToolCatalogResponse } from "../../lib/mcp/openai-tool-metadata";
 import { authorizeMcpClientRequest } from "../../lib/mcp/security";
 
 const listToolsHandler = createTanStackListToolsHandler(mcp, {
@@ -21,7 +22,8 @@ export const Route = createFileRoute("/.mcp/list-tools")({
       // ANY: TanStack returns SPA HTML for methods not in `handlers`; the SDK 405s instead.
       ANY: async ({ request }) => {
         const denied = await authorizeMcpClientRequest(request, "json");
-        return denied ?? listToolsHandler({ request });
+        if (denied) return denied;
+        return decorateOpenAiFileToolCatalogResponse(await listToolsHandler({ request }));
       },
     },
   },

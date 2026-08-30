@@ -97,6 +97,12 @@ export type ErrorCode =
   | "AUTH_CONFIGURATION_ERROR"
   | "CLIENT_NOT_ALLOWED"
   | "INVALID_INPUT"
+  | "FILE_UNAVAILABLE"
+  | "FILE_TOO_LARGE"
+  | "UNSUPPORTED_FILE"
+  | "QUOTA_EXCEEDED"
+  | "EXTRACTION_FAILED"
+  | "SAVE_FAILED"
   | "NOT_FOUND"
   | "DATA_UNAVAILABLE"
   | "FOUNDATION_UNAVAILABLE"
@@ -120,6 +126,12 @@ const SAFE_ERROR_MESSAGES: Record<ErrorCode, string> = {
   AUTH_CONFIGURATION_ERROR: "MCP authorization is temporarily unavailable.",
   CLIENT_NOT_ALLOWED: "This OAuth client is not permitted to access this server.",
   INVALID_INPUT: "The request input is invalid or exceeds the supported limit.",
+  FILE_UNAVAILABLE: "The uploaded file is unavailable. Attach it again and retry.",
+  FILE_TOO_LARGE: "The uploaded file exceeds the 10 MB document limit.",
+  UNSUPPORTED_FILE: "Supported files are PDF, Markdown (.md), and plain text (.txt).",
+  QUOTA_EXCEEDED: "Document excavation is temporarily rate limited. Please retry later.",
+  EXTRACTION_FAILED: "The document could not be excavated.",
+  SAVE_FAILED: "The excavated document could not be saved.",
   NOT_FOUND: "The requested archive item was not found.",
   DATA_UNAVAILABLE: "Archive data is temporarily unavailable.",
   FOUNDATION_UNAVAILABLE: "Custodian case/finding foundation is not available.",

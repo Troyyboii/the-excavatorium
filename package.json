@@ -8,6 +8,8 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
+    "mcp:manifest": "lovable-mcp-extract-manifest . && bun run scripts/decorate-mcp-manifest.ts",
+    "mcp:manifest:check": "bun run scripts/decorate-mcp-manifest.ts --check",
     "typecheck": "tsc --noEmit",
     "test": "bun test src",
     "lint": "eslint .",

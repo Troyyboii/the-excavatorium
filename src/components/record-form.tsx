@@ -29,9 +29,11 @@ import {
 } from "@/lib/types";
 import { normalizeTags } from "@/lib/format";
 import {
+  applyDocumentDraft,
   documentDataSchema,
   documentDraftSchema,
   formatDocumentValidationIssues,
+  mergeDocumentSuggestedRecordIds,
   type DocumentDraft,
 } from "@/lib/document";
 import {
@@ -223,37 +225,20 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
   }
 
   function applyDocumentExtraction(extraction: DocumentDraft) {
+    if (recordType !== "document") return;
+    const applied = applyDocumentDraft(data as DocumentData, extraction);
     setError(null);
     setValidationIssues([]);
-    setTitle(extraction.title);
-    setSummary(extraction.summary);
-    setTags(extraction.tags);
-    setData((previous) => {
-      if (recordType !== "document") return previous;
-      const current = previous as DocumentData;
-      return {
-        ...current,
-        originalFileName: extraction.originalFileName,
-        mimeType: extraction.mimeType,
-        fileSizeBytes: extraction.fileSizeBytes,
-        documentDate: extraction.documentDate,
-        pageCount: extraction.pageCount,
-        contentHash: extraction.contentHash,
-        highSignalFindings: extraction.highSignalFindings,
-        keyClaims: extraction.keyClaims,
-        contradictions: extraction.contradictions,
-        uncertainties: extraction.uncertainties,
-        sourceReferences: extraction.sourceReferences,
-      };
-    });
+    setTitle(applied.title);
+    setSummary(applied.summary);
+    setTags(applied.tags);
+    setData((previous) => applyDocumentDraft(previous as DocumentData, extraction).data);
     setSelectedLinks((previous) =>
-      Array.from(
-        new Set([
-          ...previous,
-          ...extraction.suggestedRecordIds.filter(
-            (id) => id !== existing?.id && allRecords.some((r) => r.id === id),
-          ),
-        ]),
+      mergeDocumentSuggestedRecordIds(
+        previous,
+        extraction.suggestedRecordIds,
+        new Set(allRecords.map((record) => record.id)),
+        existing?.id,
       ),
     );
     setDocumentFileRemoved(false);

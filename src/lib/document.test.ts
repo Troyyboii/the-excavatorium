@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
+  applyDocumentDraft,
   documentDataSchema,
   documentDraftSchema,
   formatDocumentValidationIssues,
+  mergeDocumentSuggestedRecordIds,
   validateSelectedDocumentFile,
 } from "./document";
 
@@ -27,7 +29,69 @@ const emptyDocument = {
   projectRoute: null,
 };
 
+const draft = {
+  title: "Excavated document",
+  summary: "A concise summary.",
+  tags: ["archive", "evidence"],
+  documentDate: "2026-08-30",
+  pageCount: 2,
+  highSignalFindings: [{ text: "A finding", sourceReferenceIds: ["ref_00000001"] }],
+  keyClaims: [{ text: "A claim", sourceReferenceIds: ["ref_00000001"] }],
+  contradictions: [],
+  uncertainties: [],
+  sourceReferences: [{ id: "ref_00000001", locator: "p. 1", label: "Page 1", note: "" }],
+  suggestedRecordIds: ["11111111-1111-4111-8111-111111111111"],
+  originalFileName: "report.md",
+  mimeType: "text/markdown",
+  fileSizeBytes: 10,
+  contentHash: "a".repeat(64),
+};
+
 describe("Document input contracts", () => {
+  test("maps a draft without replacing user- and server-owned document fields", () => {
+    const applied = applyDocumentDraft(
+      {
+        ...emptyDocument,
+        projectRoute: "The Forge",
+        storagePath: "owner/documents/record/original/report.md",
+        extractedContentPath: "owner/documents/record/extracted/report.json",
+      },
+      draft,
+    );
+
+    expect(applied.title).toBe(draft.title);
+    expect(applied.summary).toBe(draft.summary);
+    expect(applied.tags).toEqual(draft.tags);
+    expect(applied.data).toMatchObject({
+      originalFileName: draft.originalFileName,
+      mimeType: draft.mimeType,
+      fileSizeBytes: draft.fileSizeBytes,
+      documentDate: draft.documentDate,
+      pageCount: draft.pageCount,
+      contentHash: draft.contentHash,
+      projectRoute: "The Forge",
+      storagePath: "owner/documents/record/original/report.md",
+      extractedContentPath: "owner/documents/record/extracted/report.json",
+    });
+    expect(applied.data.highSignalFindings).toEqual(draft.highSignalFindings);
+    expect(applied.data.sourceReferences).toEqual(draft.sourceReferences);
+  });
+
+  test("retains selected links and adds only allowed non-self suggestions", () => {
+    const currentId = "22222222-2222-4222-8222-222222222222";
+    const allowedId = "11111111-1111-4111-8111-111111111111";
+    const otherId = "33333333-3333-4333-8333-333333333333";
+
+    expect(
+      mergeDocumentSuggestedRecordIds(
+        [otherId, otherId],
+        [allowedId, currentId, "44444444-4444-4444-8444-444444444444", allowedId],
+        new Set([allowedId, currentId]),
+        currentId,
+      ),
+    ).toEqual([otherId, allowedId]);
+  });
+
   test("accepts the three V1 file families", () => {
     expect(validateSelectedDocumentFile(file("report.pdf", "application/pdf", 10))).toBeNull();
     expect(validateSelectedDocumentFile(file("notes.md", "text/markdown", 10))).toBeNull();
