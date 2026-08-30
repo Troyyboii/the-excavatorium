@@ -382,34 +382,13 @@ export function createDocumentIngestionClient(supabase: {
         .limit(MAX_CANDIDATE_RECORDS),
     invoke: (functionName, body) => supabase.functions.invoke(functionName, { body }),
     fetchDocument: async (reference, signal) => {
-      const secret = await serverEnvironment("DOCUMENT_FETCH_SHARED_SECRET");
-      if (!secret) return { data: null, error: new Error("document fetch is not configured") };
       return await supabase.functions.invoke("document-fetch", {
         body: reference,
         signal,
         timeout: DOCUMENT_FETCH_FUNCTION_TIMEOUT_MS,
-        headers: { "x-excavatorium-fetch-secret": secret },
       });
     },
   };
-}
-
-const CLOUDFLARE_WORKERS_MODULE = "cloudflare:workers";
-
-async function serverEnvironment(name: string): Promise<string | undefined> {
-  const runtime = globalThis as typeof globalThis & {
-    process?: { env?: Record<string, string | undefined> };
-  };
-  const processValue = runtime.process?.env?.[name]?.trim();
-  if (processValue) return processValue;
-  try {
-    const workers = (await import(/* @vite-ignore */ CLOUDFLARE_WORKERS_MODULE)) as {
-      env?: Record<string, string | undefined>;
-    };
-    return workers.env?.[name]?.trim() || undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 function isFileReference(value: ChatGptFileReference): boolean {

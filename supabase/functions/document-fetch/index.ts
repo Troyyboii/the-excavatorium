@@ -1,28 +1,12 @@
 import { authenticatedSupabase, jsonResponse, responseHeaders } from "../_shared/http.ts";
+import { authorizeDocumentFetchRequest } from "./authorization.ts";
 import {
   fetchTemporaryDocument,
   validateDocumentFetchInput,
   type DocumentFetchInput,
 } from "./runtime.ts";
 
-const INTERNAL_SECRET_HEADER = "x-excavatorium-fetch-secret";
 const REQUEST_MAX_BYTES = 64 * 1024;
-
-function constantTimeEquals(left: string, right: string): boolean {
-  const leftBytes = new TextEncoder().encode(left);
-  const rightBytes = new TextEncoder().encode(right);
-  let difference = leftBytes.length ^ rightBytes.length;
-  const length = Math.max(leftBytes.length, rightBytes.length);
-  for (let index = 0; index < length; index += 1)
-    difference |= (leftBytes[index] ?? 0) ^ (rightBytes[index] ?? 0);
-  return difference === 0;
-}
-
-function validInternalSecret(request: Request): boolean {
-  const configured = Deno.env.get("DOCUMENT_FETCH_SHARED_SECRET")?.trim();
-  const supplied = request.headers.get(INTERNAL_SECRET_HEADER)?.trim();
-  return Boolean(configured && supplied && constantTimeEquals(configured, supplied));
-}
 
 function safeHeaderValue(value: string | null): string | undefined {
   if (!value || value.length > 240 || hasForbiddenHeaderCharacters(value)) return undefined;
@@ -71,10 +55,20 @@ async function requestBody(request: Request): Promise<unknown> {
 export async function handleDocumentFetch(request: Request): Promise<Response> {
   if (request.method === "OPTIONS") return new Response("ok", { headers: responseHeaders(null) });
   if (request.method !== "POST") return jsonResponse({ error: "Method not allowed." }, 405);
-  if (!validInternalSecret(request)) return jsonResponse({ error: "Not found." }, 404);
 
   const auth = await authenticatedSupabase(request);
   if (!auth) return jsonResponse({ error: "Sign in is required." }, 401);
+  // authenticatedSupabase has already verified this exact bearer token with
+  // Supabase Auth. The helper only decodes its claims after that verification,
+  // and binds the token subject to the verified user before reading client_id.
+  const access = authorizeDocumentFetchRequest(
+    request,
+    auth.user.id,
+    Deno.env.get("MCP_ALLOWED_CLIENT_IDS"),
+  );
+  if (access === "configuration_invalid")
+    return jsonResponse({ error: "Document fetch authorization is unavailable." }, 500);
+  if (access !== "allowed") return jsonResponse({ error: "Client is not permitted." }, 403);
 
   let input: DocumentFetchInput;
   try {
