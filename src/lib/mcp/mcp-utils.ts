@@ -121,6 +121,10 @@ export type JsonToolResult = {
   isError?: boolean;
 };
 
+export type ErrorResultOptions = {
+  includeStructuredContent?: boolean;
+};
+
 const SAFE_ERROR_MESSAGES: Record<ErrorCode, string> = {
   AUTH_REQUIRED: "An authenticated OAuth session is required.",
   AUTH_CONFIGURATION_ERROR: "MCP authorization is temporarily unavailable.",
@@ -145,20 +149,29 @@ export function jsonResult(payload: Record<string, unknown>): JsonToolResult {
   };
 }
 
-export function errorResult(code: ErrorCode, message = SAFE_ERROR_MESSAGES[code]): JsonToolResult {
+export function errorResult(
+  code: ErrorCode,
+  message = SAFE_ERROR_MESSAGES[code],
+  options: ErrorResultOptions = {},
+): JsonToolResult {
   const payload: ToolErrorPayload = { error: { code, message } };
   return {
     content: [{ type: "text", text: JSON.stringify(payload) }],
-    structuredContent: payload,
+    ...(options.includeStructuredContent === false ? {} : { structuredContent: payload }),
     isError: true,
   };
 }
 
-export async function authResult(ctx: ToolContext): Promise<JsonToolResult | null> {
-  if (!ctx.isAuthenticated()) return errorResult("AUTH_REQUIRED");
+export async function authResult(
+  ctx: ToolContext,
+  options: ErrorResultOptions = {},
+): Promise<JsonToolResult | null> {
+  if (!ctx.isAuthenticated()) return errorResult("AUTH_REQUIRED", undefined, options);
   const access = await mcpClientAccess(ctx);
-  if (access === "configuration_invalid") return errorResult("AUTH_CONFIGURATION_ERROR");
-  return access === "allowed" ? null : errorResult("CLIENT_NOT_ALLOWED");
+  if (access === "configuration_invalid") {
+    return errorResult("AUTH_CONFIGURATION_ERROR", undefined, options);
+  }
+  return access === "allowed" ? null : errorResult("CLIENT_NOT_ALLOWED", undefined, options);
 }
 
 export function isCanonicalRecordType(value: unknown): value is CanonicalRecordType {

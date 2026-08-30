@@ -2,12 +2,12 @@ import { afterEach, describe, expect, test } from "bun:test";
 import type { ToolContext } from "@lovable.dev/mcp-js";
 import { z } from "zod";
 import { DocumentIngestionError } from "../document-ingestion";
-import excavateDocument, { handleExcavateDocument } from "./excavate-document";
+import excavateDocument, { handleExcavateDocument, mapDraftForSave } from "./excavate-document";
 
 const allowedClientId = "11111111-1111-4111-8111-111111111111";
 const disallowedClientId = "22222222-2222-4222-8222-222222222222";
 const file = {
-  download_url: "https://files.openai.example/temporary",
+  download_url: "https://files.oaiusercontent.com/temporary",
   file_id: "file_123",
   mime_type: "text/markdown",
   file_name: "notes.md",
@@ -58,9 +58,8 @@ describe("excavate_document tool", () => {
       throw new Error("ingestion must not run");
     };
     const signedOut = await handleExcavateDocument({ file }, context(false), neverRun);
-    expect(signedOut.structuredContent).toEqual({
-      error: { code: "AUTH_REQUIRED", message: "An authenticated OAuth session is required." },
-    });
+    expect(signedOut.structuredContent).toBeUndefined();
+    expect(signedOut.content[0]?.text).toContain("AUTH_REQUIRED");
 
     process.env.MCP_ALLOWED_CLIENT_IDS = allowedClientId;
     const disallowed = await handleExcavateDocument(
@@ -68,12 +67,8 @@ describe("excavate_document tool", () => {
       context(true, disallowedClientId),
       neverRun,
     );
-    expect(disallowed.structuredContent).toEqual({
-      error: {
-        code: "CLIENT_NOT_ALLOWED",
-        message: "This OAuth client is not permitted to access this server.",
-      },
-    });
+    expect(disallowed.structuredContent).toBeUndefined();
+    expect(disallowed.content[0]?.text).toContain("CLIENT_NOT_ALLOWED");
   });
 
   test("returns the safe success shape and never echoes the temporary URL", async () => {
@@ -105,10 +100,33 @@ describe("excavate_document tool", () => {
       { file },
       context(true, allowedClientId),
       async () => {
-        throw new DocumentIngestionError("FILE_UNAVAILABLE");
+        throw new DocumentIngestionError("FILE_UNAVAILABLE", undefined, "network_fetch_failure");
       },
     );
     expect(failure.isError).toBe(true);
+    expect(failure.structuredContent).toBeUndefined();
+    expect(failure.content[0]?.text).toContain("diagnostic: network_fetch_failure");
     expect(JSON.stringify(failure)).not.toContain(file.download_url);
+  });
+
+  test("normalizes tags using the browser save behavior", () => {
+    const draft = {
+      title: "Excavated notes",
+      summary: "Summary",
+      tags: [" Notes ", "notes", "", "NODES"],
+      documentDate: null,
+      pageCount: 1,
+      highSignalFindings: [],
+      keyClaims: [],
+      contradictions: [],
+      uncertainties: [],
+      sourceReferences: [],
+      suggestedRecordIds: [],
+      originalFileName: "notes.md",
+      mimeType: "text/markdown",
+      fileSizeBytes: 12,
+      contentHash: "a".repeat(64),
+    };
+    expect(mapDraftForSave(draft, new Set())).toMatchObject({ tags: ["Notes", "NODES"] });
   });
 });
