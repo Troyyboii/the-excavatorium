@@ -170,7 +170,11 @@ Deno.test("revalidates and repins a safe cross-origin redirect", async () => {
   const first = new FakeConnection(
     response("", "Location: https://second.example/final\r\n", "302 Found"),
   );
-  const second = new FakeConnection(response("hello world"));
+  const second = new FakeConnection(response("hello world"), {
+    hostname: "93.184.216.35",
+    port: 443,
+    transport: "tcp",
+  });
   const connected: string[] = [];
   const tlsHosts: string[] = [];
   const runtime: DocumentFetchRuntime = {
