@@ -182,7 +182,7 @@ export async function fetchTemporaryDocument(
         if (response.status < 200 || response.status > 299)
           throw new DocumentFetchError("http_failure");
         const bytes = await readResponseBody(response.reader, response.headers, deadline);
-        return { bytes, contentType: response.headers.get("content-type") };
+        return { bytes, contentType: response.headers.get("content-type") ?? null };
       } finally {
         response.connection.close();
       }

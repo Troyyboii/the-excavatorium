@@ -86,7 +86,7 @@ export async function handleDocumentFetch(request: Request): Promise<Response> {
       "X-Excavatorium-Document-Content-Type":
         safeHeaderValue(result.contentType?.split(";", 1)[0]?.trim() ?? "") ?? "",
     };
-    return new Response(result.bytes, { headers });
+    return new Response(result.bytes as unknown as BodyInit, { headers });
   } catch (error) {
     const code = error instanceof Error ? error.message : "fetch_failure";
     if (code === "response_too_large")
