@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { DocumentData } from "../types";
 import {
   DocumentIngestionError,
+  documentIngestionErrorMessage,
   type ChatGptFileReference,
   type DocumentIngestionClient,
   downloadChatGptDocument,
@@ -139,6 +140,65 @@ describe("ChatGPT temporary document downloads", () => {
     );
   });
 
+  test("accepts trusted roots, subdomains, and nested subdomains", async () => {
+    const acceptedHosts = [
+      "oaiusercontent.com",
+      "files.oaiusercontent.com",
+      "foo.files.oaiusercontent.com",
+      "openai.com",
+      "api.openai.com",
+      "chatgpt.com",
+      "files.chatgpt.com",
+    ];
+
+    for (const hostname of acceptedHosts) {
+      const fetch = (async () =>
+        response("hello world", {
+          headers: { "content-type": "text/markdown" },
+        })) as typeof globalThis.fetch;
+      const file = await downloadChatGptDocument(
+        { ...reference, download_url: `https://${hostname}/temporary-file` },
+        { fetch },
+      );
+      expect(await file.text()).toBe("hello world");
+    }
+  });
+
+  test("rejects deceptive and attacker-controlled suffixes without fetching or exposing URLs", async () => {
+    const rejectedUrls = [
+      "https://eviloaiusercontent.com/temporary-file",
+      "https://oaiusercontent.com.attacker.example/temporary-file",
+      "https://fake-openai.com/temporary-file",
+      "https://openai.com.attacker.example/temporary-file",
+      "https://chatgpt.com.attacker.example/temporary-file",
+    ];
+    let fetchCalls = 0;
+
+    for (const download_url of rejectedUrls) {
+      try {
+        await downloadChatGptDocument(
+          { ...reference, download_url },
+          {
+            fetch: (async () => {
+              fetchCalls += 1;
+              return response("not reached");
+            }) as typeof globalThis.fetch,
+          },
+        );
+        throw new Error("Expected a DocumentIngestionError");
+      } catch (error) {
+        expect(error).toBeInstanceOf(DocumentIngestionError);
+        const ingestionError = error as DocumentIngestionError;
+        expect(ingestionError.diagnostic).toBe("rejected_hostname");
+        expect(ingestionError.message).not.toContain(download_url);
+        expect(
+          documentIngestionErrorMessage(ingestionError.code, ingestionError.diagnostic),
+        ).not.toContain(download_url);
+      }
+    }
+    expect(fetchCalls).toBe(0);
+  });
+
   test("uses credential-free manual redirects and revalidates each target", async () => {
     const requests: Array<{ url: string; init?: RequestInit }> = [];
     const fetch = (async (url, init) => {
@@ -146,7 +206,7 @@ describe("ChatGPT temporary document downloads", () => {
       if (requests.length === 1) {
         return response("", {
           status: 302,
-          headers: { location: "https://files.oaiusercontent.com/final" },
+          headers: { location: "https://foo.files.oaiusercontent.com/final" },
         });
       }
       return response("hello world", { headers: { "content-type": "text/markdown" } });
@@ -158,6 +218,24 @@ describe("ChatGPT temporary document downloads", () => {
     expect(requests[0]?.init?.credentials).toBe("omit");
     expect(requests[0]?.init?.redirect).toBe("manual");
     expect(requests[0]?.init?.headers).not.toHaveProperty("Authorization");
+  });
+
+  test("rejects redirects outside trusted domains before the redirected fetch", async () => {
+    let fetchCalls = 0;
+    const fetch = (async () => {
+      fetchCalls += 1;
+      return response("", {
+        status: 302,
+        headers: { location: "https://oaiusercontent.com.attacker.example/private" },
+      });
+    }) as typeof globalThis.fetch;
+
+    await expectCode(
+      downloadChatGptDocument(reference, { fetch }),
+      "FILE_UNAVAILABLE",
+      "rejected_hostname",
+    );
+    expect(fetchCalls).toBe(1);
   });
 
   test("accepts valid file references when optional name or MIME metadata is omitted", async () => {
