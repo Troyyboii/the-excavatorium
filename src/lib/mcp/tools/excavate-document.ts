@@ -5,11 +5,14 @@ import {
   mergeDocumentSuggestedRecordIds,
   type DocumentDraft,
 } from "../../document";
+import { normalizeTags } from "../../format";
 import { emptyDocumentData } from "../../types";
 import {
   createDocumentIngestionClient,
   DocumentIngestionError,
+  documentIngestionErrorMessage,
   excavateAndSaveChatGptDocument,
+  safeDocumentIngestionDiagnostic,
   type ChatGptFileReference,
   type ExcavatedDocumentResult,
 } from "../document-ingestion";
@@ -41,12 +44,12 @@ async function defaultExcavationRunner(
   });
 }
 
-function mapDraftForSave(draft: DocumentDraft, ownerCandidateIds: ReadonlySet<string>) {
+export function mapDraftForSave(draft: DocumentDraft, ownerCandidateIds: ReadonlySet<string>) {
   const applied = applyDocumentDraft(emptyDocumentData, draft);
   return {
     title: applied.title,
     summary: applied.summary,
-    tags: applied.tags,
+    tags: normalizeTags(applied.tags),
     recordData: applied.data,
     selectedTargetIds: mergeDocumentSuggestedRecordIds(
       [],
@@ -61,14 +64,28 @@ export async function handleExcavateDocument(
   ctx: ToolContext,
   run: ExcavationRunner = defaultExcavationRunner,
 ): Promise<JsonToolResult> {
-  const authError = await authResult(ctx);
+  const errorOptions = { includeStructuredContent: false } as const;
+  const authError = await authResult(ctx, errorOptions);
   if (authError) return authError;
   try {
     return jsonResult(await run(file, ctx));
   } catch (error) {
-    return error instanceof DocumentIngestionError
-      ? errorResult(error.code)
-      : errorResult("DATA_UNAVAILABLE");
+    if (error instanceof DocumentIngestionError) {
+      console.warn("mcp.excavate_document.failure", {
+        code: error.code,
+        diagnostic: safeDocumentIngestionDiagnostic(error.diagnostic),
+      });
+      return errorResult(
+        error.code,
+        documentIngestionErrorMessage(error.code, error.diagnostic),
+        errorOptions,
+      );
+    }
+    console.warn("mcp.excavate_document.failure", {
+      code: "DATA_UNAVAILABLE",
+      diagnostic: "unexpected_failure",
+    });
+    return errorResult("DATA_UNAVAILABLE", undefined, errorOptions);
   }
 }
 

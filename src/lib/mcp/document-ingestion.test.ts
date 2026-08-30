@@ -9,13 +9,11 @@ import {
 } from "./document-ingestion";
 
 const reference: ChatGptFileReference = {
-  download_url: "https://files.openai.example/temporary-file",
+  download_url: "https://files.oaiusercontent.com/temporary-file",
   file_id: "file_123",
   file_name: "notes.md",
   mime_type: "text/markdown",
 };
-
-const publicResolver = async () => ["203.0.113.10"];
 
 const data: DocumentData = {
   originalFileName: "notes.md",
@@ -78,13 +76,14 @@ function client(overrides: Partial<DocumentIngestionClient> = {}): DocumentInges
   };
 }
 
-async function expectCode(work: Promise<unknown>, code: string) {
+async function expectCode(work: Promise<unknown>, code: string, diagnostic?: string) {
   try {
     await work;
     throw new Error("Expected a DocumentIngestionError");
   } catch (error) {
     expect(error).toBeInstanceOf(DocumentIngestionError);
     expect((error as DocumentIngestionError).code).toBe(code);
+    if (diagnostic) expect((error as DocumentIngestionError).diagnostic).toBe(diagnostic);
   }
 }
 
@@ -104,16 +103,40 @@ describe("ChatGPT temporary document downloads", () => {
       "https://[::ffff:10.0.0.1]/file",
       "https://[::ffff:169.254.1.1]/file",
       "https://[::ffff:192.168.1.1]/file",
+      "https://100.64.0.1/file",
+      "https://192.0.2.1/file",
+      "https://198.18.0.1/file",
+      "https://198.51.100.1/file",
+      "https://203.0.113.1/file",
+      "https://224.0.0.1/file",
+      "https://240.0.0.1/file",
+      "https://[ff02::1]/file",
+      "https://[2001:db8::1]/file",
       "https://localhost/file",
     ]) {
       await expectCode(
-        downloadChatGptDocument(
-          { ...reference, download_url },
-          { fetch, resolveHostname: publicResolver },
-        ),
+        downloadChatGptDocument({ ...reference, download_url }, { fetch }),
         "FILE_UNAVAILABLE",
       );
     }
+  });
+
+  test("classifies malformed references and URL policy failures safely", async () => {
+    await expectCode(
+      downloadChatGptDocument(null as unknown as ChatGptFileReference),
+      "FILE_UNAVAILABLE",
+      "invalid_file_reference",
+    );
+    await expectCode(
+      downloadChatGptDocument({ ...reference, download_url: "not-a-url" }),
+      "FILE_UNAVAILABLE",
+      "invalid_url",
+    );
+    await expectCode(
+      downloadChatGptDocument({ ...reference, download_url: "https://example.com/file" }),
+      "FILE_UNAVAILABLE",
+      "rejected_hostname",
+    );
   });
 
   test("uses credential-free manual redirects and revalidates each target", async () => {
@@ -123,16 +146,13 @@ describe("ChatGPT temporary document downloads", () => {
       if (requests.length === 1) {
         return response("", {
           status: 302,
-          headers: { location: "https://files.openai.example/final" },
+          headers: { location: "https://files.oaiusercontent.com/final" },
         });
       }
       return response("hello world", { headers: { "content-type": "text/markdown" } });
     }) as typeof globalThis.fetch;
 
-    const file = await downloadChatGptDocument(reference, {
-      fetch,
-      resolveHostname: publicResolver,
-    });
+    const file = await downloadChatGptDocument(reference, { fetch });
     expect(await file.text()).toBe("hello world");
     expect(requests).toHaveLength(2);
     expect(requests[0]?.init?.credentials).toBe("omit");
@@ -152,52 +172,77 @@ describe("ChatGPT temporary document downloads", () => {
         file_id: reference.file_id,
         mime_type: "text/markdown",
       },
-      { fetch, resolveHostname: publicResolver },
+      { fetch },
     );
     expect(withoutName.name).toBe("uploaded-document.md");
 
     const withoutMime = await downloadChatGptDocument(
       { download_url: reference.download_url, file_id: reference.file_id, file_name: "notes.md" },
-      { fetch, resolveHostname: publicResolver },
+      { fetch },
     );
     expect(withoutMime.name).toBe("notes.md");
     expect(withoutMime.type).toBe("text/markdown");
 
     const withoutEither = await downloadChatGptDocument(
       { download_url: reference.download_url, file_id: reference.file_id },
-      { fetch, resolveHostname: publicResolver },
+      { fetch },
     );
     expect(withoutEither.name).toBe("uploaded-document.md");
   });
 
-  test("rejects hostnames resolving to unsafe addresses before fetch and after redirects", async () => {
-    let fetches = 0;
-    const fetch = (async () => {
-      fetches += 1;
-      return response("", {
-        status: 302,
-        headers: { location: "https://redirected.example/file" },
-      });
-    }) as typeof globalThis.fetch;
+  test("rejects non-OpenAI hosts before network access", async () => {
+    let fetchCalls = 0;
+    await expectCode(
+      downloadChatGptDocument(
+        { ...reference, download_url: "https://example.com/file" },
+        {
+          fetch: (async () => {
+            fetchCalls += 1;
+            return response("not reached");
+          }) as typeof globalThis.fetch,
+        },
+      ),
+      "FILE_UNAVAILABLE",
+      "rejected_hostname",
+    );
+    expect(fetchCalls).toBe(0);
+  });
+
+  test("classifies network, HTTP, redirect, and body failures safely", async () => {
+    await expectCode(
+      downloadChatGptDocument(reference, {
+        fetch: (async () => {
+          throw new Error("network detail");
+        }) as typeof globalThis.fetch,
+      }),
+      "FILE_UNAVAILABLE",
+      "network_fetch_failure",
+    );
 
     await expectCode(
       downloadChatGptDocument(reference, {
-        fetch,
-        resolveHostname: async () => ["203.0.113.10", "127.0.0.1"],
+        fetch: (async () =>
+          response("private upstream", { status: 404 })) as typeof globalThis.fetch,
       }),
       "FILE_UNAVAILABLE",
+      "http_non_success",
     );
-    expect(fetches).toBe(0);
 
     await expectCode(
       downloadChatGptDocument(reference, {
-        fetch,
-        resolveHostname: async (hostname) =>
-          hostname === "files.openai.example" ? ["203.0.113.10"] : ["169.254.169.254"],
+        fetch: (async () => response("", { status: 302 })) as typeof globalThis.fetch,
       }),
       "FILE_UNAVAILABLE",
+      "redirect_rejected",
     );
-    expect(fetches).toBe(1);
+
+    await expectCode(
+      downloadChatGptDocument(reference, {
+        fetch: (async () => response(null, { status: 200 })) as typeof globalThis.fetch,
+      }),
+      "FILE_UNAVAILABLE",
+      "body_read_failure",
+    );
   });
 
   test("rejects unsafe redirects and declared or streamed oversize files", async () => {
@@ -209,7 +254,6 @@ describe("ChatGPT temporary document downloads", () => {
     await expectCode(
       downloadChatGptDocument(reference, {
         fetch: unsafeRedirect,
-        resolveHostname: publicResolver,
       }),
       "FILE_UNAVAILABLE",
     );
@@ -222,7 +266,6 @@ describe("ChatGPT temporary document downloads", () => {
     await expectCode(
       downloadChatGptDocument(reference, {
         fetch: malformedRedirect,
-        resolveHostname: publicResolver,
       }),
       "FILE_UNAVAILABLE",
     );
@@ -234,7 +277,6 @@ describe("ChatGPT temporary document downloads", () => {
     await expectCode(
       downloadChatGptDocument(reference, {
         fetch: declaredOversize,
-        resolveHostname: publicResolver,
       }),
       "FILE_TOO_LARGE",
     );
@@ -252,7 +294,6 @@ describe("ChatGPT temporary document downloads", () => {
     await expectCode(
       downloadChatGptDocument(reference, {
         fetch: streamedOversize,
-        resolveHostname: publicResolver,
       }),
       "FILE_TOO_LARGE",
     );
@@ -266,7 +307,6 @@ describe("ChatGPT temporary document downloads", () => {
     await expectCode(
       downloadChatGptDocument(reference, {
         fetch: unsupported,
-        resolveHostname: publicResolver,
       }),
       "UNSUPPORTED_FILE",
     );
@@ -275,10 +315,7 @@ describe("ChatGPT temporary document downloads", () => {
       response("%PDF", {
         headers: { "content-type": "application/pdf" },
       })) as typeof globalThis.fetch;
-    await expectCode(
-      downloadChatGptDocument(reference, { fetch: conflict, resolveHostname: publicResolver }),
-      "UNSUPPORTED_FILE",
-    );
+    await expectCode(downloadChatGptDocument(reference, { fetch: conflict }), "UNSUPPORTED_FILE");
   });
 });
 
@@ -296,7 +333,6 @@ describe("document ingestion orchestration", () => {
     ).join("");
     const result = await excavateAndSaveChatGptDocument(reference, {
       fetch,
-      resolveHostname: publicResolver,
       client: client({
         invoke: async (name, body) => {
           requests.push({ name, body });
@@ -352,7 +388,6 @@ describe("document ingestion orchestration", () => {
       excavateAndSaveChatGptDocument(reference, {
         client: quota,
         fetch,
-        resolveHostname: publicResolver,
         mapDraft: () => ({
           title: "",
           summary: "",
@@ -369,7 +404,6 @@ describe("document ingestion orchestration", () => {
       excavateAndSaveChatGptDocument(reference, {
         client: mismatch,
         fetch,
-        resolveHostname: publicResolver,
         mapDraft: () => ({
           title: "",
           summary: "",
@@ -388,7 +422,6 @@ describe("document ingestion orchestration", () => {
     await expectCode(
       excavateAndSaveChatGptDocument(reference, {
         fetch,
-        resolveHostname: publicResolver,
         client: client({
           invoke: async (name) =>
             name === "document-extract"
@@ -409,7 +442,6 @@ describe("document ingestion orchestration", () => {
     await expectCode(
       excavateAndSaveChatGptDocument(reference, {
         fetch,
-        resolveHostname: publicResolver,
         client: client({
           invoke: async (name) =>
             name === "document-extract"
@@ -440,7 +472,6 @@ describe("document ingestion orchestration", () => {
       try {
         await excavateAndSaveChatGptDocument(reference, {
           fetch,
-          resolveHostname: publicResolver,
           client: client({
             invoke: async () => ({
               data: null,
