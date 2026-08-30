@@ -8,16 +8,9 @@ import {
 import type { DocumentData, RecordType } from "../types";
 
 const DOWNLOAD_TIMEOUT_MS = 20_000;
+const DOCUMENT_FETCH_FUNCTION_TIMEOUT_MS = DOWNLOAD_TIMEOUT_MS + 2_000;
 const MAX_DOWNLOAD_REDIRECTS = 2;
 const MAX_CANDIDATE_RECORDS = 75;
-// OpenAI's published ChatGPT network guidance lists these OpenAI-controlled
-// wildcard domains. Accept each suffix root and dot-delimited descendants;
-// every redirect is checked against the same policy before it is fetched.
-const TRUSTED_CHATGPT_FILE_DOMAIN_SUFFIXES = [
-  "oaiusercontent.com",
-  "openai.com",
-  "chatgpt.com",
-] as const;
 const SUPPORTED_RECORD_TYPES: readonly RecordType[] = [
   "tool",
   "repository",
@@ -45,7 +38,6 @@ export type DocumentIngestionErrorCode =
 export type DocumentIngestionDiagnostic =
   | "invalid_file_reference"
   | "invalid_url"
-  | "rejected_hostname"
   | "rejected_address"
   | "dns_resolution_failure"
   | "redirect_rejected"
@@ -70,7 +62,6 @@ const SAFE_MESSAGES: Record<DocumentIngestionErrorCode, string> = {
 const DOCUMENT_INGESTION_DIAGNOSTICS: ReadonlySet<string> = new Set([
   "invalid_file_reference",
   "invalid_url",
-  "rejected_hostname",
   "rejected_address",
   "dns_resolution_failure",
   "redirect_rejected",
@@ -121,6 +112,10 @@ export type DocumentIngestionClient = {
     functionName: "document-extract" | "document-save",
     body: FormData,
   ) => Promise<{ data: unknown; error: unknown }>;
+  fetchDocument?: (
+    reference: ChatGptFileReference,
+    signal: AbortSignal,
+  ) => Promise<{ data: unknown; error: unknown; response?: Response }>;
 };
 
 export type DocumentDraftRecord = {
@@ -148,6 +143,7 @@ export type ExcavatedDocumentResult = {
 export type DocumentIngestionDependencies = {
   client: DocumentIngestionClient;
   mapDraft: DocumentDraftMapper;
+  fetchDocument?: DocumentIngestionClient["fetchDocument"];
   fetch?: typeof fetch;
   timeoutMs?: number;
 };
@@ -160,6 +156,7 @@ export type DocumentIngestionDependencies = {
 export async function downloadChatGptDocument(
   reference: ChatGptFileReference,
   options: {
+    fetchDocument?: DocumentIngestionClient["fetchDocument"];
     fetch?: typeof fetch;
     timeoutMs?: number;
   } = {},
@@ -174,6 +171,28 @@ export async function downloadChatGptDocument(
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? DOWNLOAD_TIMEOUT_MS);
 
   try {
+    if (options.fetchDocument) {
+      let result: { data: unknown; error: unknown; response?: Response };
+      try {
+        result = await options.fetchDocument(reference, controller.signal);
+      } catch {
+        throw new DocumentIngestionError("FILE_UNAVAILABLE", undefined, "network_fetch_failure");
+      }
+      if (result.error) {
+        if (result.response?.status === 413) throw new DocumentIngestionError("FILE_TOO_LARGE");
+        throw new DocumentIngestionError("FILE_UNAVAILABLE", undefined, "network_fetch_failure");
+      }
+      const bytes = await bytesFromFetchResult(result.data);
+      const responseMime =
+        result.response?.headers.get("x-excavatorium-document-content-type") ?? null;
+      return documentFileFromBytes(reference, bytes, responseMime);
+    }
+
+    // The injectable fetch path exists only for deterministic unit tests. The
+    // production client always supplies fetchDocument, which delegates to the
+    // pinned Supabase Edge Function rather than this ordinary-fetch branch.
+    if (!options.fetch)
+      throw new DocumentIngestionError("FILE_UNAVAILABLE", undefined, "network_fetch_failure");
     let url = requestUrl;
     for (let redirects = 0; redirects <= MAX_DOWNLOAD_REDIRECTS; redirects += 1) {
       let response: Response;
@@ -200,7 +219,7 @@ export async function downloadChatGptDocument(
           throw new DocumentIngestionError("FILE_UNAVAILABLE", undefined, "redirect_rejected");
         }
         try {
-          url = validateDownloadUrl(new URL(location, url).toString());
+          url = validateRedirectUrl(location, url);
         } catch (error) {
           if (error instanceof DocumentIngestionError) throw error;
           throw new DocumentIngestionError("FILE_UNAVAILABLE", undefined, "redirect_rejected");
@@ -216,22 +235,7 @@ export async function downloadChatGptDocument(
         throw new DocumentIngestionError("FILE_TOO_LARGE");
       }
       const bytes = await readBoundedResponse(response, controller);
-      const fileBytes = new Uint8Array(bytes.byteLength);
-      fileBytes.set(bytes);
-      const file = new File(
-        [fileBytes.buffer],
-        fileNameFor(reference, response.headers.get("content-type")),
-        {
-          type: fileMimeTypeFor(reference, response.headers.get("content-type")),
-        },
-      );
-      const validationError = validateSelectedDocumentFile(file);
-      if (validationError) {
-        throw new DocumentIngestionError(
-          validationError.includes("10 MB") ? "FILE_TOO_LARGE" : "UNSUPPORTED_FILE",
-        );
-      }
-      return file;
+      return documentFileFromBytes(reference, bytes, response.headers.get("content-type"));
     }
     throw new DocumentIngestionError("FILE_UNAVAILABLE", undefined, "redirect_rejected");
   } finally {
@@ -247,7 +251,11 @@ export async function excavateAndSaveChatGptDocument(
   reference: ChatGptFileReference,
   dependencies: DocumentIngestionDependencies,
 ): Promise<ExcavatedDocumentResult> {
-  const file = await downloadChatGptDocument(reference, dependencies);
+  const file = await downloadChatGptDocument(reference, {
+    fetchDocument: dependencies.fetchDocument ?? dependencies.client.fetchDocument,
+    fetch: dependencies.fetch,
+    timeoutMs: dependencies.timeoutMs,
+  });
   const contentHash = await fingerprintFile(file);
   const candidates = await loadOwnerCandidates(dependencies.client);
 
@@ -315,6 +323,33 @@ export async function excavateAndSaveChatGptDocument(
   };
 }
 
+async function bytesFromFetchResult(value: unknown): Promise<Uint8Array> {
+  if (typeof Blob !== "undefined" && value instanceof Blob)
+    return new Uint8Array(await value.arrayBuffer());
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  if (value instanceof Uint8Array) return new Uint8Array(value);
+  throw new DocumentIngestionError("FILE_UNAVAILABLE", undefined, "body_read_failure");
+}
+
+function documentFileFromBytes(
+  reference: ChatGptFileReference,
+  bytes: Uint8Array,
+  responseMime: string | null,
+): File {
+  const fileBytes = new Uint8Array(bytes.byteLength);
+  fileBytes.set(bytes);
+  const file = new File([fileBytes.buffer], fileNameFor(reference, responseMime), {
+    type: fileMimeTypeFor(reference, responseMime),
+  });
+  const validationError = validateSelectedDocumentFile(file);
+  if (validationError) {
+    throw new DocumentIngestionError(
+      validationError.includes("10 MB") ? "FILE_TOO_LARGE" : "UNSUPPORTED_FILE",
+    );
+  }
+  return file;
+}
+
 export function createDocumentIngestionClient(supabase: {
   from: (table: "records") => {
     select: (columns: string) => {
@@ -328,8 +363,13 @@ export function createDocumentIngestionClient(supabase: {
   };
   functions: {
     invoke: (
-      functionName: "document-extract" | "document-save",
-      options: { body: FormData },
+      functionName: "document-extract" | "document-save" | "document-fetch",
+      options: {
+        body: FormData | ChatGptFileReference;
+        headers?: Record<string, string>;
+        signal?: AbortSignal;
+        timeout?: number;
+      },
     ) => Promise<{ data: unknown; error: unknown }>;
   };
 }): DocumentIngestionClient {
@@ -341,6 +381,13 @@ export function createDocumentIngestionClient(supabase: {
         .order("updated_at", { ascending: false })
         .limit(MAX_CANDIDATE_RECORDS),
     invoke: (functionName, body) => supabase.functions.invoke(functionName, { body }),
+    fetchDocument: async (reference, signal) => {
+      return await supabase.functions.invoke("document-fetch", {
+        body: reference,
+        signal,
+        timeout: DOCUMENT_FETCH_FUNCTION_TIMEOUT_MS,
+      });
+    },
   };
 }
 
@@ -363,7 +410,13 @@ function validateDownloadUrl(value: string): string {
   } catch {
     throw new DocumentIngestionError("FILE_UNAVAILABLE", undefined, "invalid_url");
   }
-  const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  // Apps SDK fileParams intentionally does not promise a hostname family for
+  // temporary URLs. Keep the URL as a network capability, not as a domain
+  // allowlist, and retain the SSRF checks that do not depend on provenance.
+  const hostname = url.hostname
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "")
+    .replace(/\.+$/, "");
   if (
     url.protocol !== "https:" ||
     url.username ||
@@ -374,16 +427,32 @@ function validateDownloadUrl(value: string): string {
   ) {
     throw new DocumentIngestionError("FILE_UNAVAILABLE", undefined, "rejected_address");
   }
-  if (!isTrustedChatGptFileHostname(hostname)) {
-    throw new DocumentIngestionError("FILE_UNAVAILABLE", undefined, "rejected_hostname");
-  }
   return url.toString();
 }
 
-function isTrustedChatGptFileHostname(hostname: string): boolean {
-  return TRUSTED_CHATGPT_FILE_DOMAIN_SUFFIXES.some(
-    (suffix) => hostname === suffix || hostname.endsWith(`.${suffix}`),
-  );
+function validateRedirectUrl(location: string, currentUrl: string): string {
+  let target: URL;
+  try {
+    target = new URL(location, currentUrl);
+  } catch {
+    throw new DocumentIngestionError("FILE_UNAVAILABLE", undefined, "redirect_rejected");
+  }
+
+  let current: URL;
+  try {
+    current = new URL(currentUrl);
+  } catch {
+    throw new DocumentIngestionError("FILE_UNAVAILABLE", undefined, "redirect_rejected");
+  }
+  if (target.origin !== current.origin) {
+    throw new DocumentIngestionError("FILE_UNAVAILABLE", undefined, "redirect_rejected");
+  }
+
+  try {
+    return validateDownloadUrl(target.toString());
+  } catch {
+    throw new DocumentIngestionError("FILE_UNAVAILABLE", undefined, "redirect_rejected");
+  }
 }
 
 function isUnsafeLiteralAddress(hostname: string): boolean {
