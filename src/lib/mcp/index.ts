@@ -13,6 +13,7 @@ import getPendingApprovals from "./tools/get-pending-approvals";
 import startAnalysis from "./tools/start-analysis";
 import getRun from "./tools/get-run";
 import cancelRun from "./tools/cancel-run";
+import excavateDocument from "./tools/excavate-document";
 
 // The OAuth issuer must be the direct Supabase host, never a proxy URL.
 const projectRef =
@@ -33,14 +34,15 @@ export const mcpTools = [
   startAnalysis,
   getRun,
   cancelRun,
+  excavateDocument,
 ] as const;
 
 export default defineMcp({
   name: "the-excavatorium",
   title: "The Excavatorium",
-  version: "0.2.0",
+  version: "0.3.0",
   instructions:
-    "Read-only tools over a private technical archive of tools, repositories, conversations, decisions, and documents. Use `search` or the compatibility alias `list_records` to find records, `fetch` or `get_record` for a safe detail view, and `get_context` or `compare_records` for bounded analysis. Custodian case, finding, approval, and run tools report capability-unavailable when their owner-RLS foundation or runtime is absent. All access is scoped to the signed-in user.",
+    "Bounded tools over a private technical archive of tools, repositories, conversations, decisions, and documents. Use `search` or the compatibility alias `list_records` to find records, `fetch` or `get_record` for a safe detail view, and `get_context` or `compare_records` for bounded analysis. `excavate_document` is the one intentional mutation: it excavates a user-supplied document and saves it to the authenticated owner's archive. Custodian case, finding, approval, and run tools report capability-unavailable when their owner-RLS foundation or runtime is absent. All access is scoped to the signed-in user.",
   auth: auth.oauth.issuer({
     issuer: `https://${projectRef}.supabase.co/auth/v1`,
     acceptedAudiences: "authenticated",

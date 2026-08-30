@@ -7,6 +7,10 @@ import { createFileRoute } from "@tanstack/react-router";
 import { createTanStackMcpHandler } from "@lovable.dev/mcp-js/stacks/tanstack";
 
 import mcp from "../lib/mcp/index";
+import {
+  decorateOpenAiFileToolCatalogResponse,
+  isMcpToolsListRequest,
+} from "../lib/mcp/openai-tool-metadata";
 import { authorizeMcpClientRequest, limitMcpRequestBody } from "../lib/mcp/security";
 
 const mcpHandler = createTanStackMcpHandler(mcp, {
@@ -22,7 +26,10 @@ export const Route = createFileRoute("/mcp")({
         const limited = await limitMcpRequestBody(request, "jsonrpc");
         if ("response" in limited) return limited.response;
         const denied = await authorizeMcpClientRequest(limited.request, "jsonrpc");
-        return denied ?? mcpHandler({ request: limited.request });
+        if (denied) return denied;
+        const isToolsList = await isMcpToolsListRequest(limited.request.clone());
+        const response = await mcpHandler({ request: limited.request });
+        return isToolsList ? decorateOpenAiFileToolCatalogResponse(response) : response;
       },
     },
   },

@@ -18,6 +18,7 @@ describe("MCP registry", () => {
       "start_analysis",
       "get_run",
       "cancel_run",
+      "excavate_document",
     ]);
   });
 });

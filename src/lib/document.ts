@@ -88,6 +88,60 @@ export const documentDraftSchema = z
 
 export type DocumentDraft = z.infer<typeof documentDraftSchema>;
 
+export type AppliedDocumentDraft = {
+  title: string;
+  summary: string;
+  tags: string[];
+  data: DocumentData;
+};
+
+/**
+ * Applies the fields authored by Document Excavation to an existing document
+ * payload. Storage and route fields remain server- or user-owned.
+ */
+export function applyDocumentDraft(
+  previous: DocumentData,
+  draft: DocumentDraft,
+): AppliedDocumentDraft {
+  return {
+    title: draft.title,
+    summary: draft.summary,
+    tags: draft.tags,
+    data: {
+      ...previous,
+      originalFileName: draft.originalFileName,
+      mimeType: draft.mimeType,
+      fileSizeBytes: draft.fileSizeBytes,
+      documentDate: draft.documentDate,
+      pageCount: draft.pageCount,
+      contentHash: draft.contentHash,
+      highSignalFindings: draft.highSignalFindings,
+      keyClaims: draft.keyClaims,
+      contradictions: draft.contradictions,
+      uncertainties: draft.uncertainties,
+      sourceReferences: draft.sourceReferences,
+    },
+  };
+}
+
+/**
+ * Retains selected links and adds only valid, non-self suggestions from a
+ * document extraction draft.
+ */
+export function mergeDocumentSuggestedRecordIds(
+  selectedRecordIds: readonly string[],
+  suggestedRecordIds: readonly string[],
+  allowedRecordIds: ReadonlySet<string>,
+  currentRecordId?: string,
+): string[] {
+  return Array.from(
+    new Set([
+      ...selectedRecordIds,
+      ...suggestedRecordIds.filter((id) => id !== currentRecordId && allowedRecordIds.has(id)),
+    ]),
+  );
+}
+
 const documentValidationSectionLabels: Record<string, string> = {
   highSignalFindings: "High-signal findings",
   keyClaims: "Key claims",
