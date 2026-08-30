@@ -10,14 +10,6 @@ import type { DocumentData, RecordType } from "../types";
 const DOWNLOAD_TIMEOUT_MS = 20_000;
 const MAX_DOWNLOAD_REDIRECTS = 2;
 const MAX_CANDIDATE_RECORDS = 75;
-// OpenAI's published ChatGPT network guidance lists these OpenAI-controlled
-// wildcard domains. Accept each suffix root and dot-delimited descendants;
-// every redirect is checked against the same policy before it is fetched.
-const TRUSTED_CHATGPT_FILE_DOMAIN_SUFFIXES = [
-  "oaiusercontent.com",
-  "openai.com",
-  "chatgpt.com",
-] as const;
 const SUPPORTED_RECORD_TYPES: readonly RecordType[] = [
   "tool",
   "repository",
@@ -45,7 +37,6 @@ export type DocumentIngestionErrorCode =
 export type DocumentIngestionDiagnostic =
   | "invalid_file_reference"
   | "invalid_url"
-  | "rejected_hostname"
   | "rejected_address"
   | "dns_resolution_failure"
   | "redirect_rejected"
@@ -70,7 +61,6 @@ const SAFE_MESSAGES: Record<DocumentIngestionErrorCode, string> = {
 const DOCUMENT_INGESTION_DIAGNOSTICS: ReadonlySet<string> = new Set([
   "invalid_file_reference",
   "invalid_url",
-  "rejected_hostname",
   "rejected_address",
   "dns_resolution_failure",
   "redirect_rejected",
@@ -200,7 +190,7 @@ export async function downloadChatGptDocument(
           throw new DocumentIngestionError("FILE_UNAVAILABLE", undefined, "redirect_rejected");
         }
         try {
-          url = validateDownloadUrl(new URL(location, url).toString());
+          url = validateRedirectUrl(location, url);
         } catch (error) {
           if (error instanceof DocumentIngestionError) throw error;
           throw new DocumentIngestionError("FILE_UNAVAILABLE", undefined, "redirect_rejected");
@@ -363,7 +353,13 @@ function validateDownloadUrl(value: string): string {
   } catch {
     throw new DocumentIngestionError("FILE_UNAVAILABLE", undefined, "invalid_url");
   }
-  const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  // Apps SDK fileParams intentionally does not promise a hostname family for
+  // temporary URLs. Keep the URL as a network capability, not as a domain
+  // allowlist, and retain the SSRF checks that do not depend on provenance.
+  const hostname = url.hostname
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "")
+    .replace(/\.+$/, "");
   if (
     url.protocol !== "https:" ||
     url.username ||
@@ -374,16 +370,32 @@ function validateDownloadUrl(value: string): string {
   ) {
     throw new DocumentIngestionError("FILE_UNAVAILABLE", undefined, "rejected_address");
   }
-  if (!isTrustedChatGptFileHostname(hostname)) {
-    throw new DocumentIngestionError("FILE_UNAVAILABLE", undefined, "rejected_hostname");
-  }
   return url.toString();
 }
 
-function isTrustedChatGptFileHostname(hostname: string): boolean {
-  return TRUSTED_CHATGPT_FILE_DOMAIN_SUFFIXES.some(
-    (suffix) => hostname === suffix || hostname.endsWith(`.${suffix}`),
-  );
+function validateRedirectUrl(location: string, currentUrl: string): string {
+  let target: URL;
+  try {
+    target = new URL(location, currentUrl);
+  } catch {
+    throw new DocumentIngestionError("FILE_UNAVAILABLE", undefined, "redirect_rejected");
+  }
+
+  let current: URL;
+  try {
+    current = new URL(currentUrl);
+  } catch {
+    throw new DocumentIngestionError("FILE_UNAVAILABLE", undefined, "redirect_rejected");
+  }
+  if (target.origin !== current.origin) {
+    throw new DocumentIngestionError("FILE_UNAVAILABLE", undefined, "redirect_rejected");
+  }
+
+  try {
+    return validateDownloadUrl(target.toString());
+  } catch {
+    throw new DocumentIngestionError("FILE_UNAVAILABLE", undefined, "redirect_rejected");
+  }
 }
 
 function isUnsafeLiteralAddress(hostname: string): boolean {
