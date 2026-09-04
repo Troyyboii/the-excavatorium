@@ -82,7 +82,7 @@ export function CaseScopePicker({
           {selected.map((record) => (
             <span
               key={record.id}
-              className="inline-flex max-w-full items-center gap-1.5 rounded-sm bg-burgundy-muted/70 px-2 py-1 text-xs text-white-gold"
+              className="inline-flex max-w-full shrink-0 items-center gap-1.5 rounded-sm bg-burgundy-muted/70 px-2 py-1 text-xs text-white-gold"
             >
               <TypeIcon type={record.recordType} size={12} />
               <span className="max-w-[220px] truncate">{record.title}</span>
@@ -99,7 +99,7 @@ export function CaseScopePicker({
           {missingIds.map((recordId) => (
             <span
               key={recordId}
-              className="inline-flex max-w-full items-center gap-1.5 rounded-sm border border-risk/50 px-2 py-1 text-xs text-white-gold"
+              className="inline-flex max-w-full shrink-0 items-center gap-1.5 rounded-sm border border-risk/50 px-2 py-1 text-xs text-white-gold"
             >
               <span className="max-w-[220px] truncate font-mono">
                 Unavailable record {recordId}

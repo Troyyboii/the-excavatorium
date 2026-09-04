@@ -55,6 +55,10 @@ describe("Case archive scope picker", () => {
     expect(
       screen.getByRole("button", { name: "Remove archive record Second archive record" }),
     ).not.toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Remove archive record Second archive record" })
+        .parentElement?.className,
+    ).toContain("shrink-0");
   });
 
   test("keeps a selected record visible when it is absent from the current snapshot", () => {
