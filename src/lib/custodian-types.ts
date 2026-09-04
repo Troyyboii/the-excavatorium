@@ -20,6 +20,15 @@ export type InboxStatus = (typeof INBOX_STATUSES)[number];
 export const CASE_STATUSES = ["open", "paused", "closed", "archived"] as const;
 export type CaseStatus = (typeof CASE_STATUSES)[number];
 
+export const CASE_ARCHIVE_SCOPE_MAX_RECORDS = 50;
+export const CASE_ARCHIVE_CONTEXT_MAX_CHARS = 10_000;
+export const CASE_READING_MAX_CHARS = 80_000;
+
+export type CaseArchiveScope = {
+  recordIds: string[];
+  freeTextContext: string;
+};
+
 export const CLAIM_STATUSES = [
   "observed",
   "reported",
@@ -85,6 +94,7 @@ export type CustodianCaseRow = {
   objective: string;
   current_question: string;
   default_working_set: JsonValue;
+  archive_scope: JsonValue;
   status: CaseStatus;
   closed_at: string | null;
   created_by: string;
@@ -99,6 +109,7 @@ export type CustodianCase = {
   objective: string;
   currentQuestion: string;
   defaultWorkingSet: JsonValue[];
+  archiveScope: CaseArchiveScope;
   status: CaseStatus;
   closedAt: string | null;
   createdBy: string;

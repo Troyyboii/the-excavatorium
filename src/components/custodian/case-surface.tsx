@@ -13,6 +13,7 @@ import {
 } from "@phosphor-icons/react";
 import { useEffect, useState, type FormEvent } from "react";
 import type {
+  CaseArchiveScope,
   CaseMember,
   CaseStatus,
   Claim,
@@ -22,10 +23,17 @@ import type {
   JsonValue,
 } from "@/lib/custodian-types";
 import type { ArchiveRecord } from "@/lib/types";
-import { displayJson, parseWorkingSet, serializeWorkingSetEntry } from "@/lib/custodian-surfaces";
+import {
+  CASE_ARCHIVE_CONTEXT_MAX_CHARS,
+  CASE_READING_MAX_CHARS,
+  CASE_ARCHIVE_SCOPE_MAX_RECORDS,
+} from "@/lib/custodian-types";
+import { displayJson } from "@/lib/custodian-surfaces";
 import { recordHref } from "@/components/record-list";
 import { ArchiveErrorState, EmptyArchiveState, LoadingMark, Section } from "./custodian-ui";
 import { formatRecordDate, valueOrNotRecorded } from "./custodian-format";
+import { CaseReadingSurface } from "./case-reading";
+import { CaseScopePicker } from "./case-scope-picker";
 
 export type CustodianCaseView = {
   id: string;
@@ -33,29 +41,50 @@ export type CustodianCaseView = {
   objective: string;
   currentQuestion: string;
   defaultWorkingSet: JsonValue[];
+  archiveScope: CaseArchiveScope;
   status: CaseStatus;
   updatedAt: string;
 };
 
-export type CaseEditorValue = Pick<
-  CustodianCaseView,
-  "title" | "objective" | "currentQuestion" | "defaultWorkingSet" | "status"
->;
+export type CaseEditorValue = {
+  title: string;
+  objective: string;
+  currentQuestion: string;
+  archiveScope: CaseArchiveScope;
+  status: CaseStatus;
+};
 
 export function CaseListSurface({
   cases,
   loading = false,
   error,
   online = true,
+  archiveRecords = [],
+  archiveReady = false,
+  archiveLoading = false,
+  archiveError = null,
+  archiveStale = false,
+  initial,
+  prefillError = null,
   onCreate,
 }: {
   cases?: readonly CustodianCaseView[];
   loading?: boolean;
   error?: string | null;
   online?: boolean;
-  onCreate: (value: CaseEditorValue) => Promise<void>;
+  archiveRecords?: readonly ArchiveRecord[];
+  archiveReady?: boolean;
+  archiveLoading?: boolean;
+  archiveError?: string | null;
+  archiveStale?: boolean;
+  initial?: CaseEditorValue;
+  prefillError?: string | null;
+  onCreate: (value: CaseEditorValue) => Promise<CustodianCaseView>;
 }) {
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(Boolean(initial));
+  useEffect(() => {
+    if (initial) setCreating(true);
+  }, [initial]);
   return (
     <div className="space-y-6">
       <div className="flex justify-end">
@@ -70,8 +99,24 @@ export function CaseListSurface({
         </button>
       </div>
 
+      {creating && archiveError ? (
+        <p
+          className="border border-[#b79b68]/45 bg-[#f5ead8] px-4 py-3 text-sm text-[#675c4f]"
+          role="status"
+        >
+          {archiveStale
+            ? "Archive refresh failed. The available cached records can still be selected."
+            : "Archive selection is unavailable until the owner-scoped archive can be read."}{" "}
+          {archiveError}
+        </p>
+      ) : null}
+
       {creating ? (
         <CaseEditor
+          initial={initial}
+          archiveRecords={archiveRecords}
+          archiveReady={archiveReady}
+          archiveLoading={archiveLoading}
           submitLabel="Create case"
           onSubmit={async (value) => {
             await onCreate(value);
@@ -80,18 +125,23 @@ export function CaseListSurface({
         />
       ) : null}
 
+      {prefillError ? (
+        <p className="border border-risk/40 bg-risk/10 px-4 py-3 text-sm text-risk" role="alert">
+          {prefillError}
+        </p>
+      ) : null}
       {error ? <ArchiveErrorState error={error} /> : null}
       {!error && (loading || cases === undefined) ? <LoadingMark /> : null}
       {!loading && cases?.length === 0 ? (
         <EmptyArchiveState
           title="No cases yet."
-          hint="Create a case when material needs an objective, current question, and evidence-backed working set."
+          hint="Create a case when material needs an objective, current question, and a bounded archive scope."
         />
       ) : null}
       {cases?.length ? (
         <Section
           title="Persisted cases"
-          description="Objectives, current questions, and working sets stored in Supabase."
+          description="Objectives, current questions, lifecycle, and bounded archive scope stored in Supabase."
         >
           <div className="divide-y divide-luminous-gold/15">
             {cases.map((item) => (
@@ -111,7 +161,7 @@ export function CaseListSurface({
                 </span>
                 <CaseValue label="Objective" value={item.objective} />
                 <CaseValue label="Status" value={item.status} />
-                <CaseValue label="Working set" value={item.defaultWorkingSet.length} />
+                <CaseValue label="Archive scope" value={item.archiveScope.recordIds.length} />
                 <ArrowUpRight size={16} className="text-luminous-gold" aria-hidden="true" />
               </Link>
             ))}
@@ -131,6 +181,10 @@ export function CaseDetailSurface({
   actions = [],
   findings = [],
   archiveRecords = [],
+  archiveReady = false,
+  archiveLoading = false,
+  archiveError = null,
+  archiveStale = false,
   loading = false,
   error,
   online = true,
@@ -144,6 +198,10 @@ export function CaseDetailSurface({
   actions?: readonly CustodianAction[];
   findings?: readonly CustodianFinding[];
   archiveRecords?: readonly ArchiveRecord[];
+  archiveReady?: boolean;
+  archiveLoading?: boolean;
+  archiveError?: string | null;
+  archiveStale?: boolean;
   loading?: boolean;
   error?: string | null;
   online?: boolean;
@@ -178,6 +236,9 @@ export function CaseDetailSurface({
       {editing ? (
         <CaseEditor
           initial={item}
+          archiveRecords={archiveRecords}
+          archiveReady={archiveReady}
+          archiveLoading={archiveLoading}
           submitLabel="Save case"
           onSubmit={async (value) => {
             await onUpdate(value);
@@ -187,16 +248,29 @@ export function CaseDetailSurface({
       ) : null}
 
       <Section title={item.title} description={`Case ${item.id}`}>
-        <dl className="grid gap-4 p-4 sm:grid-cols-2 lg:grid-cols-4">
+        <dl className="grid gap-4 p-4 sm:grid-cols-2 lg:grid-cols-5">
           <CaseDetail label="Objective" value={item.objective} />
           <CaseDetail label="Current question" value={item.currentQuestion} />
-          <CaseDetail label="Working set" value={item.defaultWorkingSet.length} />
+          <CaseDetail label="Archive scope" value={item.archiveScope.recordIds.length} />
+          <CaseDetail
+            label="Owner context"
+            value={item.archiveScope.freeTextContext.trim() ? "Recorded" : "Not recorded"}
+          />
           <CaseDetail label="Case status" value={item.status} />
         </dl>
         <p className="border-t border-luminous-gold/20 px-4 py-3 text-xs text-muted-foreground">
           Last updated {formatRecordDate(item.updatedAt)}
         </p>
       </Section>
+
+      <CaseReadingSurface
+        scope={item.archiveScope}
+        archiveRecords={archiveRecords}
+        archiveReady={archiveReady}
+        archiveLoading={archiveLoading}
+        archiveError={archiveError}
+        archiveStale={archiveStale}
+      />
 
       <div className="grid gap-6 xl:grid-cols-2">
         <CaseCollection
@@ -258,30 +332,64 @@ export function CaseDetailSurface({
           }))}
         />
         <Section
-          title="Working set"
-          description="Persisted archive references and other explicit case context."
+          title="Archive scope"
+          description={`Selected canonical records only · maximum ${CASE_ARCHIVE_SCOPE_MAX_RECORDS}`}
         >
-          {item.defaultWorkingSet.length ? (
+          {item.archiveScope.recordIds.length ? (
             <ul className="divide-y divide-luminous-gold/15">
-              {item.defaultWorkingSet.map((entry, index) => {
-                const record = typeof entry === "string" ? recordsById.get(entry) : undefined;
+              {item.archiveScope.recordIds.map((recordId) => {
+                const record = recordsById.get(recordId);
                 return (
-                  <li key={`${index}-${displayJson(entry)}`} className="px-4 py-3 text-sm">
+                  <li key={recordId} className="px-4 py-3 text-sm">
                     {record ? (
                       <Link to={recordHref(record)} className="text-white-gold hover:underline">
                         {record.title}
                       </Link>
                     ) : (
-                      <span className="break-words text-foreground">{displayJson(entry)}</span>
+                      <span className="break-words text-risk">
+                        Unavailable in the current archive snapshot · {recordId}
+                      </span>
                     )}
+                    <span className="mt-1 block font-mono text-[10px] text-muted-foreground">
+                      {record?.recordType ?? "record"} · {recordId}
+                    </span>
                   </li>
                 );
               })}
             </ul>
           ) : (
-            <p className="p-5 text-sm text-muted-foreground">No working-set entries recorded.</p>
+            <p className="p-5 text-sm text-muted-foreground">No archive records selected.</p>
           )}
         </Section>
+        <Section
+          title="Owner context"
+          description="Free-text context supplied by the owner. It is not archive evidence and is not included as a record."
+        >
+          {item.archiveScope.freeTextContext.trim() ? (
+            <p className="whitespace-pre-wrap break-words p-4 text-sm text-foreground">
+              {item.archiveScope.freeTextContext}
+            </p>
+          ) : (
+            <p className="p-5 text-sm text-muted-foreground">No owner context recorded.</p>
+          )}
+        </Section>
+        {item.defaultWorkingSet.length ? (
+          <Section
+            title="Legacy working set"
+            description="Preserved for compatibility; not used as archive evidence or Case Reading."
+          >
+            <ul className="divide-y divide-luminous-gold/15">
+              {item.defaultWorkingSet.map((entry, index) => (
+                <li
+                  key={`${index}-${displayJson(entry)}`}
+                  className="break-words px-4 py-3 text-sm text-muted-foreground"
+                >
+                  {displayJson(entry)}
+                </li>
+              ))}
+            </ul>
+          </Section>
+        ) : null}
       </div>
     </div>
   );
@@ -289,18 +397,24 @@ export function CaseDetailSurface({
 
 function CaseEditor({
   initial,
+  archiveRecords,
+  archiveReady,
+  archiveLoading,
   submitLabel,
   onSubmit,
 }: {
   initial?: CaseEditorValue;
+  archiveRecords: readonly ArchiveRecord[];
+  archiveReady: boolean;
+  archiveLoading: boolean;
   submitLabel: string;
   onSubmit: (value: CaseEditorValue) => Promise<void>;
 }) {
   const [title, setTitle] = useState(initial?.title ?? "");
   const [objective, setObjective] = useState(initial?.objective ?? "");
   const [currentQuestion, setCurrentQuestion] = useState(initial?.currentQuestion ?? "");
-  const [workingSet, setWorkingSet] = useState(
-    initial?.defaultWorkingSet.map(serializeWorkingSetEntry).join("\n") ?? "",
+  const [archiveScope, setArchiveScope] = useState<CaseArchiveScope>(
+    initial?.archiveScope ?? { recordIds: [], freeTextContext: "" },
   );
   const [status, setStatus] = useState<CaseStatus>(initial?.status ?? "open");
   const [saving, setSaving] = useState(false);
@@ -310,7 +424,7 @@ function CaseEditor({
     setTitle(initial?.title ?? "");
     setObjective(initial?.objective ?? "");
     setCurrentQuestion(initial?.currentQuestion ?? "");
-    setWorkingSet(initial?.defaultWorkingSet.map(serializeWorkingSetEntry).join("\n") ?? "");
+    setArchiveScope(initial?.archiveScope ?? { recordIds: [], freeTextContext: "" });
     setStatus(initial?.status ?? "open");
   }, [initial]);
 
@@ -323,7 +437,7 @@ function CaseEditor({
         title: title.trim(),
         objective: objective.trim(),
         currentQuestion: currentQuestion.trim(),
-        defaultWorkingSet: parseWorkingSet(workingSet),
+        archiveScope,
         status,
       });
     } catch (cause) {
@@ -361,18 +475,50 @@ function CaseEditor({
             rows={4}
           />
         </CaseField>
-        <CaseField label="Working set" hint="One archive record ID or context value per line.">
-          <textarea
-            value={workingSet}
-            onChange={(event) => setWorkingSet(event.target.value)}
-            rows={5}
+        <div className="grid gap-2 text-sm text-foreground lg:col-span-2">
+          <span>Archive evidence</span>
+          <CaseScopePicker
+            all={archiveRecords}
+            value={archiveScope.recordIds}
+            onChange={(recordIds) => setArchiveScope((scope) => ({ ...scope, recordIds }))}
+            disabled={archiveLoading || !archiveReady}
           />
-        </CaseField>
+          <span className="text-xs text-muted-foreground">
+            Select owner-visible canonical archive records in reading order. Maximum{" "}
+            {CASE_ARCHIVE_SCOPE_MAX_RECORDS}; Case Reading is bounded at{" "}
+            {CASE_READING_MAX_CHARS.toLocaleString()} serialized characters.
+          </span>
+          {archiveScope.recordIds.length && !archiveReady ? (
+            <span className="text-xs text-risk" role="alert">
+              Load the archive before saving selected evidence.
+            </span>
+          ) : null}
+        </div>
+        <div className="grid gap-2 text-sm text-foreground lg:col-span-2">
+          <span>Owner context (not archive evidence)</span>
+          <textarea
+            value={archiveScope.freeTextContext}
+            onChange={(event) =>
+              setArchiveScope((scope) => ({ ...scope, freeTextContext: event.target.value }))
+            }
+            maxLength={CASE_ARCHIVE_CONTEXT_MAX_CHARS}
+            rows={5}
+            className="border border-luminous-gold/30 bg-background px-3 py-2"
+            aria-label="Owner context (not archive evidence)"
+          />
+          <span className="text-xs text-muted-foreground">
+            Explicit context stays attached to the Case and is never represented as an archive
+            record. {archiveScope.freeTextContext.length.toLocaleString()}/
+            {CASE_ARCHIVE_CONTEXT_MAX_CHARS.toLocaleString()} characters.
+          </span>
+        </div>
         <div className="flex flex-col items-start justify-end gap-3">
           {error ? <p className="text-sm text-risk">{error}</p> : null}
           <button
             type="submit"
-            disabled={saving || !title.trim()}
+            disabled={
+              saving || !title.trim() || (archiveScope.recordIds.length > 0 && !archiveReady)
+            }
             className="inline-flex min-h-11 items-center gap-2 border border-luminous-gold/55 bg-primary px-4 text-sm text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
           >
             <FloppyDisk size={17} />

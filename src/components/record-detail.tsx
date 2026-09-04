@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { PencilSimple, DownloadSimple, Copy } from "@phosphor-icons/react";
+import { PencilSimple, DownloadSimple, Copy, MagnifyingGlass } from "@phosphor-icons/react";
 import type { ArchiveLink, ArchiveRecord } from "@/lib/types";
 import { RECORD_TYPE_LABEL } from "@/lib/types";
 import { plural, recordHref, TypeIcon, TombstoneIfBuried } from "./record-list";
@@ -70,6 +70,15 @@ export function RecordDetail({
             >
               <DownloadSimple size={16} /> Export as Markdown
             </button>
+            {record.recordType === "decision" ? (
+              <Link
+                to="/cases"
+                search={{ decision: record.id }}
+                className="inline-flex min-h-11 items-center gap-2 rounded-md border border-primary bg-burgundy-muted px-3 py-2 text-sm font-medium text-foreground hover:bg-primary hover:text-primary-foreground"
+              >
+                <MagnifyingGlass size={16} /> Ask Custodian to Review
+              </Link>
+            ) : null}
             <Link
               {...editRoute(record)}
               className="inline-flex min-h-11 items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-[color:var(--primary)]/90"

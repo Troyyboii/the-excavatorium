@@ -11,7 +11,7 @@ import {
 } from "./mcp-utils";
 
 const CASE_SELECT =
-  "id,title,objective,current_question,default_working_set,status,created_at,updated_at";
+  "id,title,objective,current_question,default_working_set,archive_scope,status,created_at,updated_at";
 const FINDING_SELECT =
   "id,case_id,analysis_mode,title,finding,confidence,what_would_change_mind,revisit_condition,source_record_id,status,created_at,updated_at";
 const RUN_SELECT =

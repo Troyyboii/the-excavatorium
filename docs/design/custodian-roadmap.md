@@ -58,7 +58,8 @@ reduced motion, and no invented activity or statistics.
 
 Build the question and scope surface over existing records and cases:
 
-- the owner chooses a question, case, and bounded working set;
+- the owner chooses a question, case, and bounded archive record scope;
+- optional owner context remains separate from canonical archive evidence;
 - retrieval produces a size-limited evidence bundle with record identifiers,
   provenance, exclusions, and truncation;
 - the Custodian reading is attributable and labeled as interpretation;

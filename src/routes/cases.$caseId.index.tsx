@@ -80,6 +80,13 @@ function CaseDetailPage() {
         actions={(actions.data ?? []).filter((entry) => entry.caseId === caseId)}
         findings={(findings.data ?? []).filter((entry) => entry.caseId === caseId)}
         archiveRecords={archive.data?.records ?? []}
+        archiveReady={Boolean(archive.data)}
+        archiveLoading={archive.isPending}
+        archiveError={
+          archive.recordsError?.message ??
+          (archive.isColdOffline ? "Network unavailable and no cached archive is available." : null)
+        }
+        archiveStale={Boolean(archive.recordsError && archive.data)}
         loading={cases.isLoading || detailQueries.some((query) => query.isLoading)}
         error={error}
         online={online && !foundationPending}

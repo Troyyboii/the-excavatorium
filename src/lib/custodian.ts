@@ -14,6 +14,7 @@ import {
   SOURCE_CLASSIFICATIONS,
   type ActionRow,
   type ActionStatus,
+  type CaseArchiveScope,
   type CaseMember,
   type CaseMemberRow,
   type CaseStatus,
@@ -43,6 +44,7 @@ import {
   type RecordRevisionRow,
   type SourceClassification,
 } from "./custodian-types";
+import { caseArchiveScopePayload, parseCaseArchiveScope } from "./custodian-surfaces";
 
 export const CUSTODIAN_PAGE_SIZE = 500;
 export type CustodianResource =
@@ -182,6 +184,7 @@ export function mapCustodianCaseRow(value: unknown): CustodianCase {
     objective: text(row, "objective"),
     currentQuestion: text(row, "current_question"),
     defaultWorkingSet: jsonArray(row, "default_working_set"),
+    archiveScope: parseCaseArchiveScope(jsonValue(row, "archive_scope")),
     status: enumValue(row, "status", CASE_STATUSES),
     closedAt: nullableText(row, "closed_at"),
     createdBy: text(row, "created_by"),
@@ -457,7 +460,7 @@ async function fetchOwnerCollection<Row, Domain>(
 }
 
 const FULL_CASE_SELECT =
-  "id,owner_id,title,objective,current_question,default_working_set,status,closed_at,created_by,updated_by,created_at,updated_at";
+  "id,owner_id,title,objective,current_question,default_working_set,archive_scope,status,closed_at,created_by,updated_by,created_at,updated_at";
 const FULL_INBOX_SELECT =
   "id,owner_id,kind,raw_content,title,candidate,status,source_label,captured_at,triaged_at,promoted_kind,promoted_id,created_by,updated_by,created_at,updated_at";
 const FULL_CLAIM_SELECT =
@@ -694,6 +697,8 @@ export type CaseWriteInput = {
   title: string;
   objective?: string;
   currentQuestion?: string;
+  archiveScope?: CaseArchiveScope;
+  /** @deprecated Kept only for legacy callers. New Case UI must not send it. */
   defaultWorkingSet?: JsonValue[];
   status?: CaseStatus;
   closedAt?: string | null;
@@ -704,6 +709,7 @@ function caseWritePayload(input: CaseWriteInput): Record<string, unknown> {
   if (input.objective !== undefined) validateTextInput(input.objective, "objective", 10000, false);
   if (input.currentQuestion !== undefined)
     validateTextInput(input.currentQuestion, "current_question", 10000, false);
+  if (input.archiveScope !== undefined) caseArchiveScopePayload(input.archiveScope);
   if (input.defaultWorkingSet !== undefined && !Array.isArray(input.defaultWorkingSet))
     throw new Error("default_working_set must be an array");
   if (input.status !== undefined && !isCaseStatus(input.status))
@@ -712,7 +718,12 @@ function caseWritePayload(input: CaseWriteInput): Record<string, unknown> {
     title: input.title,
     objective: input.objective ?? "",
     current_question: input.currentQuestion ?? "",
-    default_working_set: input.defaultWorkingSet ?? [],
+    ...(input.archiveScope !== undefined
+      ? { archive_scope: caseArchiveScopePayload(input.archiveScope) }
+      : {}),
+    ...(input.defaultWorkingSet !== undefined
+      ? { default_working_set: input.defaultWorkingSet }
+      : {}),
     ...(input.status ? { status: input.status } : {}),
     ...(input.closedAt !== undefined ? { closed_at: input.closedAt } : {}),
   };

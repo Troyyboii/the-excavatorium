@@ -1,11 +1,18 @@
 import { describe, expect, test } from "bun:test";
-import type { InboxItem, InboxStatus } from "./custodian-types";
 import {
+  CASE_ARCHIVE_CONTEXT_MAX_CHARS,
+  CASE_ARCHIVE_SCOPE_MAX_RECORDS,
+  type InboxItem,
+  type InboxStatus,
+} from "./custodian-types";
+import {
+  caseArchiveScopePayload,
   countInboxStatuses,
   displayJson,
   filterInboxItems,
   INBOX_FILTERS,
   isPromotionReady,
+  parseCaseArchiveScope,
   parseWorkingSet,
   serializeWorkingSetEntry,
 } from "./custodian-surfaces";
@@ -70,5 +77,46 @@ describe("Custodian Case surface", () => {
     expect(displayJson({ source: "record-1" })).toBe('{"source":"record-1"}');
     expect(parseWorkingSet(serializeWorkingSetEntry("123"))).toEqual(["123"]);
     expect(parseWorkingSet(serializeWorkingSetEntry(true))).toEqual([true]);
+  });
+
+  test("keeps selected records separate from owner-authored context", () => {
+    const recordId = "11111111-1111-4111-8111-111111111111";
+    const scope = parseCaseArchiveScope({
+      record_ids: [recordId],
+      free_text_context: "Check the original decision against the latest evidence.",
+    });
+    expect(scope).toEqual({
+      recordIds: [recordId],
+      freeTextContext: "Check the original decision against the latest evidence.",
+    });
+    expect(caseArchiveScopePayload(scope)).toEqual({
+      record_ids: [recordId],
+      free_text_context: "Check the original decision against the latest evidence.",
+    });
+  });
+
+  test("rejects malformed, duplicate, over-limit, and oversized Case scope input", () => {
+    const recordId = "22222222-2222-4222-8222-222222222222";
+    expect(() =>
+      parseCaseArchiveScope({ record_ids: [recordId, recordId], free_text_context: "" }),
+    ).toThrow("duplicates");
+    expect(() =>
+      parseCaseArchiveScope({ record_ids: ["not-a-uuid"], free_text_context: "" }),
+    ).toThrow("UUID");
+    expect(() =>
+      parseCaseArchiveScope({
+        record_ids: Array.from(
+          { length: CASE_ARCHIVE_SCOPE_MAX_RECORDS + 1 },
+          (_, index) => "00000000-0000-4000-8000-" + String(index).padStart(12, "0"),
+        ),
+        free_text_context: "",
+      }),
+    ).toThrow("at most");
+    expect(() =>
+      parseCaseArchiveScope({
+        record_ids: [],
+        free_text_context: "x".repeat(CASE_ARCHIVE_CONTEXT_MAX_CHARS + 1),
+      }),
+    ).toThrow("exceeds");
   });
 });
