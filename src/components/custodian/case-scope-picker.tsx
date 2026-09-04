@@ -53,7 +53,7 @@ export function CaseScopePicker({
   }
 
   return (
-    <div className="border border-luminous-gold/30 bg-background">
+    <div className="min-w-0 border border-luminous-gold/30 bg-background">
       <button
         type="button"
         disabled={disabled}
