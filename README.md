@@ -146,6 +146,9 @@ cannot spend the same remaining budget.
 
 ## Detailed setup and verification
 
+- [Custodian program](./docs/custodian-program.md) — the canonical long-lived
+  product, architecture, authority, and implementation program for The Custodian;
+  it distinguishes verified current behavior from blocked and future capabilities.
 - [Supabase setup](./docs/supabase-setup.md) — migrations, owner-account
   bootstrap, secrets, and Edge Function deployment.
 - [Supabase verification checklist](./docs/supabase-verification.md) —
