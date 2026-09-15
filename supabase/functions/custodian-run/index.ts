@@ -10,7 +10,6 @@ import {
   buildResponsesRequest,
   calculateUsageCost,
   CUSTODIAN_MODEL_PRICING_ENV,
-  DEFAULT_ALLOWED_MODEL_TIERS,
   extractResponsesJson,
   isAllowedModelTiers,
   isApprovalOutput,
@@ -59,7 +58,7 @@ type AgentRun = JsonRecord & {
   status: string;
   input_snapshot: JsonRecord;
   readonly agent_config: JsonRecord;
-  readonly tool_policy_id: string | null;
+  readonly tool_policy_id: string;
   objective: string;
   prompt_version: string;
   model_tier: ModelTier;
@@ -180,7 +179,7 @@ async function readJsonBody(
   }
 }
 
-function runFromRpc(value: unknown): AgentRun {
+export function parseAgentRun(value: unknown): AgentRun {
   if (!isObject(value) || !isObject(value.run)) throw new RpcFailure();
   const run = value.run;
   if (
@@ -189,8 +188,8 @@ function runFromRpc(value: unknown): AgentRun {
     typeof run.status !== "string" ||
     !isObject(run.input_snapshot) ||
     !isObject(run.agent_config) ||
-    (run.tool_policy_id !== null &&
-      (typeof run.tool_policy_id !== "string" || !UUID_PATTERN.test(run.tool_policy_id))) ||
+    typeof run.tool_policy_id !== "string" ||
+    !UUID_PATTERN.test(run.tool_policy_id) ||
     typeof run.objective !== "string" ||
     typeof run.prompt_version !== "string" ||
     !["luna", "terra", "sol", "pro"].includes(String(run.model_tier)) ||
@@ -209,7 +208,6 @@ async function resolveAllowedModelTiers(
   ownerId: string,
   run: AgentRun,
 ): Promise<readonly ModelTier[]> {
-  if (run.tool_policy_id === null) return DEFAULT_ALLOWED_MODEL_TIERS;
   const { data, error } = await client
     .from("tool_policies")
     .select("allowed_model_tiers,status,lifecycle_status,kill_switch")
@@ -259,7 +257,7 @@ async function rpc(
 }
 
 async function getRun(client: AuthenticatedSupabase["client"], runId: string): Promise<AgentRun> {
-  return runFromRpc(await rpc(client, "custodian_get_agent_run", { run_id: runId }));
+  return parseAgentRun(await rpc(client, "custodian_get_agent_run", { run_id: runId }));
 }
 
 async function getBudget(
@@ -276,7 +274,7 @@ async function transitionRun(
   nextStatus: string,
   patch: JsonRecord = {},
 ): Promise<AgentRun> {
-  return runFromRpc(
+  return parseAgentRun(
     await rpc(client, "custodian_transition_agent_run", {
       run_id: run.id,
       expected_status: run.status,
@@ -324,7 +322,7 @@ async function recordStep(
       },
     },
   });
-  return runFromRpc(value);
+  return parseAgentRun(value);
 }
 
 function boundedEvidence(value: JsonRecord): unknown {
@@ -543,7 +541,7 @@ async function createApproval(
     },
     idempotency_key: `${invocationKey}:approval:${stage}`.slice(0, MAX_INVOCATION_KEY_LENGTH),
   });
-  const updatedRun = isObject(approval) && isObject(approval.run) ? runFromRpc(approval) : run;
+  const updatedRun = isObject(approval) && isObject(approval.run) ? parseAgentRun(approval) : run;
   const approvalSummary = publicApproval(approval);
   if (!approvalSummary) throw new RpcFailure();
   return updatedRun;
@@ -831,7 +829,7 @@ async function processInvocation(
       const approval = await rpc(auth.client, "custodian_get_agent_run", {
         run_id: approvalRun.id,
       });
-      const currentRun = runFromRpc(approval);
+      const currentRun = parseAgentRun(approval);
       return result(200, "paused", currentRun, {}, origin);
     }
     const nextStatus = stage === "extract" ? "synthesizing" : "verifying";

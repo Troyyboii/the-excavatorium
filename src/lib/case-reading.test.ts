@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { CASE_READING_MAX_CHARS } from "./custodian-types";
 import { emptyDecisionData, emptyDocumentData, emptyToolData, type ArchiveRecord } from "./types";
-import { buildCaseReadingBundle } from "./case-reading";
+import {
+  buildCaseReadingBundle,
+  describeCaseReadingAdmission,
+  describeCaseReadingExclusion,
+} from "./case-reading";
 
 const timestamps = {
   createdAt: "2026-09-04T09:00:00.000Z",
@@ -22,6 +27,19 @@ function toolRecord(
     ...timestamps,
     recordData: { ...emptyToolData, ...overrides },
   };
+}
+
+function toolRecordWithRepeatedText(id: string, length: number): ArchiveRecord {
+  const text = "x".repeat(length);
+  return toolRecord(id, {
+    whatCaughtMyEye: text,
+    whatItPromised: text,
+    whatActuallyHappened: text,
+    whatWorked: text,
+    whatFailed: text,
+    whyIKeptOrStoppedUsingIt: text,
+    finalVerdict: text,
+  });
 }
 
 function decisionRecord(
@@ -105,6 +123,9 @@ describe("bounded Case Reading", () => {
       ["document-1", "document"],
       ["decision-1", "decision"],
     ]);
+    expect(
+      describeCaseReadingAdmission({ decision: "included", reasonCode: "selected_scope" }),
+    ).toContain("Explicitly selected in the Case archive scope");
     expect(bundle.ownerContext).toBe("Owner note, not evidence.");
     expect(bundle.includedRecords[0]?.provenance).toContain(
       "Document source: Page 2 · p. 2 · Primary source.",
@@ -126,6 +147,9 @@ describe("bounded Case Reading", () => {
     });
 
     expect(bundle.excludedRecords).toEqual([{ recordId: "missing-record", reason: "unavailable" }]);
+    expect(describeCaseReadingExclusion("unavailable")).toContain(
+      "unavailable in this archive snapshot",
+    );
     expect(bundle.supersededMaterial.map((item) => item.recordId)).toEqual([
       "decision-2",
       "decision-2",
@@ -178,11 +202,40 @@ describe("bounded Case Reading", () => {
     expect(bundle.serializedChars).toBe(JSON.stringify(bundle).length);
     expect(bundle.serializedChars).toBeLessThanOrEqual(80_000);
     expect(bundle.truncation.occurred).toBe(true);
+    expect(bundle.excludedRecords.every((record) => record.reason === "reading_limit")).toBe(true);
     expect(
       bundle.truncation.omittedRecordIds.length > 0 ||
         bundle.includedRecords.some(
           (record) => record.truncatedFields.length > 0 || record.omittedFields.length > 0,
         ),
     ).toBe(true);
+  });
+
+  test("keeps boundary inclusion independent of display-only admission reasoning", () => {
+    const records = [
+      toolRecordWithRepeatedText("tool-1", 3_950),
+      toolRecordWithRepeatedText("tool-2", 3_950),
+      toolRecordWithRepeatedText("tool-3", 3_000),
+      toolRecordWithRepeatedText("tool-4", 0),
+    ];
+    const bundle = buildCaseReadingBundle({
+      scope: {
+        recordIds: records.map((record) => record.id),
+        freeTextContext: "q".repeat(1_257),
+      },
+      archiveRecords: records,
+    });
+    const serialized = JSON.stringify(bundle);
+
+    expect(bundle.serializedChars).toBe(serialized.length);
+    expect(bundle.serializedChars).toBe(CASE_READING_MAX_CHARS);
+    expect(bundle.includedRecords.map((record) => record.recordId)).toEqual(
+      records.map((record) => record.id),
+    );
+    expect(bundle.excludedRecords).toEqual([]);
+    expect(serialized).not.toContain("Explicitly selected in the Case archive scope");
+    expect(
+      describeCaseReadingAdmission({ decision: "included", reasonCode: "selected_scope" }),
+    ).toContain("Explicitly selected in the Case archive scope");
   });
 });

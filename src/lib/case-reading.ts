@@ -9,6 +9,21 @@ export type CaseReadingField = {
   value: string;
 };
 
+export type CaseReadingAdmission =
+  | {
+      decision: "included";
+      reasonCode: "selected_scope";
+    }
+  | {
+      decision: "excluded";
+      reasonCode: "unavailable_snapshot" | "reading_limit";
+    };
+
+export type CaseReadingExclusion = {
+  recordId: string;
+  reason: "unavailable" | "reading_limit";
+};
+
 export type CaseReadingRecord = {
   recordId: string;
   recordType: RecordType;
@@ -29,7 +44,7 @@ export type CaseReadingBundle = {
   selectedRecordIds: string[];
   ownerContext: string;
   includedRecords: CaseReadingRecord[];
-  excludedRecords: { recordId: string; reason: "unavailable" | "reading_limit" }[];
+  excludedRecords: CaseReadingExclusion[];
   serializedChars: number;
   truncation: {
     occurred: boolean;
@@ -49,6 +64,23 @@ export type CaseReadingBundle = {
   uncertaintySignals: CaseReadingSignal[];
   evidenceGaps: string[];
 };
+
+export function describeCaseReadingAdmission(admission: CaseReadingAdmission): string {
+  if (admission.decision === "included") {
+    return "Explicitly selected in the Case archive scope and available in this archive snapshot.";
+  }
+  if (admission.reasonCode === "unavailable_snapshot") {
+    return "Selected in the Case archive scope, but unavailable in this archive snapshot.";
+  }
+  return "Selected in the Case archive scope, but omitted to keep the serialized Case Reading within its hard character limit.";
+}
+
+export function describeCaseReadingExclusion(reason: CaseReadingExclusion["reason"]): string {
+  return describeCaseReadingAdmission({
+    decision: "excluded",
+    reasonCode: reason === "unavailable" ? "unavailable_snapshot" : "reading_limit",
+  });
+}
 
 function textValue(value: unknown): string {
   if (value === null || value === undefined) return "";
@@ -372,7 +404,10 @@ function compactSignals(parts: CaseReadingBundleParts) {
 function omitLastRecord(parts: CaseReadingBundleParts) {
   const record = parts.includedRecords.pop();
   if (!record) return;
-  parts.excludedRecords.push({ recordId: record.recordId, reason: "reading_limit" });
+  parts.excludedRecords.push({
+    recordId: record.recordId,
+    reason: "reading_limit",
+  });
   if (!parts.truncation.omittedRecordIds.includes(record.recordId)) {
     parts.truncation.omittedRecordIds.push(record.recordId);
   }
@@ -456,7 +491,10 @@ function compactToMinimalBundle(
 
   const excludedById = new Map(parts.excludedRecords.map((item) => [item.recordId, item]));
   for (const recordId of availableRecordIds) {
-    excludedById.set(recordId, { recordId, reason: "reading_limit" });
+    excludedById.set(recordId, {
+      recordId,
+      reason: "reading_limit",
+    });
   }
 
   return {
@@ -498,7 +536,10 @@ export function buildCaseReadingBundle({
   for (const recordId of scope.recordIds) {
     const record = recordsById.get(recordId);
     if (!record) {
-      excludedRecords.push({ recordId, reason: "unavailable" });
+      excludedRecords.push({
+        recordId,
+        reason: "unavailable",
+      });
       evidenceGaps.push(
         `Selected archive record ${recordId} is unavailable in this archive snapshot.`,
       );

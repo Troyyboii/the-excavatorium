@@ -148,12 +148,12 @@ Important gaps and contradictions must remain visible:
    scaffold, execution controls are unavailable, and no resident loop was found in
    the inspected source.
 6. The Desk's attention queue derives from existing archive rules, not a proven
-   Custodian monitoring loop. One Desk sentence still says Cases arrive only after a
-   migration even though Case UI source exists; record this as stale UI copy to repair
-   in a later, separately authorized UI slice.
-7. The plugin README calls its tools read-only while the broader MCP registry includes
-   `excavate_document`, an intentional non-read-only Document mutation outside
-   Custodian run execution. Keep the distinction exact.
+   Custodian monitoring loop. Persisted Cases are available through the Cases surface
+   when the case foundation is available; production application state remains
+   **UNVERIFIED**.
+7. The plugin README describes ordinary archive and Custodian retrieval as bounded and
+   read-oriented, with `excavate_document` as the intentional non-read-only Document
+   mutation exception outside Custodian run execution. Keep the distinction exact.
 
 ## 5. Canonical lifecycle
 
@@ -241,10 +241,13 @@ truncation, evidence gaps, provenance, and limited detectable signals for supers
 Decisions, replacement tools, document conflicts, and uncertainty. The displayed
 reading is a context bundle, not an archive dump.
 
-The current evidence admission reason is the owner's selected scope plus provenance;
-there is no dedicated stored "Why admitted?" field yet. V1 should expose a concise,
-inspectable admission reason for every bundle member and every retrieved connector
-source. It must also retain exclusions and the reason a source was not admitted.
+The current evidence admission reason is derived transiently from the owner's selected
+scope and the archive snapshot: available selected records are admitted as owner-selected,
+missing records are excluded as unavailable, and records removed by the serialized reading
+limit are excluded as over the reading limit. There is no dedicated stored "Why admitted?"
+field. Case Reading exposes a concise, inspectable admission reason for each selected record
+and retains exclusions with the reason a record was not admitted. Connector-source admission
+remains a separate future contract.
 
 If the owner-scoped archive snapshot is unavailable, Case Reading is withheld. If a
 last successful snapshot is shown after refresh failure, it is labeled stale. A selected

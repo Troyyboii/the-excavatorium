@@ -1,6 +1,7 @@
 import {
   evaluatePricedProviderResponse,
   handleRequest,
+  parseAgentRun,
   parseInvocationPayload,
   PROVIDER_EXECUTION_UNSUPPORTED,
 } from "./index.ts";
@@ -44,6 +45,50 @@ Deno.test("accepts only a UUID and bounded invocation key", () => {
   );
   assertEquals(parseInvocationPayload({ runId, invocationKey: "\u0000" }), null);
   assertEquals(parseInvocationPayload([runId, "invocation-1"]), null);
+});
+
+Deno.test("rejects a run without its mandatory persisted tool policy", () => {
+  const validRun = {
+    id: runId,
+    case_id: runId,
+    status: "retrieving",
+    input_snapshot: {},
+    agent_config: {},
+    objective: "Read the selected evidence.",
+    prompt_version: "custodian-runtime-v1",
+    model_tier: "terra",
+    tokens_used: 0,
+    cost_usd: 0,
+    latency_ms: 0,
+    tool_events_count: 0,
+    last_step_number: 0,
+    cancel_requested_at: null,
+    failure_code: null,
+    failure_message: null,
+  };
+
+  assertEquals(
+    (() => {
+      try {
+        parseAgentRun({ run: validRun });
+        return false;
+      } catch {
+        return true;
+      }
+    })(),
+    true,
+  );
+  assertEquals(
+    (() => {
+      try {
+        parseAgentRun({ run: { ...validRun, tool_policy_id: null } });
+        return false;
+      } catch {
+        return true;
+      }
+    })(),
+    true,
+  );
 });
 
 Deno.test("keeps stage defaults, honors Sol/pro overrides, and enforces allowed tiers", () => {

@@ -301,7 +301,7 @@ export function CustodianDeskSurface({
           </div>
           <p className="border-t border-border pt-3 text-xs leading-5 text-muted-foreground">
             These counts come from existing conversation project routes. Persisted Custodian cases
-            appear only after the owner applies the new migration.
+            are available through the Cases surface when the case foundation is available.
           </p>
         </section>
 

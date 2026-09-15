@@ -4,7 +4,7 @@ This package points to the production OAuth 2.1 MCP server:
 
 `https://the-excavatorium.lovable.app/mcp`
 
-The server exposes the signed-in user's archive through safe read-only tools:
+The server exposes bounded, owner-scoped archive and Custodian tools:
 
 - `archive_stats`
 - `search` and compatibility alias `list_records`
@@ -13,7 +13,12 @@ The server exposes the signed-in user's archive through safe read-only tools:
 - `compare_records`
 - `list_cases`, `get_case`, and `get_findings` when the owner-RLS case foundation is available
 - `get_pending_approvals` and `get_run` when the Custodian runtime foundation is available
-- `start_analysis` and `cancel_run`, which remain explicit capability boundaries and never fake execution
+- `excavate_document`, the explicit supplied-file excavation/save exception that can persist a Document
+- `start_analysis` and `cancel_run`, which remain unavailable capability boundaries and never fake execution
+
+The ordinary archive and Custodian retrieval tools are read-oriented. Archive mutation is not generally
+exposed; `excavate_document` is the explicit persistence exception. Custodian run controls remain
+unavailable while provider execution is disabled.
 
 The package also includes the `custodian` skill for retrieval discipline, source classification, contradiction analysis, connector staging, and approval boundaries.
 

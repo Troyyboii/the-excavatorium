@@ -4,7 +4,12 @@ import { useMemo } from "react";
 import { recordHref, TypeIcon } from "@/components/record-list";
 import { RECORD_TYPE_LABEL, type ArchiveRecord } from "@/lib/types";
 import { CASE_READING_MAX_CHARS, type CaseArchiveScope } from "@/lib/custodian-types";
-import { buildCaseReadingBundle, type CaseReadingSignal } from "@/lib/case-reading";
+import {
+  buildCaseReadingBundle,
+  describeCaseReadingAdmission,
+  describeCaseReadingExclusion,
+  type CaseReadingSignal,
+} from "@/lib/case-reading";
 
 export function CaseReadingSurface({
   scope,
@@ -133,6 +138,13 @@ export function CaseReadingSurface({
                         </div>
                         <p className="mt-2 break-all font-mono text-[10px] text-[#675c4f]">
                           Record ID · {record.recordId}
+                        </p>
+                        <p className="mt-2 text-xs text-[#795a28]">
+                          Why admitted ·{" "}
+                          {describeCaseReadingAdmission({
+                            decision: "included",
+                            reasonCode: "selected_scope",
+                          })}
                         </p>
                         {record.summary ? (
                           <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6">
@@ -275,10 +287,7 @@ function ReadingBoundary({ bundle }: { bundle: ReturnType<typeof buildCaseReadin
           <BoundaryList
             title="Excluded or unavailable"
             items={bundle.excludedRecords.map(
-              (item) =>
-                item.recordId +
-                " · " +
-                (item.reason === "unavailable" ? "unavailable in this snapshot" : "reading limit"),
+              (item) => item.recordId + " · " + describeCaseReadingExclusion(item.reason),
             )}
           />
         ) : null}
