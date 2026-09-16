@@ -46,6 +46,21 @@ export type DocumentIngestionDiagnostic =
   | "body_read_failure"
   | "candidate_lookup_failure"
   | "document_extract_failure"
+  | "authentication_unavailable"
+  | "configuration_unavailable"
+  | "quota_rpc_failure"
+  | "quota_exceeded"
+  | "extraction_timeout"
+  | "upstream_authentication"
+  | "upstream_rate_limit"
+  | "upstream_quota"
+  | "upstream_service_failure"
+  | "upstream_failure"
+  | "invalid_output"
+  | "schema_validation_failure"
+  | "content_hash_failure"
+  | "source_reference_validation_failure"
+  | "unknown_extraction_failure"
   | "document_save_failure"
   | "unexpected_failure";
 
@@ -70,6 +85,21 @@ const DOCUMENT_INGESTION_DIAGNOSTICS: ReadonlySet<string> = new Set([
   "body_read_failure",
   "candidate_lookup_failure",
   "document_extract_failure",
+  "authentication_unavailable",
+  "configuration_unavailable",
+  "quota_rpc_failure",
+  "quota_exceeded",
+  "extraction_timeout",
+  "upstream_authentication",
+  "upstream_rate_limit",
+  "upstream_quota",
+  "upstream_service_failure",
+  "upstream_failure",
+  "invalid_output",
+  "schema_validation_failure",
+  "content_hash_failure",
+  "source_reference_validation_failure",
+  "unknown_extraction_failure",
   "document_save_failure",
   "unexpected_failure",
 ]);
@@ -269,21 +299,30 @@ export async function excavateAndSaveChatGptDocument(
   } catch {
     throw new DocumentIngestionError("EXTRACTION_FAILED", undefined, "document_extract_failure");
   }
-  if (extraction.error) throw classifyExtractionFailure(extraction.error);
+  if (extraction.error) throw await classifyExtractionFailure(extraction.error);
   const draft = documentDraftSchema.safeParse(extraction.data);
-  if (!draft.success || draft.data.contentHash !== contentHash) {
-    throw new DocumentIngestionError("EXTRACTION_FAILED", undefined, "document_extract_failure");
-  }
+  if (!draft.success)
+    throw new DocumentIngestionError("EXTRACTION_FAILED", undefined, "schema_validation_failure");
+  if (draft.data.contentHash !== contentHash)
+    throw new DocumentIngestionError("EXTRACTION_FAILED", undefined, "content_hash_failure");
 
   const ownerCandidateIds = new Set(candidates.map((candidate) => candidate.id));
   let mapped: DocumentDraftRecord;
   try {
     mapped = dependencies.mapDraft(draft.data, ownerCandidateIds);
   } catch {
-    throw new DocumentIngestionError("EXTRACTION_FAILED", undefined, "document_extract_failure");
+    throw new DocumentIngestionError(
+      "EXTRACTION_FAILED",
+      undefined,
+      "source_reference_validation_failure",
+    );
   }
   if (!validMappedDraft(mapped, ownerCandidateIds))
-    throw new DocumentIngestionError("EXTRACTION_FAILED", undefined, "document_extract_failure");
+    throw new DocumentIngestionError(
+      "EXTRACTION_FAILED",
+      undefined,
+      "source_reference_validation_failure",
+    );
 
   const saveBody = new FormData();
   saveBody.append(
@@ -672,13 +711,36 @@ async function loadOwnerCandidates(client: DocumentIngestionClient): Promise<Doc
     .map((row) => ({ id: row.id, title: row.title, recordType: row.record_type }));
 }
 
-function classifyExtractionFailure(error: unknown): DocumentIngestionError {
+async function classifyExtractionFailure(error: unknown): Promise<DocumentIngestionError> {
   const status = responseStatus(error);
-  if (status === 429)
-    return new DocumentIngestionError("QUOTA_EXCEEDED", undefined, "document_extract_failure");
+  const diagnostic = await responseDiagnostic(error);
+  if (diagnostic === "quota_exceeded" || (status === 429 && !diagnostic))
+    return new DocumentIngestionError("QUOTA_EXCEEDED", undefined, "quota_exceeded");
   if (status === 413)
     return new DocumentIngestionError("FILE_TOO_LARGE", undefined, "document_extract_failure");
-  return new DocumentIngestionError("EXTRACTION_FAILED", undefined, "document_extract_failure");
+  return new DocumentIngestionError(
+    "EXTRACTION_FAILED",
+    undefined,
+    diagnostic ?? "document_extract_failure",
+  );
+}
+
+async function responseDiagnostic(error: unknown): Promise<DocumentIngestionDiagnostic | null> {
+  if (!error || typeof error !== "object") return null;
+  const context = (error as { context?: unknown }).context;
+  if (!context || typeof context !== "object") return null;
+  const response = context as Partial<Response> & { clone?: unknown; json?: unknown };
+  if (typeof response.clone !== "function" || typeof response.json !== "function") return null;
+  try {
+    const body = await (response.clone() as Response).json();
+    if (!body || typeof body !== "object" || Array.isArray(body)) return null;
+    const diagnostic = (body as { diagnostic?: unknown }).diagnostic;
+    return typeof diagnostic === "string" && DOCUMENT_INGESTION_DIAGNOSTICS.has(diagnostic)
+      ? (diagnostic as DocumentIngestionDiagnostic)
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function responseStatus(error: unknown): number | null {

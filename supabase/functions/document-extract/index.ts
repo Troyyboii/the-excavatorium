@@ -49,6 +49,38 @@ const MAX_PIPELINE_MS = 135_000;
 const MAX_SYNTHESIS_INPUT_BYTES = 300_000;
 const DEFAULT_MODEL = "gpt-5.6-luna";
 
+export type DocumentExtractDiagnostic =
+  | "authentication_unavailable"
+  | "configuration_unavailable"
+  | "quota_rpc_failure"
+  | "quota_exceeded"
+  | "extraction_timeout"
+  | "upstream_authentication"
+  | "upstream_rate_limit"
+  | "upstream_quota"
+  | "upstream_service_failure"
+  | "upstream_failure"
+  | "invalid_output"
+  | "schema_validation_failure"
+  | "unknown_extraction_failure";
+
+class DocumentExtractFailure extends Error {
+  constructor(readonly diagnostic: DocumentExtractDiagnostic) {
+    super(diagnostic);
+    this.name = "DocumentExtractFailure";
+  }
+}
+
+function diagnosticResponse(
+  message: string,
+  status: number,
+  origin: string | null,
+  diagnostic: DocumentExtractDiagnostic,
+  extraHeaders: Record<string, string> = {},
+): Response {
+  return jsonResponse({ error: message, diagnostic }, status, origin, extraHeaders);
+}
+
 /** Resolves the excavation model: OPENAI_DOCUMENT_MODEL when set, else the default. */
 function excavationModel(): string {
   const configured = Deno.env.get("OPENAI_DOCUMENT_MODEL")?.trim();
@@ -236,18 +268,38 @@ function extractAssistantOutputText(value: unknown): string | null {
   return foundAssistantMessage && text.length > 0 ? text : null;
 }
 
+export function classifyOpenAiFailure(status: number, body: unknown): DocumentExtractDiagnostic {
+  const error =
+    body && typeof body === "object" && !Array.isArray(body)
+      ? (body as Record<string, unknown>).error
+      : null;
+  const upstreamError =
+    error && typeof error === "object" && !Array.isArray(error)
+      ? (error as Record<string, unknown>)
+      : {};
+  const type = upstreamError.type;
+  const code = upstreamError.code;
+  if (status === 401 || status === 403) return "upstream_authentication";
+  if (status === 429 && (type === "insufficient_quota" || code === "insufficient_quota"))
+    return "upstream_quota";
+  if (status === 429) return "upstream_rate_limit";
+  if (status >= 500) return "upstream_service_failure";
+  return "upstream_failure";
+}
+
 async function openAiJson(
   input: unknown,
   schemaName: string,
   schema: Record<string, unknown>,
   requestSignal: AbortSignal,
   deadline: number,
+  getEnv: (name: string) => string | undefined,
 ): Promise<unknown> {
-  if (Date.now() > deadline) throw new Error("deadline");
-  const openAiKey = Deno.env.get("OPENAI_API_KEY");
-  if (!openAiKey) throw new Error("configuration");
+  if (Date.now() > deadline) throw new DocumentExtractFailure("extraction_timeout");
+  const openAiKey = getEnv("OPENAI_API_KEY");
+  if (!openAiKey) throw new DocumentExtractFailure("configuration_unavailable");
   const remainingMs = deadline - Date.now();
-  if (remainingMs <= 0) throw new Error("deadline");
+  if (remainingMs <= 0) throw new DocumentExtractFailure("extraction_timeout");
   const controller = new AbortController();
   const onAbort = () => controller.abort();
   requestSignal.addEventListener("abort", onAbort, { once: true });
@@ -271,17 +323,24 @@ async function openAiJson(
       }),
     });
     if (!response.ok) {
-      logDiagnostic(schemaName, "upstream", {
+      let body: unknown = null;
+      try {
+        body = await response.clone().json();
+      } catch {
+        // Status-based classification remains safe when the upstream body is unavailable.
+      }
+      const diagnostic = classifyOpenAiFailure(response.status, body);
+      logDiagnostic(schemaName, diagnostic, {
         status: response.status,
         durationMs: Date.now() - startedAt,
       });
-      throw new Error("upstream");
+      throw new DocumentExtractFailure(diagnostic);
     }
     let upstream: unknown;
     try {
       upstream = await response.json();
     } catch {
-      throw new Error("output");
+      throw new DocumentExtractFailure("invalid_output");
     }
     if (
       !upstream ||
@@ -300,7 +359,7 @@ async function openAiJson(
         status: 200,
         durationMs: Date.now() - startedAt,
       });
-      throw new Error("output");
+      throw new DocumentExtractFailure("invalid_output");
     }
     const outputText = extractAssistantOutputText(upstream);
     if (
@@ -311,12 +370,12 @@ async function openAiJson(
         status: 200,
         durationMs: Date.now() - startedAt,
       });
-      throw new Error("output");
+      throw new DocumentExtractFailure("invalid_output");
     }
     try {
       return JSON.parse(outputText);
     } catch {
-      throw new Error("output");
+      throw new DocumentExtractFailure("invalid_output");
     }
   } finally {
     clearTimeout(timeout);
@@ -532,8 +591,18 @@ function finalDraft(
   };
 }
 
-Deno.serve(async (request) => {
+export type DocumentExtractDependencies = {
+  authenticate?: typeof authenticatedSupabase;
+  getEnv?: (name: string) => string | undefined;
+};
+
+export async function handleDocumentExtract(
+  request: Request,
+  dependencies: DocumentExtractDependencies = {},
+): Promise<Response> {
   const requestStartedAt = Date.now();
+  const authenticate = dependencies.authenticate ?? authenticatedSupabase;
+  const getEnv = dependencies.getEnv ?? ((name: string) => Deno.env.get(name));
   const origin = originFor(request);
   if (origin === "__denied__") return jsonResponse({ error: "Origin is not allowed." }, 403);
   if (request.method === "OPTIONS") return new Response("ok", { headers: responseHeaders(origin) });
@@ -541,15 +610,31 @@ Deno.serve(async (request) => {
   if (declaredLengthTooLarge(request.headers.get("content-length")))
     return jsonResponse({ error: "Request is too large." }, 413, origin);
 
-  const auth = await authenticatedSupabase(request);
-  if (!auth) return jsonResponse({ error: "Sign in is required." }, 401, origin);
-  const openAiKey = Deno.env.get("OPENAI_API_KEY");
-  if (!openAiKey)
-    return jsonResponse(
-      { error: "Excavation is not configured. Please try again later." },
+  let auth: AuthenticatedSupabase | null;
+  try {
+    auth = await authenticate(request);
+  } catch {
+    const durationMs = Date.now() - requestStartedAt;
+    logDiagnostic("authentication", "unavailable", { status: 503, durationMs });
+    return diagnosticResponse(
+      "Excavation authentication is temporarily unavailable. Please retry.",
       503,
       origin,
+      "authentication_unavailable",
     );
+  }
+  if (!auth) return jsonResponse({ error: "Sign in is required." }, 401, origin);
+  const openAiKey = getEnv("OPENAI_API_KEY");
+  if (!openAiKey) {
+    const durationMs = Date.now() - requestStartedAt;
+    logDiagnostic("preflight", "configuration", { status: 503, durationMs });
+    return diagnosticResponse(
+      "Excavation is not configured. Please try again later.",
+      503,
+      origin,
+      "configuration_unavailable",
+    );
+  }
   void openAiKey;
 
   try {
@@ -583,16 +668,18 @@ Deno.serve(async (request) => {
       "consume_conversation_extraction_quota",
     );
     if (quotaError || !isQuotaDecision(quotaData))
-      return jsonResponse(
-        { error: "Excavation is temporarily unavailable. Please retry." },
+      return diagnosticResponse(
+        "Excavation is temporarily unavailable. Please retry.",
         503,
         origin,
+        "quota_rpc_failure",
       );
     if (!quotaData.allowed)
-      return jsonResponse(
-        { error: "Excavation is temporarily rate limited. Please retry later." },
+      return diagnosticResponse(
+        "Excavation is temporarily rate limited. Please retry later.",
         429,
         origin,
+        "quota_exceeded",
         { "Retry-After": String(Math.max(1, quotaData.retryAfterSeconds)) },
       );
 
@@ -631,6 +718,7 @@ Deno.serve(async (request) => {
         chunkResponseSchema,
         request.signal,
         deadline,
+        getEnv,
       );
       return validateChunkAnalysis(result, new Set(chunk.sourceReferenceIds));
     });
@@ -638,10 +726,11 @@ Deno.serve(async (request) => {
       (analysis): analysis is ChunkAnalysis => analysis !== null,
     );
     if (validAnalyses.length !== analyses.length)
-      return jsonResponse(
-        { error: "The excavation response was incomplete. Please retry." },
+      return diagnosticResponse(
+        "The excavation response was incomplete. Please retry.",
         502,
         origin,
+        "schema_validation_failure",
       );
     const seed = mergeInsights(validAnalyses);
     const synthesisInput = [
@@ -676,13 +765,15 @@ Deno.serve(async (request) => {
       synthesisResponseSchema,
       request.signal,
       deadline,
+      getEnv,
     );
     const draft = finalDraft(synthesis, normalized, candidates, displayFileName(file.name));
     if (!draft)
-      return jsonResponse(
-        { error: "The excavation response was incomplete. Please retry." },
+      return diagnosticResponse(
+        "The excavation response was incomplete. Please retry.",
         502,
         origin,
+        "schema_validation_failure",
       );
     draft.originalFileName = displayFileName(file.name);
     draft.mimeType =
@@ -698,17 +789,26 @@ Deno.serve(async (request) => {
     const durationMs = Date.now() - requestStartedAt;
     if (error instanceof DOMException && error.name === "AbortError") {
       logDiagnostic("request", "aborted", { status: 504, durationMs });
-      return jsonResponse({ error: "Excavation timed out or was cancelled." }, 504, origin);
-    }
-    if (
-      error instanceof Error &&
-      ["deadline", "configuration", "upstream", "output"].includes(error.message)
-    ) {
-      logDiagnostic("request", error.message, { status: 502, durationMs });
-      return jsonResponse(
-        { error: "Excavation service is temporarily unavailable. Please retry." },
-        502,
+      return diagnosticResponse(
+        "Excavation timed out or was cancelled.",
+        504,
         origin,
+        "extraction_timeout",
+      );
+    }
+    if (error instanceof DocumentExtractFailure) {
+      const status =
+        error.diagnostic === "extraction_timeout"
+          ? 504
+          : error.diagnostic === "configuration_unavailable"
+            ? 503
+            : 502;
+      logDiagnostic("request", error.diagnostic, { status, durationMs });
+      return diagnosticResponse(
+        "Excavation service is temporarily unavailable. Please retry.",
+        status,
+        origin,
+        error.diagnostic,
       );
     }
     if (
@@ -725,11 +825,14 @@ Deno.serve(async (request) => {
         origin,
       );
     }
-    logDiagnostic("request", "unhandled", { status: 400, durationMs });
-    return jsonResponse(
-      { error: "File excavation could not be completed. Please retry." },
-      400,
+    logDiagnostic("request", "unhandled", { status: 500, durationMs });
+    return diagnosticResponse(
+      "File excavation could not be completed. Please retry.",
+      500,
       origin,
+      "unknown_extraction_failure",
     );
   }
-});
+}
+
+if (import.meta.main) Deno.serve((request) => handleDocumentExtract(request));

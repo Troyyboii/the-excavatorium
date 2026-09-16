@@ -452,6 +452,83 @@ describe("document ingestion orchestration", () => {
         }),
       }),
       "EXTRACTION_FAILED",
+      "content_hash_failure",
+    );
+
+    await expectCode(
+      excavateAndSaveChatGptDocument(reference, {
+        fetch,
+        client: client({
+          invoke: async () => ({
+            data: null,
+            error: {
+              context: response(
+                JSON.stringify({
+                  error: "private upstream detail",
+                  diagnostic: "upstream_rate_limit",
+                }),
+                { status: 429, headers: { "content-type": "application/json" } },
+              ),
+            },
+          }),
+        }),
+        mapDraft: () => ({
+          title: "",
+          summary: "",
+          tags: [],
+          recordData: data,
+          selectedTargetIds: [],
+        }),
+      }),
+      "EXTRACTION_FAILED",
+      "upstream_rate_limit",
+    );
+
+    await expectCode(
+      excavateAndSaveChatGptDocument(reference, {
+        fetch,
+        client: client({
+          invoke: async () => ({
+            data: null,
+            error: {
+              context: response(
+                JSON.stringify({
+                  error: "private quota RPC detail",
+                  diagnostic: "quota_rpc_failure",
+                }),
+                { status: 503, headers: { "content-type": "application/json" } },
+              ),
+            },
+          }),
+        }),
+        mapDraft: () => ({
+          title: "",
+          summary: "",
+          tags: [],
+          recordData: data,
+          selectedTargetIds: [],
+        }),
+      }),
+      "EXTRACTION_FAILED",
+      "quota_rpc_failure",
+    );
+
+    await expectCode(
+      excavateAndSaveChatGptDocument(reference, {
+        fetch,
+        client: client({
+          invoke: async () => ({ data: { unexpected: true }, error: null }),
+        }),
+        mapDraft: () => ({
+          title: "",
+          summary: "",
+          tags: [],
+          recordData: data,
+          selectedTargetIds: [],
+        }),
+      }),
+      "EXTRACTION_FAILED",
+      "schema_validation_failure",
     );
 
     const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("hello world!"));
@@ -476,6 +553,7 @@ describe("document ingestion orchestration", () => {
         }),
       }),
       "EXTRACTION_FAILED",
+      "source_reference_validation_failure",
     );
 
     await expectCode(

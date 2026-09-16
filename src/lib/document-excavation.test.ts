@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { GENERIC_TIMEOUT_MESSAGE, sanitizedFunctionErrorMessage } from "./document-excavation";
+import {
+  GENERIC_TIMEOUT_MESSAGE,
+  sanitizedFunctionErrorDiagnostic,
+  sanitizedFunctionErrorMessage,
+} from "./document-excavation";
 
 describe("document excavation function errors", () => {
   test("surfaces a sanitized function response", async () => {
@@ -27,5 +31,25 @@ describe("document excavation function errors", () => {
     });
 
     expect(await sanitizedFunctionErrorMessage({ context })).toBeNull();
+  });
+
+  test("accepts only safe diagnostics from a function response", async () => {
+    const context = new Response(
+      JSON.stringify({
+        error: "Excavation service is temporarily unavailable. Please retry.",
+        diagnostic: "authentication_unavailable",
+      }),
+      { status: 503, headers: { "Content-Type": "application/json" } },
+    );
+
+    expect(await sanitizedFunctionErrorDiagnostic({ context })).toBe("authentication_unavailable");
+    expect(
+      await sanitizedFunctionErrorDiagnostic({
+        context: new Response(JSON.stringify({ error: "private", diagnostic: "private_detail" }), {
+          status: 502,
+          headers: { "Content-Type": "application/json" },
+        }),
+      }),
+    ).toBeNull();
   });
 });

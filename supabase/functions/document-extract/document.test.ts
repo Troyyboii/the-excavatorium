@@ -12,6 +12,8 @@ import {
   DOCUMENT_SYNTHESIS_LIMITS,
   orderSourceReferenceIds,
 } from "../_shared/document-draft.ts";
+import { type AuthenticatedSupabase } from "../_shared/http.ts";
+import { classifyOpenAiFailure, handleDocumentExtract } from "./index.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -178,5 +180,67 @@ Deno.test("orders compact source references by document order", () => {
   assert(
     JSON.stringify(result) === JSON.stringify(["ref_00000001", "ref_00000002", "ref_00000003"]),
     "expected source references to be unique and document ordered",
+  );
+});
+
+Deno.test("contains unexpected authentication lookup failures", async () => {
+  const response = await handleDocumentExtract(
+    new Request("https://example.test", { method: "POST" }),
+    {
+      authenticate: async () => {
+        throw new Error("private authentication detail");
+      },
+    },
+  );
+  const body = await response.json();
+  assert(response.status === 503, "expected authentication failures to be service unavailable");
+  assert(body.diagnostic === "authentication_unavailable", "expected safe auth diagnostic");
+  assert(!JSON.stringify(body).includes("private authentication detail"), "leaked auth detail");
+});
+
+Deno.test("keeps missing authentication at 401", async () => {
+  const response = await handleDocumentExtract(
+    new Request("https://example.test", { method: "POST" }),
+    { authenticate: async () => null },
+  );
+  assert(response.status === 401, "expected missing authentication to remain unauthorized");
+});
+
+Deno.test("reports missing OpenAI configuration safely", async () => {
+  const auth = {
+    client: {} as AuthenticatedSupabase["client"],
+    user: {} as AuthenticatedSupabase["user"],
+    authorization: "Bearer test",
+  } as AuthenticatedSupabase;
+  const response = await handleDocumentExtract(
+    new Request("https://example.test", { method: "POST" }),
+    { authenticate: async () => auth, getEnv: () => undefined },
+  );
+  const body = await response.json();
+  assert(response.status === 503, "expected missing configuration to be service unavailable");
+  assert(body.diagnostic === "configuration_unavailable", "expected safe config diagnostic");
+});
+
+Deno.test("classifies OpenAI failures without retaining upstream details", () => {
+  assert(
+    classifyOpenAiFailure(401, { error: { message: "private" } }) === "upstream_authentication",
+    "expected authentication classification",
+  );
+  assert(
+    classifyOpenAiFailure(403, { error: { message: "private" } }) === "upstream_authentication",
+    "expected authorization classification",
+  );
+  assert(
+    classifyOpenAiFailure(429, { error: { type: "rate_limit_exceeded" } }) ===
+      "upstream_rate_limit",
+    "expected rate-limit classification",
+  );
+  assert(
+    classifyOpenAiFailure(429, { error: { code: "insufficient_quota" } }) === "upstream_quota",
+    "expected quota classification",
+  );
+  assert(
+    classifyOpenAiFailure(503, null) === "upstream_service_failure",
+    "expected service classification",
   );
 });

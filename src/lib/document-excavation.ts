@@ -14,11 +14,86 @@ const GENERIC_RELAY_MESSAGE =
 const GENERIC_FAILURE_MESSAGE = "File excavation could not be completed. Please retry.";
 const GENERIC_TIMEOUT_MESSAGE = "File excavation timed out before completion. Please retry.";
 
+type SafeFunctionDiagnostic =
+  | "authentication_unavailable"
+  | "configuration_unavailable"
+  | "quota_rpc_failure"
+  | "quota_exceeded"
+  | "extraction_timeout"
+  | "upstream_authentication"
+  | "upstream_rate_limit"
+  | "upstream_quota"
+  | "upstream_service_failure"
+  | "upstream_failure"
+  | "invalid_output"
+  | "schema_validation_failure"
+  | "content_hash_failure"
+  | "source_reference_validation_failure"
+  | "unknown_extraction_failure";
+
+const SAFE_FUNCTION_DIAGNOSTICS: ReadonlySet<string> = new Set([
+  "authentication_unavailable",
+  "configuration_unavailable",
+  "quota_rpc_failure",
+  "quota_exceeded",
+  "extraction_timeout",
+  "upstream_authentication",
+  "upstream_rate_limit",
+  "upstream_quota",
+  "upstream_service_failure",
+  "upstream_failure",
+  "invalid_output",
+  "schema_validation_failure",
+  "content_hash_failure",
+  "source_reference_validation_failure",
+  "unknown_extraction_failure",
+]);
+
+function browserMessageForDiagnostic(diagnostic: SafeFunctionDiagnostic): string {
+  if (diagnostic === "quota_exceeded")
+    return "File excavation is temporarily rate limited. Please retry later.";
+  if (diagnostic === "extraction_timeout") return GENERIC_TIMEOUT_MESSAGE;
+  if (
+    diagnostic === "authentication_unavailable" ||
+    diagnostic === "configuration_unavailable" ||
+    diagnostic === "quota_rpc_failure"
+  )
+    return "File excavation is temporarily unavailable. Please retry later.";
+  if (
+    diagnostic === "invalid_output" ||
+    diagnostic === "schema_validation_failure" ||
+    diagnostic === "content_hash_failure" ||
+    diagnostic === "source_reference_validation_failure"
+  )
+    return "File excavation returned an incomplete result. Please retry.";
+  return GENERIC_FAILURE_MESSAGE;
+}
+
+export async function sanitizedFunctionErrorDiagnostic(
+  error: unknown,
+): Promise<SafeFunctionDiagnostic | null> {
+  if (!error || typeof error !== "object") return null;
+  const context = (error as { context?: unknown }).context;
+  if (!context || typeof context !== "object") return null;
+  const response = context as Partial<Response> & { json?: unknown; clone?: unknown };
+  if (typeof response.json !== "function" || typeof response.clone !== "function") return null;
+  try {
+    const body = await (response.clone() as Response).json();
+    if (!body || typeof body !== "object" || Array.isArray(body)) return null;
+    const diagnostic = (body as { diagnostic?: unknown }).diagnostic;
+    return typeof diagnostic === "string" && SAFE_FUNCTION_DIAGNOSTICS.has(diagnostic)
+      ? (diagnostic as SafeFunctionDiagnostic)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Extracts the Edge Function's sanitized `{ error }` message from a Supabase
  * FunctionsHttpError. The response body is read from the error context only;
- * nothing else about the failure is surfaced, so secrets, prompts, upstream
- * payloads, and document text can never reach the UI.
+ * only the server's allowlisted diagnostic and sanitized message are surfaced,
+ * so secrets, prompts, upstream payloads, and document text can never reach the UI.
  */
 export async function sanitizedFunctionErrorMessage(error: unknown): Promise<string | null> {
   if (!error || typeof error !== "object") return null;
@@ -67,6 +142,8 @@ export async function excavateDocument(
   });
   if (error) {
     if (signal?.aborted) throw new DOMException("Excavation cancelled.", "AbortError");
+    const diagnostic = await sanitizedFunctionErrorDiagnostic(error);
+    if (diagnostic) throw new Error(browserMessageForDiagnostic(diagnostic));
     const message = await sanitizedFunctionErrorMessage(error);
     // A parsed body means the function responded: surface its sanitized text.
     // Otherwise the failure was network or relay level and stays generic.
