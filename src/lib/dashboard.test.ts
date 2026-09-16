@@ -82,13 +82,18 @@ const links: ArchiveLink[] = [
 ];
 
 describe("buildDashboardViewModel", () => {
-  test("treats every archive entry as a first-party record", () => {
+  test("counts records matching the needs-review rules", () => {
     const model = buildDashboardViewModel(records, links, new Date("2026-08-08"));
     expect(model.totalRecords).toBe(3);
     expect(model.attentionCount).toBe(3);
     expect(model.connectedCount).toBe(3);
     expect(model.isolatedCount).toBe(0);
     expect(model.attentionItems.some((item) => item.record.isExample)).toBe(true);
+    expect(model.attentionItems.map((item) => item.record.id)).toEqual([
+      "repository",
+      "decision",
+      "conversation",
+    ]);
     expect(model.typeBreakdown.find((item) => item.key === "decision")?.count).toBe(1);
     expect(model.statusBreakdown.find((item) => item.key === "decision-Tentative")?.count).toBe(1);
   });

@@ -136,7 +136,7 @@ export function CustodianDeskSurface({
           <dl className="mt-5 grid grid-cols-2 gap-px overflow-hidden border border-border bg-border sm:grid-cols-4">
             <BoundaryMetric label="Records" value={records.length} />
             <BoundaryMetric label="Links" value={linksPending || linksError ? "—" : links.length} />
-            <BoundaryMetric label="In judgment" value={model.attentionCount} />
+            <BoundaryMetric label="Needs review" value={model.attentionCount} />
             <BoundaryMetric label="Recent" value={model.recentItems.length} />
           </dl>
         </div>
@@ -191,7 +191,7 @@ export function CustodianDeskSurface({
       <section aria-labelledby="judgment-queue-heading" className="custodian-rule-section">
         <SectionHeading
           id="judgment-queue-heading"
-          title="Priority judgment queue"
+          title="Review queue"
           value={model.attentionCount}
           action={{ to: "/inbox", label: "Open inbox" }}
         />
