@@ -133,16 +133,18 @@ end;
 $$;
 select ok(true, 'malformed candidate is rejected before Finding creation');
 
+set local role postgres;
+update public.agent_steps
+   set output_payload = jsonb_build_object('findings', jsonb_build_array(jsonb_build_object(
+     'outcome', 'finding', 'title', 'Missing evidence', 'conclusion', 'Invalid', 'analysis_mode', 'synthesis', 'confidence', 50,
+     'supporting_evidence_ids', jsonb_build_array('e9999999-9999-4999-8999-999999999999'), 'contrary_evidence_ids', jsonb_build_array(),
+     'uncertainties', jsonb_build_array(), 'assumptions', jsonb_build_array(), 'scope_limits', jsonb_build_array(), 'evidence_gaps', jsonb_build_array(),
+     'what_would_change_mind', '', 'revisit_condition', '')))
+ where id = 'f5555555-5555-4555-8555-555555555555';
+set local role authenticated;
 do $$
 begin
   begin
-    update public.agent_steps
-       set output_payload = jsonb_build_object('findings', jsonb_build_array(jsonb_build_object(
-         'outcome', 'finding', 'title', 'Missing evidence', 'conclusion', 'Invalid', 'analysis_mode', 'synthesis', 'confidence', 50,
-         'supporting_evidence_ids', jsonb_build_array('e9999999-9999-4999-8999-999999999999'), 'contrary_evidence_ids', jsonb_build_array(),
-         'uncertainties', jsonb_build_array(), 'assumptions', jsonb_build_array(), 'scope_limits', jsonb_build_array(), 'evidence_gaps', jsonb_build_array(),
-         'what_would_change_mind', '', 'revisit_condition', '')))
-     where id = 'f5555555-5555-4555-8555-555555555555';
     perform public.custodian_materialize_finding('f5555555-5555-4555-8555-555555555555', 0);
     raise exception 'missing evidence was accepted';
   exception when no_data_found then null; end;
@@ -150,12 +152,14 @@ end;
 $$;
 select ok(true, 'missing evidence reference is rejected');
 
+set local role postgres;
+update public.agent_steps
+   set output_payload = jsonb_set(output_payload, '{findings,0,supporting_evidence_ids}', jsonb_build_array('e3333333-3333-4333-8333-333333333333'))
+ where id = 'f5555555-5555-4555-8555-555555555555';
+set local role authenticated;
 do $$
 begin
   begin
-    update public.agent_steps
-       set output_payload = jsonb_set(output_payload, '{findings,0,supporting_evidence_ids}', jsonb_build_array('e3333333-3333-4333-8333-333333333333'))
-     where id = 'f5555555-5555-4555-8555-555555555555';
     perform public.custodian_materialize_finding('f5555555-5555-4555-8555-555555555555', 0);
     raise exception 'cross-owner evidence was accepted';
   exception when no_data_found then null; end;
@@ -199,10 +203,14 @@ end;
 $$;
 select ok(true, 'analysis-derived Findings cannot be rewritten by the owner-authored path');
 
+set local role postgres;
+update public.agent_steps
+   set output_payload = jsonb_set(output_payload, '{summary}', '"changed"')
+ where id = 'f1111111-1111-4111-8111-111111111111';
+set local role authenticated;
 do $$
 begin
   begin
-    update public.agent_steps set output_payload = jsonb_set(output_payload, '{summary}', '"changed"') where id = 'f1111111-1111-4111-8111-111111111111';
     perform public.custodian_materialize_finding('f1111111-1111-4111-8111-111111111111', 0);
     raise exception 'conflicting materialization identity was accepted';
   exception when unique_violation then null; end;
