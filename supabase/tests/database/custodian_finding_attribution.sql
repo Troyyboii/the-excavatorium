@@ -16,7 +16,7 @@ insert into auth.users (
 
 insert into public.records (id, user_id, record_type, title, record_data) values
   ('01010101-0101-4101-8101-010101010101', '11111111-1111-4111-8111-111111111111', 'tool', 'M2 canonical source', '{"before":"unchanged"}'::jsonb),
-  ('02020202-0202-4202-8202-020202020202', '22222222-2222-4222-8222-020202020202', 'tool', 'M2 foreign source', '{}'::jsonb);
+  ('02020202-0202-4202-8202-020202020202', '22222222-2222-4222-8222-222222222222', 'tool', 'M2 foreign source', '{}'::jsonb);
 
 insert into public.cases (id, owner_id, title, created_by, updated_by) values
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '11111111-1111-4111-8111-111111111111', 'M2 owner A case', '11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-111111111111'),
