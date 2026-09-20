@@ -265,7 +265,7 @@ begin
     from public.custodian_findings
    where owner_id = caller_id
      and origin_step_id = step_row.id
-     and candidate_index = custodian_materialize_finding.candidate_index
+     and public.custodian_findings.candidate_index = custodian_materialize_finding.candidate_index
    for update;
   if found then
     if existing_finding.analysis_result_hash <> result_hash_value then
