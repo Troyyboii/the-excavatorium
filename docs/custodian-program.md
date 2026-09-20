@@ -643,6 +643,12 @@ and revisit conditions.
   completed synthesis step, candidate index, result hash, bounded caveats, and a
   dedicated supporting/contrary evidence relation. Refusal and no-Finding outcomes
   do not persist Findings. Generic automation briefs fail closed.
+- **M2 SOURCE IMPLEMENTATION:** **COMPLETE**
+- **LOCAL VALIDATION:** **PARTIAL** — frontend and Edge Function validation passed;
+  local database runtime validation is unverified because Docker is unavailable.
+- **REMOTE MIGRATION APPLICATION:** **UNVERIFIED**
+- **DEPLOYED EDGE BEHAVIOR:** **UNVERIFIED**
+- **PROVIDER EXECUTION:** **BLOCKED**
 - **Validation:** deterministic support/contrary/absence/refusal fixtures, replay and
   conflicting-identity checks, owner/RLS checks, canonical-record preservation, and
   source-to-Finding audit assertions.
