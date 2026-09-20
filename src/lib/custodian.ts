@@ -7,6 +7,9 @@ import {
   CLAIM_STATUSES,
   EVIDENCE_LIFECYCLE_STATUSES,
   FINDING_ANALYSIS_MODES,
+  FINDING_EVIDENCE_RELATIONSHIP_KINDS,
+  FINDING_ANALYSIS_OUTCOMES,
+  FINDING_ORIGIN_KINDS,
   FINDING_STATUSES,
   INBOX_KINDS,
   INBOX_STATUSES,
@@ -27,6 +30,8 @@ import {
   type CustodianCase,
   type CustodianCaseRow,
   type CustodianFinding,
+  type CustodianFindingEvidence,
+  type CustodianFindingEvidenceRow,
   type CustodianFindingRow,
   type CustodianRecordContext,
   type EvidenceItem,
@@ -56,6 +61,7 @@ export type CustodianResource =
   | "claim_evidence"
   | "actions"
   | "custodian_findings"
+  | "custodian_finding_evidence"
   | "record_revisions";
 
 export type CustodianCollectionOptions = {
@@ -65,6 +71,7 @@ export type CustodianCollectionOptions = {
   ids?: readonly string[];
   claimIds?: readonly string[];
   evidenceIds?: readonly string[];
+  findingIds?: readonly string[];
 };
 
 type UnknownRecord = Record<string, unknown>;
@@ -121,6 +128,14 @@ function jsonArray(row: UnknownRecord, key: string): JsonValue[] {
   const value = jsonValue(row, key);
   if (!Array.isArray(value)) throw new Error(`Custodian row field ${key} must be a JSON array`);
   return value as JsonValue[];
+}
+
+function stringArray(row: UnknownRecord, key: string): string[] {
+  const value = jsonArray(row, key);
+  if (!value.every((item) => typeof item === "string")) {
+    throw new Error(`Custodian row field ${key} must be an array of strings`);
+  }
+  return value as string[];
 }
 
 function timestamp(row: UnknownRecord, key: string): string {
@@ -301,6 +316,24 @@ export function mapClaimEvidenceRow(value: unknown): ClaimEvidence {
   };
 }
 
+export function mapCustodianFindingEvidenceRow(value: unknown): CustodianFindingEvidence {
+  const row = asRecord(value, "finding evidence link");
+  owner(row);
+  return {
+    id: text(row, "id"),
+    caseId: text(row, "case_id"),
+    findingId: text(row, "finding_id"),
+    evidenceId: text(row, "evidence_id"),
+    relationshipKind: enumValue(row, "relationship_kind", FINDING_EVIDENCE_RELATIONSHIP_KINDS),
+    relationshipNote: text(row, "relationship_note"),
+    lifecycleStatus: enumValue(row, "lifecycle_status", ["active", "archived"]),
+    createdBy: text(row, "created_by"),
+    updatedBy: text(row, "updated_by"),
+    createdAt: timestamp(row, "created_at"),
+    updatedAt: timestamp(row, "updated_at"),
+  };
+}
+
 export function mapActionRow(value: unknown): CustodianAction {
   const row = asRecord(value, "action");
   owner(row);
@@ -336,6 +369,19 @@ export function mapCustodianFindingRow(value: unknown): CustodianFinding {
     sourceRecordId: nullableText(row, "source_record_id"),
     status: enumValue(row, "status", FINDING_STATUSES),
     lifecycleStatus: enumValue(row, "lifecycle_status", ["active", "archived"]),
+    originKind: enumValue(row, "origin_kind", FINDING_ORIGIN_KINDS),
+    analysisOutcome:
+      row.analysis_outcome === null
+        ? null
+        : enumValue(row, "analysis_outcome", FINDING_ANALYSIS_OUTCOMES),
+    originRunId: nullableText(row, "origin_run_id"),
+    originStepId: nullableText(row, "origin_step_id"),
+    candidateIndex: row.candidate_index === null ? null : numberValue(row, "candidate_index"),
+    analysisResultHash: nullableText(row, "analysis_result_hash"),
+    uncertainties: stringArray(row, "uncertainties"),
+    assumptions: stringArray(row, "assumptions"),
+    scopeLimits: stringArray(row, "scope_limits"),
+    evidenceGaps: stringArray(row, "evidence_gaps"),
     createdBy: text(row, "created_by"),
     updatedBy: text(row, "updated_by"),
     createdAt: timestamp(row, "created_at"),
@@ -431,7 +477,8 @@ async function fetchOwnerCollection<Row, Domain>(
   if (
     options?.ids?.length === 0 ||
     options?.claimIds?.length === 0 ||
-    options?.evidenceIds?.length === 0
+    options?.evidenceIds?.length === 0 ||
+    options?.findingIds?.length === 0
   ) {
     return [];
   }
@@ -445,6 +492,9 @@ async function fetchOwnerCollection<Row, Domain>(
       if (options?.claimIds !== undefined) query = query.in("claim_id", options.claimIds);
       if (options?.evidenceIds !== undefined) {
         query = query.in("evidence_id", options.evidenceIds);
+      }
+      if (options?.findingIds !== undefined) {
+        query = query.in("finding_id", options.findingIds);
       }
       const { data, error } = await query
         .order("id", { ascending: true })
@@ -469,10 +519,12 @@ const FULL_EVIDENCE_SELECT =
   "id,owner_id,case_id,title,content,content_hash,source_classification,source_uri,source_record_id,provenance,lifecycle_status,immutable,captured_at,supersedes_id,created_by,updated_by,created_at,updated_at";
 const FULL_LINK_SELECT =
   "id,owner_id,case_id,claim_id,evidence_id,relationship_note,lifecycle_status,created_by,updated_by,created_at,updated_at";
+const FULL_FINDING_EVIDENCE_SELECT =
+  "id,owner_id,case_id,finding_id,evidence_id,relationship_kind,relationship_note,lifecycle_status,created_by,updated_by,created_at,updated_at";
 const FULL_ACTION_SELECT =
   "id,owner_id,case_id,title,description,status,priority,due_at,source_record_id,lifecycle_status,created_by,updated_by,created_at,updated_at";
 const FULL_FINDING_SELECT =
-  "id,owner_id,case_id,analysis_mode,title,finding,confidence,what_would_change_mind,revisit_condition,source_record_id,status,lifecycle_status,created_by,updated_by,created_at,updated_at";
+  "id,owner_id,case_id,analysis_mode,title,finding,confidence,what_would_change_mind,revisit_condition,source_record_id,status,lifecycle_status,origin_kind,analysis_outcome,origin_run_id,origin_step_id,candidate_index,analysis_result_hash,uncertainties,assumptions,scope_limits,evidence_gaps,created_by,updated_by,created_at,updated_at";
 const FULL_REVISION_SELECT =
   "id,owner_id,record_id,revision_number,operation,snapshot,changed_by,changed_at";
 
@@ -537,6 +589,18 @@ export function fetchCustodianClaimEvidence(ownerId: string, options?: Custodian
     options,
   );
 }
+export function fetchCustodianFindingEvidence(
+  ownerId: string,
+  options?: CustodianCollectionOptions,
+) {
+  return fetchOwnerCollection<CustodianFindingEvidenceRow, CustodianFindingEvidence>(
+    ownerId,
+    "custodian_finding_evidence",
+    FULL_FINDING_EVIDENCE_SELECT,
+    mapCustodianFindingEvidenceRow,
+    options,
+  );
+}
 export function fetchCustodianActions(ownerId: string, options?: CustodianCollectionOptions) {
   return fetchOwnerCollection<ActionRow, CustodianAction>(
     ownerId,
@@ -573,10 +637,11 @@ export async function fetchCustodianRecordContext(
   const claimIds = claims.map((claim) => claim.id);
   const evidenceIds = evidence.map((entry) => entry.id);
 
-  const [cases, linksByClaim, linksByEvidence] = await Promise.all([
+  const [cases, linksByClaim, linksByEvidence, findingEvidence] = await Promise.all([
     fetchCustodianCases(ownerId, { ids: caseIds }),
     fetchCustodianClaimEvidence(ownerId, { claimIds }),
     fetchCustodianClaimEvidence(ownerId, { evidenceIds }),
+    fetchCustodianFindingEvidence(ownerId, { findingIds: findings.map((finding) => finding.id) }),
   ]);
   return composeCustodianRecordContext({
     cases,
@@ -584,6 +649,7 @@ export async function fetchCustodianRecordContext(
     evidence,
     findings,
     claimEvidence: [...linksByClaim, ...linksByEvidence],
+    findingEvidence,
   });
 }
 
@@ -593,10 +659,12 @@ export function composeCustodianRecordContext({
   evidence,
   claimEvidence,
   findings,
+  findingEvidence,
 }: CustodianRecordContext): CustodianRecordContext {
   const caseIds = new Set([...claims, ...evidence, ...findings].map((entry) => entry.caseId));
   const claimIds = new Set(claims.map((claim) => claim.id));
   const evidenceIds = new Set(evidence.map((entry) => entry.id));
+  const findingIds = new Set(findings.map((finding) => finding.id));
   const scopedLinks = claimEvidence.filter(
     (link) => claimIds.has(link.claimId) && evidenceIds.has(link.evidenceId),
   );
@@ -607,6 +675,9 @@ export function composeCustodianRecordContext({
     evidence,
     claimEvidence: Array.from(new Map(scopedLinks.map((link) => [link.id, link])).values()),
     findings,
+    findingEvidence: findingEvidence.filter(
+      (link) => findingIds.has(link.findingId) && evidenceIds.has(link.evidenceId),
+    ),
   };
 }
 
@@ -922,6 +993,42 @@ export type FindingWriteInput = {
   lifecycleStatus?: "active" | "archived";
 };
 
+export type MaterializeFindingInput = {
+  agentStepId: string;
+  candidateIndex: number;
+};
+
+export type MaterializeFindingResult =
+  | CustodianFinding
+  | { materialized: false; outcome: "refusal" | "no_finding"; idempotent: false };
+
+function mapMaterializeFindingResult(value: unknown): MaterializeFindingResult {
+  const row = asRecord(value, "Finding materialization result");
+  if (row.materialized === false) {
+    if (row.outcome !== "refusal" && row.outcome !== "no_finding") {
+      throw new Error("Finding materialization returned an invalid non-Finding outcome");
+    }
+    return { materialized: false, outcome: row.outcome, idempotent: false };
+  }
+  return mapCustodianFindingRow(value);
+}
+
+export function materializeCustodianFinding(input: MaterializeFindingInput) {
+  validateTextInput(input.agentStepId, "agent_step_id", 200);
+  if (
+    !Number.isInteger(input.candidateIndex) ||
+    input.candidateIndex < 0 ||
+    input.candidateIndex > 63
+  ) {
+    throw new Error("candidate_index must be an integer from 0 to 63");
+  }
+  return callCustodianRpc(
+    "custodian_materialize_finding",
+    { agent_step_id: input.agentStepId, candidate_index: input.candidateIndex },
+    mapMaterializeFindingResult,
+  );
+}
+
 export function upsertCustodianFinding(input: FindingWriteInput) {
   validateTextInput(input.caseId, "case_id", 200);
   if (!isFindingAnalysisMode(input.analysisMode)) throw new Error("invalid finding analysis mode");
@@ -1006,5 +1113,6 @@ void (0 as unknown as ActionRow);
 void (0 as unknown as CaseMemberRow);
 void (0 as unknown as CustodianCaseRow);
 void (0 as unknown as CustodianFindingRow);
+void (0 as unknown as CustodianFindingEvidenceRow);
 void (0 as unknown as EvidenceItemRow);
 void (0 as unknown as RecordRevisionRow);

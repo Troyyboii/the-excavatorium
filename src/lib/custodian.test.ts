@@ -206,6 +206,7 @@ describe("Custodian record context", () => {
       evidence: [evidence],
       claimEvidence: [linked, unrelated],
       findings: [],
+      findingEvidence: [],
     });
 
     expect(context.cases.map((item) => item.id)).toEqual(["case-1"]);

@@ -10,6 +10,7 @@ import {
   fetchCustodianCaseMembers,
   fetchCustodianClaims,
   fetchCustodianEvidence,
+  fetchCustodianFindingEvidence,
   fetchCustodianFindings,
   isCustodianFoundationMissing,
   updateCustodianCase,
@@ -52,7 +53,12 @@ function CaseDetailPage() {
     queryKey: ["custodian", "findings", userId],
     queryFn: () => fetchCustodianFindings(userId as string),
   });
-  const detailQueries = [members, claims, evidence, actions, findings];
+  const findingEvidence = useQuery({
+    ...queryOptions,
+    queryKey: ["custodian", "finding-evidence", userId],
+    queryFn: () => fetchCustodianFindingEvidence(userId as string),
+  });
+  const detailQueries = [members, claims, evidence, actions, findings, findingEvidence];
   const foundationPending = Boolean(cases.error && isCustodianFoundationMissing(cases.error));
   const detailError = detailQueries.find((query) => query.error)?.error;
   const error = !online
@@ -79,6 +85,7 @@ function CaseDetailPage() {
         evidence={(evidence.data ?? []).filter((entry) => entry.caseId === caseId)}
         actions={(actions.data ?? []).filter((entry) => entry.caseId === caseId)}
         findings={(findings.data ?? []).filter((entry) => entry.caseId === caseId)}
+        findingEvidence={(findingEvidence.data ?? []).filter((entry) => entry.caseId === caseId)}
         archiveRecords={archive.data?.records ?? []}
         archiveReady={Boolean(archive.data)}
         archiveLoading={archive.isPending}

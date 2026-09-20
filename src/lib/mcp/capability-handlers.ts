@@ -13,11 +13,42 @@ import {
 const CASE_SELECT =
   "id,title,objective,current_question,default_working_set,archive_scope,status,created_at,updated_at";
 const FINDING_SELECT =
-  "id,case_id,analysis_mode,title,finding,confidence,what_would_change_mind,revisit_condition,source_record_id,status,created_at,updated_at";
+  "id,case_id,analysis_mode,title,finding,confidence,what_would_change_mind,revisit_condition,source_record_id,status,lifecycle_status,origin_kind,analysis_outcome,origin_run_id,origin_step_id,candidate_index,analysis_result_hash,uncertainties,assumptions,scope_limits,evidence_gaps,created_at,updated_at";
+const FINDING_EVIDENCE_SELECT = "id,finding_id,evidence_id,relationship_kind,relationship_note";
+const EVIDENCE_DESCRIPTOR_SELECT =
+  "id,title,source_classification,source_uri,source_record_id,captured_at";
 const RUN_SELECT =
   "id,case_id,objective,model_tier,status,started_at,completed_at,failure_code,failure_message,created_at,updated_at";
 const APPROVAL_SELECT =
   "id,case_id,run_id,approval_kind,status,title,rationale,requested_at,responded_at,expires_at,created_at,updated_at";
+
+type FindingProjectionRow = Record<string, unknown> & { id: string };
+type FindingEvidenceProjectionRow = Record<string, unknown> & {
+  finding_id: string;
+  evidence_id: string;
+};
+type EvidenceDescriptorProjectionRow = Record<string, unknown> & { id: string };
+
+export function projectFindings(
+  findingRows: readonly FindingProjectionRow[],
+  links: readonly FindingEvidenceProjectionRow[],
+  evidence: readonly EvidenceDescriptorProjectionRow[],
+) {
+  const evidenceById = new Map(evidence.map((entry) => [entry.id, entry]));
+  const linksByFinding = new Map<string, FindingEvidenceProjectionRow[]>();
+  for (const link of links) {
+    const current = linksByFinding.get(link.finding_id) ?? [];
+    current.push(link);
+    linksByFinding.set(link.finding_id, current);
+  }
+  return findingRows.map((finding) => ({
+    ...finding,
+    evidence: (linksByFinding.get(finding.id) ?? []).map((link) => ({
+      ...link,
+      evidence: evidenceById.get(link.evidence_id) ?? { id: link.evidence_id },
+    })),
+  }));
+}
 
 export async function handleListCases(
   { query, status, limit }: { query?: string; status?: string; limit?: number },
@@ -100,7 +131,30 @@ export async function handleGetFindings(
     if (caseId) request = request.eq("case_id", caseId);
     const { data, error } = await request;
     if (error) return errorResult(mapSupabaseError(error, "FOUNDATION_UNAVAILABLE"));
-    return jsonResult({ count: data?.length ?? 0, findings: data ?? [] });
+    const findingRows = data ?? [];
+    const findingIds = findingRows.map((finding) => finding.id);
+    if (findingIds.length === 0) return jsonResult({ count: 0, findings: [] });
+
+    const { data: links, error: linksError } = await supabase
+      .from("custodian_finding_evidence")
+      .select(FINDING_EVIDENCE_SELECT)
+      .in("finding_id", findingIds);
+    if (linksError) return errorResult(mapSupabaseError(linksError, "FOUNDATION_UNAVAILABLE"));
+
+    const evidenceIds = [...new Set((links ?? []).map((link) => link.evidence_id))];
+    const { data: evidence, error: evidenceError } = evidenceIds.length
+      ? await supabase
+          .from("evidence_items")
+          .select(EVIDENCE_DESCRIPTOR_SELECT)
+          .in("id", evidenceIds)
+      : { data: [], error: null };
+    if (evidenceError)
+      return errorResult(mapSupabaseError(evidenceError, "FOUNDATION_UNAVAILABLE"));
+
+    return jsonResult({
+      count: findingRows.length,
+      findings: projectFindings(findingRows, links ?? [], evidence ?? []),
+    });
   } catch {
     return errorResult("FOUNDATION_UNAVAILABLE");
   }

@@ -40,6 +40,18 @@ const APPROVAL_KINDS = [
   "external_write",
   "archive_change",
 ] as const;
+const FINDING_OUTCOMES = ["finding", "unresolved", "refusal", "no_finding"] as const;
+const FINDING_ANALYSIS_MODES = [
+  "plan",
+  "claim_review",
+  "evidence_gap",
+  "contradiction",
+  "timeline",
+  "causal",
+  "risk",
+  "decision",
+  "synthesis",
+] as const;
 const TERMINAL_STATES = new Set([
   "completed",
   "blocked",
@@ -353,6 +365,12 @@ function boundedString(value: unknown, maxLength: number): value is string {
   return typeof value === "string" && value.length <= maxLength;
 }
 
+function boundedInteger(value: unknown, minimum: number, maximum: number): value is number {
+  return (
+    typeof value === "number" && Number.isInteger(value) && value >= minimum && value <= maximum
+  );
+}
+
 function boundedStringArray(
   value: unknown,
   maxItems: number,
@@ -388,7 +406,65 @@ function validExtraction(value: unknown): value is JsonRecord {
   );
 }
 
-function validSynthesis(value: unknown): value is JsonRecord {
+export function validFindingCandidate(value: unknown): value is JsonRecord {
+  if (
+    !isObject(value) ||
+    !hasOnlyKeys(value, [
+      "outcome",
+      "title",
+      "conclusion",
+      "analysis_mode",
+      "confidence",
+      "supporting_evidence_ids",
+      "contrary_evidence_ids",
+      "uncertainties",
+      "assumptions",
+      "scope_limits",
+      "evidence_gaps",
+      "what_would_change_mind",
+      "revisit_condition",
+    ])
+  )
+    return false;
+  const outcome = value.outcome;
+  const supporting = value.supporting_evidence_ids;
+  const contrary = value.contrary_evidence_ids;
+  const caveatArrays = [
+    value.uncertainties,
+    value.assumptions,
+    value.scope_limits,
+    value.evidence_gaps,
+  ];
+  const hasMeaningfulCaveat = caveatArrays.some(
+    (items) =>
+      Array.isArray(items) && items.some((item) => typeof item === "string" && item.trim()),
+  );
+  return (
+    typeof outcome === "string" &&
+    FINDING_OUTCOMES.includes(outcome as (typeof FINDING_OUTCOMES)[number]) &&
+    boundedString(value.title, 500) &&
+    value.title.trim().length > 0 &&
+    boundedString(value.conclusion, 30000) &&
+    value.conclusion.trim().length > 0 &&
+    typeof value.analysis_mode === "string" &&
+    FINDING_ANALYSIS_MODES.includes(
+      value.analysis_mode as (typeof FINDING_ANALYSIS_MODES)[number],
+    ) &&
+    boundedInteger(value.confidence, 0, 100) &&
+    boundedStringArray(supporting, 32, 100) &&
+    boundedStringArray(contrary, 32, 100) &&
+    boundedStringArray(value.uncertainties, 32, 1000) &&
+    boundedStringArray(value.assumptions, 32, 1000) &&
+    boundedStringArray(value.scope_limits, 32, 1000) &&
+    boundedStringArray(value.evidence_gaps, 32, 1000) &&
+    boundedString(value.what_would_change_mind, 10000) &&
+    boundedString(value.revisit_condition, 10000) &&
+    (outcome !== "finding" || supporting.length > 0) &&
+    (outcome !== "unresolved" || hasMeaningfulCaveat)
+  );
+}
+
+export function validSynthesis(value: unknown): value is JsonRecord {
   if (
     !isObject(value) ||
     !hasOnlyKeys(value, [
@@ -403,7 +479,9 @@ function validSynthesis(value: unknown): value is JsonRecord {
     return false;
   return (
     boundedString(value.summary, 10_000) &&
-    boundedStringArray(value.findings, 64, 1_200) &&
+    Array.isArray(value.findings) &&
+    value.findings.length <= 64 &&
+    value.findings.every(validFindingCandidate) &&
     typeof value.requiresApproval === "boolean" &&
     typeof value.approvalKind === "string" &&
     APPROVAL_KINDS.includes(value.approvalKind as (typeof APPROVAL_KINDS)[number]) &&

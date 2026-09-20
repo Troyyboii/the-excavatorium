@@ -4,6 +4,8 @@ import {
   parseAgentRun,
   parseInvocationPayload,
   PROVIDER_EXECUTION_UNSUPPORTED,
+  validFindingCandidate,
+  validSynthesis,
 } from "./index.ts";
 import {
   boundedOutputBudget,
@@ -224,6 +226,64 @@ Deno.test(
     assertEquals(PROVIDER_EXECUTION_UNSUPPORTED, true);
   },
 );
+
+Deno.test("validates structured Finding outcomes before any materialization boundary", () => {
+  const supportingEvidenceId = "123e4567-e89b-12d3-a456-426614174000";
+  const baseCandidate = {
+    outcome: "finding",
+    title: "Bounded conclusion",
+    conclusion: "The selected evidence supports the conclusion.",
+    analysis_mode: "synthesis",
+    confidence: 80,
+    supporting_evidence_ids: [supportingEvidenceId],
+    contrary_evidence_ids: [],
+    uncertainties: [],
+    assumptions: ["Only selected Case evidence was reviewed."],
+    scope_limits: [],
+    evidence_gaps: [],
+    what_would_change_mind: "A newer primary record would change the conclusion.",
+    revisit_condition: "Revisit when the Case scope changes.",
+  };
+
+  assertEquals(validFindingCandidate(baseCandidate), true);
+  assertEquals(
+    validFindingCandidate({ ...baseCandidate, outcome: "finding", supporting_evidence_ids: [] }),
+    false,
+  );
+  assertEquals(
+    validFindingCandidate({
+      ...baseCandidate,
+      outcome: "unresolved",
+      supporting_evidence_ids: [],
+      evidence_gaps: ["The archive does not contain the primary confirmation."],
+    }),
+    true,
+  );
+  assertEquals(validFindingCandidate({ ...baseCandidate, outcome: "refusal" }), true);
+  assertEquals(validFindingCandidate("generic agent step output"), false);
+  assertEquals(
+    validSynthesis({
+      summary: "Fixture synthesis",
+      findings: [baseCandidate],
+      requiresApproval: false,
+      approvalKind: "external_write",
+      proposedDiff: {},
+      toolAction: {},
+    }),
+    true,
+  );
+  assertEquals(
+    validSynthesis({
+      summary: "Legacy generic output",
+      findings: ["this must not become a Finding"],
+      requiresApproval: false,
+      approvalKind: "external_write",
+      proposedDiff: {},
+      toolAction: {},
+    }),
+    false,
+  );
+});
 
 Deno.test("calculates cached-input and output costs by rounding upward to DB precision", () => {
   const usage = readUsage({

@@ -190,7 +190,7 @@ export function RecordEvidenceReader({
             </h3>
             <div className="mt-3 space-y-4">
               {findings.map((finding) => (
-                <FindingEntry key={finding.id} finding={finding} />
+                <FindingEntry key={finding.id} finding={finding} context={context} />
               ))}
             </div>
           </div>
@@ -341,14 +341,26 @@ function ClaimEntry({
   );
 }
 
-function FindingEntry({ finding }: { finding: CustodianRecordContext["findings"][number] }) {
+function FindingEntry({
+  finding,
+  context,
+}: {
+  finding: CustodianRecordContext["findings"][number];
+  context: CustodianRecordContext;
+}) {
+  const evidenceById = new Map(context.evidence.map((entry) => [entry.id, entry]));
+  const links = context.findingEvidence.filter((link) => link.findingId === finding.id);
+  const supporting = links.filter((link) => link.relationshipKind === "supporting");
+  const contrary = links.filter((link) => link.relationshipKind === "contrary");
   return (
     <article className="space-y-2 border-t border-sidebar-border pt-3 first:border-0 first:pt-0">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h4 className="text-sm font-medium">{finding.title}</h4>
           <p className="mt-1 font-mono text-[10px] text-sidebar-foreground/70">
-            {finding.analysisMode} · {finding.status} · {finding.confidence}% confidence
+            {finding.analysisMode} · {finding.status} · {finding.confidence}% confidence ·{" "}
+            {finding.originKind}
+            {finding.analysisOutcome ? ` · ${finding.analysisOutcome}` : ""}
           </p>
         </div>
         <StatusPill value={finding.lifecycleStatus} inverse />
@@ -363,6 +375,65 @@ function FindingEntry({ finding }: { finding: CustodianRecordContext["findings"]
         <p className="break-words whitespace-pre-wrap text-xs text-sidebar-foreground/80">
           <span className="font-medium">Revisit:</span> {finding.revisitCondition}
         </p>
+      ) : null}
+      {finding.originKind === "analysis" ? (
+        <p className="break-words font-mono text-[10px] text-sidebar-foreground/70">
+          Run {finding.originRunId ?? "unavailable"} · synthesis step{" "}
+          {finding.originStepId ?? "unavailable"}
+        </p>
+      ) : null}
+      {supporting.length || contrary.length ? (
+        <div className="space-y-1 text-xs text-sidebar-foreground/80">
+          {supporting.length ? (
+            <p>
+              <span className="font-medium">Supporting evidence:</span>{" "}
+              {supporting
+                .map(
+                  (link) =>
+                    evidenceById.get(link.evidenceId)?.title ?? `Unavailable · ${link.evidenceId}`,
+                )
+                .join(", ")}
+            </p>
+          ) : null}
+          {contrary.length ? (
+            <p>
+              <span className="font-medium">Contrary evidence:</span>{" "}
+              {contrary
+                .map(
+                  (link) =>
+                    evidenceById.get(link.evidenceId)?.title ?? `Unavailable · ${link.evidenceId}`,
+                )
+                .join(", ")}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      {finding.uncertainties.length ||
+      finding.assumptions.length ||
+      finding.scopeLimits.length ||
+      finding.evidenceGaps.length ? (
+        <div className="space-y-1 text-xs text-sidebar-foreground/80">
+          {finding.uncertainties.length ? (
+            <p>
+              <span className="font-medium">Uncertainty:</span> {finding.uncertainties.join("; ")}
+            </p>
+          ) : null}
+          {finding.assumptions.length ? (
+            <p>
+              <span className="font-medium">Assumptions:</span> {finding.assumptions.join("; ")}
+            </p>
+          ) : null}
+          {finding.scopeLimits.length ? (
+            <p>
+              <span className="font-medium">Scope limits:</span> {finding.scopeLimits.join("; ")}
+            </p>
+          ) : null}
+          {finding.evidenceGaps.length ? (
+            <p>
+              <span className="font-medium">Evidence gaps:</span> {finding.evidenceGaps.join("; ")}
+            </p>
+          ) : null}
+        </div>
       ) : null}
     </article>
   );

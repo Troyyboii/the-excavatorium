@@ -121,11 +121,11 @@ provider call is available.
 | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | Owner Cases and selected archive scope                   | **CURRENT** source contract in `supabase/migrations/20260904090000_custodian_case_archive_scope.sql`. | **CURRENT/PARTIAL** Case create/edit and reading UI; no Case UI authoring for every related artifact.                     | Applied migration and owner use are **UNVERIFIED** here.                                                         |
 | Bounded Case Reading                                     | **CURRENT** browser-side bundle builder in `src/lib/case-reading.ts`.                                 | **CURRENT** read-only Case Reading presentation.                                                                          | It is provider-free; it is not evidence of a model run.                                                          |
-| Claims, evidence, actions, findings, revisions           | **CURRENT** owner-scoped tables/RPC foundation.                                                       | **PARTIAL** existing collections are displayed; generic findings are not proof of provider provenance.                    | Database application and end-to-end workflow are **UNVERIFIED**.                                                 |
+| Claims, evidence, actions, findings, revisions           | **CURRENT** owner-scoped tables/RPC foundation, including the M2 Finding attribution migration and protected materialization RPC in `20260920090000_custodian_finding_attribution.sql`. | **PARTIAL** existing collections now expose Finding origin, run/step attribution, caveats, and bounded support/contrary descriptors. | Database application and end-to-end workflow are **UNVERIFIED**.                                                 |
 | Durable runs, steps, budgets, approval, proposals, audit | **CURRENT** migration and RPC contracts.                                                              | Run Room is **CURRENT** as a read-only owner listing; Approvals is a **BLOCKED/PLANNED** scaffold.                        | Runtime foundation is not operational proof.                                                                     |
 | Provider-backed analysis                                 | Request, pricing, validation, and recording plumbing are **PARTIAL** source.                          | Invocation is **BLOCKED** in `src/lib/custodian-runtime.ts`.                                                              | Edge execution is **BLOCKED** by `PROVIDER_EXECUTION_UNSUPPORTED = true`. No paid call is authorized or claimed. |
 | External or canonical execution                          | Approval and tool-event guard foundations are **CURRENT** source.                                     | No control UI is connected.                                                                                               | **BLOCKED**; current Edge runtime stops approved external execution.                                             |
-| MCP Custodian reads                                      | **CURRENT** bounded reader registrations and safe projections.                                        | `list_cases`, `get_case`, `get_findings`, `get_pending_approvals`, and `get_run` are conditional on deployed foundations. | Fresh authenticated production callability is **UNVERIFIED**.                                                    |
+| MCP Custodian reads                                      | **CURRENT** bounded reader registrations and safe projections.                                        | `list_cases`, `get_case`, `get_findings`, `get_pending_approvals`, and `get_run` are conditional on deployed foundations; `get_findings` now projects bounded attribution and evidence descriptors. | Fresh authenticated production callability is **UNVERIFIED**.                                                    |
 | MCP run control                                          | Reserved tools exist.                                                                                 | `start_analysis` and `cancel_run` deliberately return unavailable.                                                        | **BLOCKED**, never simulated.                                                                                    |
 | Resident monitoring                                      | Tables and guarded automation RPCs exist.                                                             | Observatory has no live source and says so.                                                                               | **PARTIAL/FUTURE**; no scheduler or resident loop is proven operational.                                         |
 
@@ -138,9 +138,12 @@ Important gaps and contradictions must remain visible:
    run policy-free.
 2. The Edge Function contains a real OpenAI Responses call path behind its hard gate.
    This is dormant plumbing, not active provider execution.
-3. The runtime would persist generic `agent_steps` output; inspected provider code
-   does not persist that output as `custodian_findings`. Never label generic step data
-   as a provider-backed finding.
+3. The runtime still persists generic `agent_steps` output, and that output remains
+   insufficient to become a Finding. The M2 source path now requires a completed
+   `synthesize` step, a validated structured candidate, same-owner/same-Case evidence,
+   and the protected `custodian_materialize_finding` RPC before creating an analysis
+   Finding. Generic automation `brief` output fails closed. Database application and
+   deployed behavior remain **UNVERIFIED**.
 4. Verification currently records a bounded run-state/no-external-execution check.
    Reaching `verifying` or `completed` is not substantive proof that a conclusion,
    source, action, or external result is correct.
@@ -635,8 +638,14 @@ and revisit conditions.
   presentation.
 - **Connector impact:** findings retain connector freshness/provenance if source used.
 - **Security:** model output remains interpretation; canonical writes remain unavailable.
-- **Validation:** support/contrary/absence/refusal fixtures and source-to-finding audit
-  assertions.
+- **Implemented source path:** `custodian_findings` now distinguishes legacy,
+  owner-authored, and analysis origin; analysis Findings link to the originating run,
+  completed synthesis step, candidate index, result hash, bounded caveats, and a
+  dedicated supporting/contrary evidence relation. Refusal and no-Finding outcomes
+  do not persist Findings. Generic automation briefs fail closed.
+- **Validation:** deterministic support/contrary/absence/refusal fixtures, replay and
+  conflicting-identity checks, owner/RLS checks, canonical-record preservation, and
+  source-to-Finding audit assertions.
 - **Stop condition:** no generic agent-step output can masquerade as a provider-backed
   finding.
 - **Authorization boundary:** schema change and any real model call need explicit
@@ -846,9 +855,10 @@ into release notes.
 | MCP                         | `src/lib/mcp/index.ts`, `src/lib/mcp/capability-handlers.ts`, `src/lib/mcp/tools/`, `src/lib/mcp/security.ts`                                                                                                                        | Bounded archive/Custodian client surface and authentication.                          |
 | Plugin guidance             | `plugins/the-excavatorium/skills/custodian/SKILL.md`, `plugins/the-excavatorium/.mcp.json`                                                                                                                                           | Client retrieval discipline and MCP endpoint metadata.                                |
 | Provider runtime            | `supabase/functions/custodian-run/index.ts`, `supabase/functions/custodian-run/runtime.ts`, their tests                                                                                                                              | Dormant provider, parsing, pricing, state, failure, and hard-gate source.             |
-| Core Custodian migrations   | `supabase/migrations/20260811190000_custodian_tables.sql` through `20260811190300_custodian_write_rpcs.sql`                                                                                                                          | Case/analysis schema, indexes, RLS, and write RPCs.                                   |
+| Core Custodian migrations   | `supabase/migrations/20260811190000_custodian_tables.sql` through `20260811190300_custodian_write_rpcs.sql`, plus `supabase/migrations/20260920090000_custodian_finding_attribution.sql`                                              | Case/analysis schema, indexes, RLS, write RPCs, and the M2 Finding attribution/materialization boundary. |
 | Runtime migrations          | `supabase/migrations/20260811191000_custodian_runtime_tables.sql` through `20260811191200_custodian_runtime_rpcs.sql`                                                                                                                | Runtime/policy/approval/automation/audit foundation.                                  |
 | Hardening and case scope    | `supabase/migrations/20260817163457_custodian_tool_policy_delete_guard.sql`, `supabase/migrations/20260822214714_harden_archive_and_custodian_boundaries.sql`, `supabase/migrations/20260904090000_custodian_case_archive_scope.sql` | Policy, exact action, audit, cost hardening, and selected archive scope.              |
+| M2 database proof           | `supabase/tests/database/custodian_finding_attribution.sql`                                                                                                                                                                               | Deterministic structured-result, attribution, evidence, replay, RLS, automation-guard, and archive-isolation coverage. |
 | Database tests              | `supabase/tests/database/custodian_case_archive_scope.sql`, `supabase/tests/database/harden_archive_and_custodian_boundaries.sql`                                                                                                    | Source-level pgTAP/database contract evidence; execution must be recorded separately. |
 
 ### Known gaps and deliberate deferrals
@@ -861,8 +871,9 @@ into release notes.
   findings or proposals.
 - A resident loop, live Observatory, active connector use, and connector-account UI are
   not established by their tables.
-- Retention, finding provenance linkage, the first allowed internal V1 execution class,
-  and long-lived automation policy are unresolved product/security decisions.
+- Retention, the first allowed internal V1 execution class, and long-lived automation
+  policy remain unresolved product/security decisions. M2 adds source-level Finding
+  provenance linkage but does not prove deployment or production behavior.
 - Current source/test inspection does not prove migration application, Edge deployment,
   live OAuth, production RLS, or provider behavior.
 

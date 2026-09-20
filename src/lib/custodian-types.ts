@@ -87,6 +87,15 @@ export type FindingAnalysisMode = (typeof FINDING_ANALYSIS_MODES)[number];
 export const FINDING_STATUSES = ["draft", "open", "resolved", "superseded", "archived"] as const;
 export type FindingStatus = (typeof FINDING_STATUSES)[number];
 
+export const FINDING_ORIGIN_KINDS = ["legacy", "owner_authored", "analysis"] as const;
+export type FindingOriginKind = (typeof FINDING_ORIGIN_KINDS)[number];
+
+export const FINDING_ANALYSIS_OUTCOMES = ["finding", "unresolved"] as const;
+export type FindingAnalysisOutcome = (typeof FINDING_ANALYSIS_OUTCOMES)[number];
+
+export const FINDING_EVIDENCE_RELATIONSHIP_KINDS = ["supporting", "contrary"] as const;
+export type FindingEvidenceRelationshipKind = (typeof FINDING_EVIDENCE_RELATIONSHIP_KINDS)[number];
+
 export type CustodianCaseRow = {
   id: string;
   owner_id: string;
@@ -283,6 +292,35 @@ export type ClaimEvidence = {
   updatedAt: string;
 };
 
+export type CustodianFindingEvidenceRow = {
+  id: string;
+  owner_id: string;
+  case_id: string;
+  finding_id: string;
+  evidence_id: string;
+  relationship_kind: FindingEvidenceRelationshipKind;
+  relationship_note: string;
+  lifecycle_status: "active" | "archived";
+  created_by: string;
+  updated_by: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CustodianFindingEvidence = {
+  id: string;
+  caseId: string;
+  findingId: string;
+  evidenceId: string;
+  relationshipKind: FindingEvidenceRelationshipKind;
+  relationshipNote: string;
+  lifecycleStatus: CustodianFindingEvidenceRow["lifecycle_status"];
+  createdBy: string;
+  updatedBy: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type ActionRow = {
   id: string;
   owner_id: string;
@@ -329,6 +367,16 @@ export type CustodianFindingRow = {
   source_record_id: string | null;
   status: FindingStatus;
   lifecycle_status: "active" | "archived";
+  origin_kind: FindingOriginKind;
+  analysis_outcome: FindingAnalysisOutcome | null;
+  origin_run_id: string | null;
+  origin_step_id: string | null;
+  candidate_index: number | null;
+  analysis_result_hash: string | null;
+  uncertainties: string[];
+  assumptions: string[];
+  scope_limits: string[];
+  evidence_gaps: string[];
   created_by: string;
   updated_by: string;
   created_at: string;
@@ -347,6 +395,16 @@ export type CustodianFinding = {
   sourceRecordId: string | null;
   status: FindingStatus;
   lifecycleStatus: CustodianFindingRow["lifecycle_status"];
+  originKind: FindingOriginKind;
+  analysisOutcome: FindingAnalysisOutcome | null;
+  originRunId: string | null;
+  originStepId: string | null;
+  candidateIndex: number | null;
+  analysisResultHash: string | null;
+  uncertainties: string[];
+  assumptions: string[];
+  scopeLimits: string[];
+  evidenceGaps: string[];
   createdBy: string;
   updatedBy: string;
   createdAt: string;
@@ -359,6 +417,7 @@ export type CustodianRecordContext = {
   evidence: EvidenceItem[];
   claimEvidence: ClaimEvidence[];
   findings: CustodianFinding[];
+  findingEvidence: CustodianFindingEvidence[];
 };
 
 export type RecordRevisionRow = {

@@ -11,7 +11,7 @@ import {
   UsersThree,
   X,
 } from "@phosphor-icons/react";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import type {
   CaseArchiveScope,
   CaseMember,
@@ -19,6 +19,7 @@ import type {
   Claim,
   CustodianAction,
   CustodianFinding,
+  CustodianFindingEvidence,
   EvidenceItem,
   JsonValue,
 } from "@/lib/custodian-types";
@@ -180,6 +181,7 @@ export function CaseDetailSurface({
   evidence = [],
   actions = [],
   findings = [],
+  findingEvidence = [],
   archiveRecords = [],
   archiveReady = false,
   archiveLoading = false,
@@ -197,6 +199,7 @@ export function CaseDetailSurface({
   evidence?: readonly EvidenceItem[];
   actions?: readonly CustodianAction[];
   findings?: readonly CustodianFinding[];
+  findingEvidence?: readonly CustodianFindingEvidence[];
   archiveRecords?: readonly ArchiveRecord[];
   archiveReady?: boolean;
   archiveLoading?: boolean;
@@ -302,10 +305,23 @@ export function CaseDetailSurface({
           items={findings.map((finding) => ({
             id: finding.id,
             title: finding.title,
-            meta: `${finding.analysisMode} · ${finding.status}`,
+            meta: `${finding.analysisMode} · ${finding.status} · ${finding.originKind}${
+              findingEvidence.some(
+                (link) => link.findingId === finding.id && link.relationshipKind === "contrary",
+              )
+                ? " · contrary material"
+                : ""
+            }`,
             sourceRecord: finding.sourceRecordId
               ? recordsById.get(finding.sourceRecordId)
               : undefined,
+            details: (
+              <FindingDetails
+                finding={finding}
+                evidence={evidence}
+                evidenceLinks={findingEvidence.filter((link) => link.findingId === finding.id)}
+              />
+            ),
           }))}
         />
         <CaseCollection
@@ -567,6 +583,7 @@ function CaseCollection({
     title: string;
     meta: string;
     sourceRecord?: ArchiveRecord;
+    details?: ReactNode;
   }[];
 }) {
   return (
@@ -595,6 +612,7 @@ function CaseCollection({
                     Source record: {item.sourceRecord.title}
                   </span>
                 ) : null}
+                {item.details ? <div className="mt-3">{item.details}</div> : null}
               </span>
             </li>
           ))}
@@ -603,6 +621,80 @@ function CaseCollection({
         <p className="p-5 text-sm text-muted-foreground">{empty}</p>
       )}
     </Section>
+  );
+}
+
+export function FindingDetails({
+  finding,
+  evidence,
+  evidenceLinks,
+}: {
+  finding: CustodianFinding;
+  evidence: readonly EvidenceItem[];
+  evidenceLinks: readonly CustodianFindingEvidence[];
+}) {
+  const evidenceById = new Map(evidence.map((entry) => [entry.id, entry]));
+  const supporting = evidenceLinks.filter((link) => link.relationshipKind === "supporting");
+  const contrary = evidenceLinks.filter((link) => link.relationshipKind === "contrary");
+  const caveats = [
+    ["Uncertainty", finding.uncertainties],
+    ["Assumptions", finding.assumptions],
+    ["Scope limits", finding.scopeLimits],
+    ["Evidence gaps", finding.evidenceGaps],
+  ] as const;
+  const evidenceTitles = (links: readonly CustodianFindingEvidence[]) =>
+    links
+      .map((link) => evidenceById.get(link.evidenceId)?.title ?? `Unavailable · ${link.evidenceId}`)
+      .join(", ");
+
+  return (
+    <div className="space-y-2 border-l border-luminous-gold/30 pl-3 text-xs text-muted-foreground">
+      <p className="break-words whitespace-pre-wrap">
+        <span className="font-medium text-foreground">Conclusion:</span> {finding.finding}
+      </p>
+      <p>
+        <span className="font-medium text-foreground">Confidence:</span> {finding.confidence}% ·{" "}
+        <span className="font-medium text-foreground">Origin:</span> {finding.originKind}
+        {finding.analysisOutcome ? ` · ${finding.analysisOutcome}` : ""}
+      </p>
+      {finding.originKind === "analysis" ? (
+        <p className="break-words font-mono text-[10px]">
+          Run {finding.originRunId ?? "unavailable"} · synthesis step{" "}
+          {finding.originStepId ?? "unavailable"} · candidate{" "}
+          {finding.candidateIndex ?? "unavailable"}
+        </p>
+      ) : null}
+      {supporting.length ? (
+        <p className="break-words">
+          <span className="font-medium text-foreground">Supporting evidence:</span>{" "}
+          {evidenceTitles(supporting)}
+        </p>
+      ) : null}
+      {contrary.length ? (
+        <p className="break-words">
+          <span className="font-medium text-foreground">Contrary evidence:</span>{" "}
+          {evidenceTitles(contrary)}
+        </p>
+      ) : null}
+      {caveats.map(([label, values]) =>
+        values.length ? (
+          <p key={label} className="break-words">
+            <span className="font-medium text-foreground">{label}:</span> {values.join("; ")}
+          </p>
+        ) : null,
+      )}
+      {finding.whatWouldChangeMind ? (
+        <p className="break-words whitespace-pre-wrap">
+          <span className="font-medium text-foreground">What would change the conclusion:</span>{" "}
+          {finding.whatWouldChangeMind}
+        </p>
+      ) : null}
+      {finding.revisitCondition ? (
+        <p className="break-words whitespace-pre-wrap">
+          <span className="font-medium text-foreground">Revisit:</span> {finding.revisitCondition}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
