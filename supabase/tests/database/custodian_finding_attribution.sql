@@ -65,8 +65,9 @@ insert into public.agent_steps (
 select ok(
   exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'custodian_findings' and column_name = 'origin_step_id')
   and exists (select 1 from information_schema.tables where table_schema = 'public' and table_name = 'custodian_finding_evidence')
-  and to_regprocedure('public.custodian_materialize_finding(uuid,integer)') is not null,
-  'M2 attribution columns, relation table, and protected RPC exist'
+  and to_regprocedure('public.custodian_materialize_finding(uuid,integer)') is not null
+  and to_regprocedure('public.custodian_materialize_runtime_findings(uuid,uuid)') is not null,
+  'M2 attribution columns, relation table, and trusted materialization RPCs exist'
 );
 
 set local role authenticated;

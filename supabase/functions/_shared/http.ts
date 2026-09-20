@@ -43,6 +43,19 @@ export function jsonResponse(
 
 export type AuthenticatedSupabase = { client: SupabaseClient; user: User; authorization: string };
 
+/**
+ * Server-only client for trusted runtime producer RPCs. The service-role key
+ * is read only inside the Edge Function and is never returned to callers.
+ */
+export function trustedRuntimeSupabase(): SupabaseClient | null {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !serviceRoleKey) return null;
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
+  });
+}
+
 export async function authenticatedSupabase(
   request: Request,
 ): Promise<AuthenticatedSupabase | null> {

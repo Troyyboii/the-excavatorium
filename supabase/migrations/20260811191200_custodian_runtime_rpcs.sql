@@ -1,7 +1,8 @@
 -- Custodian Release 2/3: owner-derived protected runtime RPCs.
 --
--- The Edge Function calls these RPCs with the caller's bearer token. It never
--- receives a service-role key and never writes runtime tables directly.
+-- Owner-facing runtime RPCs use the caller's bearer token. The later M2
+-- attribution migration adds separate service-role-only producer RPCs for
+-- completed synthesis output; ordinary callers still cannot forge that state.
 
 create or replace function public.custodian_runtime_require_object(payload jsonb, field_name text)
 returns jsonb

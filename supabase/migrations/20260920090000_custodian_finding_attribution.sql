@@ -124,7 +124,8 @@ as $$
 begin
   if new.step_kind = 'synthesize'
      and new.status = 'completed'
-     and auth.uid() is not null then
+     and auth.uid() is not null
+     and coalesce(pg_catalog.current_setting('custodian.trusted_runtime', true), '') <> 'true' then
     raise exception 'completed synthesis steps require a trusted runtime producer'
       using errcode = '42501';
   end if;
@@ -413,6 +414,92 @@ $$;
 
 revoke execute on function public.custodian_materialize_finding(uuid, integer) from public, anon;
 grant execute on function public.custodian_materialize_finding(uuid, integer) to authenticated;
+
+-- The Edge Function is the only trusted runtime producer. It uses a
+-- server-side service-role client and supplies the authenticated owner's id
+-- only after this function has verified that the run belongs to that owner.
+create or replace function public.custodian_record_runtime_agent_step(
+  runtime_owner_id uuid,
+  run_id uuid,
+  step_payload jsonb,
+  idempotency_key text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if auth.role() <> 'service_role' then
+    raise exception 'trusted runtime producer is required' using errcode = '42501';
+  end if;
+  if runtime_owner_id is null or not exists (
+    select 1 from public.agent_runs
+     where owner_id = runtime_owner_id and id = run_id
+  ) then
+    raise exception 'runtime owner and run do not match' using errcode = '42501';
+  end if;
+  perform pg_catalog.set_config('request.jwt.claim.sub', runtime_owner_id::text, true);
+  perform pg_catalog.set_config('custodian.trusted_runtime', 'true', true);
+  return public.custodian_record_agent_step(run_id, step_payload, idempotency_key);
+end;
+$$;
+
+revoke execute on function public.custodian_record_runtime_agent_step(uuid, uuid, jsonb, text)
+  from public, anon, authenticated;
+grant execute on function public.custodian_record_runtime_agent_step(uuid, uuid, jsonb, text)
+  to service_role;
+
+create or replace function public.custodian_materialize_runtime_findings(
+  runtime_owner_id uuid,
+  agent_step_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  step_output jsonb;
+  candidate_count integer;
+  candidate_index integer;
+begin
+  if auth.role() <> 'service_role' then
+    raise exception 'trusted runtime producer is required' using errcode = '42501';
+  end if;
+  if runtime_owner_id is null then
+    raise exception 'runtime owner is required' using errcode = '22023';
+  end if;
+  perform pg_catalog.set_config('request.jwt.claim.sub', runtime_owner_id::text, true);
+  perform pg_catalog.set_config('custodian.trusted_runtime', 'true', true);
+  select output_payload into step_output
+    from public.agent_steps
+   where owner_id = runtime_owner_id
+     and id = agent_step_id
+     and step_kind = 'synthesize'
+     and status = 'completed'
+   for update;
+  if not found then
+    raise exception 'completed synthesis step is not owned by the runtime owner' using errcode = '42501';
+  end if;
+  if pg_catalog.jsonb_typeof(step_output) <> 'object'
+     or pg_catalog.jsonb_typeof(step_output -> 'findings') <> 'array'
+     or pg_catalog.jsonb_array_length(step_output -> 'findings') > 64 then
+    raise exception 'synthesis output does not match the structured Finding contract' using errcode = '22023';
+  end if;
+  candidate_count := pg_catalog.jsonb_array_length(step_output -> 'findings');
+  for candidate_index in 0 .. candidate_count - 1
+  loop
+    perform public.custodian_materialize_finding(agent_step_id, candidate_index);
+  end loop;
+  return jsonb_build_object('materialized', true, 'candidate_count', candidate_count);
+end;
+$$;
+
+revoke execute on function public.custodian_materialize_runtime_findings(uuid, uuid)
+  from public, anon, authenticated;
+grant execute on function public.custodian_materialize_runtime_findings(uuid, uuid)
+  to service_role;
 
 -- The old automation brief branch writes generic text directly to Findings.
 -- Fail closed until automation can submit the same reviewed structured result.

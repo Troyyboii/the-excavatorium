@@ -3,6 +3,7 @@ import {
   allowedOrigin,
   jsonResponse,
   responseHeaders,
+  trustedRuntimeSupabase,
   type AuthenticatedSupabase,
 } from "../_shared/http.ts";
 import {
@@ -125,6 +126,18 @@ class RpcFailure extends Error {
   constructor() {
     super("rpc_failure");
   }
+}
+
+function trustedRuntimeClient(): AuthenticatedSupabase["client"] {
+  const client = trustedRuntimeSupabase();
+  if (!client) {
+    throw new SafeFailure(
+      503,
+      "trusted_runtime_unavailable",
+      "Custodian trusted runtime execution is unavailable.",
+    );
+  }
+  return client;
 }
 
 function isObject(value: unknown): value is JsonRecord {
@@ -297,8 +310,14 @@ async function transitionRun(
   );
 }
 
+type RecordedStep = {
+  run: AgentRun;
+  stepId: string;
+};
+
 async function recordStep(
   client: AuthenticatedSupabase["client"],
+  ownerId: string,
   run: AgentRun,
   invocationKey: string,
   stepKind: string,
@@ -312,29 +331,48 @@ async function recordStep(
     costUsd: 0,
     latencyMs: 0,
   },
-): Promise<AgentRun> {
-  const value = await rpc(client, "custodian_record_agent_step", {
-    run_id: run.id,
-    idempotency_key: idempotencyKey,
-    step_payload: {
-      sequence_no: run.last_step_number + 1,
-      step_kind: stepKind,
-      status,
-      model_tier: modelTier,
-      prompt_version: run.prompt_version,
-      input_payload: inputPayload,
-      output_payload: outputPayload,
-      tokens_used: usage.tokens,
-      cost_usd: usage.costUsd,
-      latency_ms: usage.latencyMs,
-      ...(usage.pricingVersion ? { pricing_version: usage.pricingVersion } : {}),
-      provenance: {
-        runtime: "custodian-run",
-        evidence_untrusted: true,
+): Promise<RecordedStep> {
+  const trustedSynthesis = stepKind === "synthesize" && status === "completed";
+  const value = await rpc(
+    trustedSynthesis ? trustedRuntimeClient() : client,
+    trustedSynthesis ? "custodian_record_runtime_agent_step" : "custodian_record_agent_step",
+    {
+      ...(trustedSynthesis ? { runtime_owner_id: ownerId } : {}),
+      run_id: run.id,
+      idempotency_key: idempotencyKey,
+      step_payload: {
+        sequence_no: run.last_step_number + 1,
+        step_kind: stepKind,
+        status,
+        model_tier: modelTier,
+        prompt_version: run.prompt_version,
+        input_payload: inputPayload,
+        output_payload: outputPayload,
+        tokens_used: usage.tokens,
+        cost_usd: usage.costUsd,
+        latency_ms: usage.latencyMs,
+        ...(usage.pricingVersion ? { pricing_version: usage.pricingVersion } : {}),
+        provenance: {
+          runtime: "custodian-run",
+          evidence_untrusted: true,
+        },
       },
     },
+  );
+  if (!isObject(value) || !isObject(value.step) || typeof value.step.id !== "string") {
+    throw new RpcFailure();
+  }
+  return {
+    run: parseAgentRun(value),
+    stepId: value.step.id,
+  };
+}
+
+async function materializeRuntimeFindings(ownerId: string, stepId: string): Promise<void> {
+  await rpc(trustedRuntimeClient(), "custodian_materialize_runtime_findings", {
+    runtime_owner_id: ownerId,
+    agent_step_id: stepId,
   });
-  return parseAgentRun(value);
 }
 
 function boundedEvidence(value: JsonRecord): unknown {
@@ -755,6 +793,7 @@ async function callResponses(
 
 async function failModelStage(
   client: AuthenticatedSupabase["client"],
+  ownerId: string,
   run: AgentRun,
   invocationKey: string,
   stage: RunStage,
@@ -763,6 +802,7 @@ async function failModelStage(
 ): Promise<Response> {
   const failedStep = await recordStep(
     client,
+    ownerId,
     run,
     invocationKey,
     stage === "extract" ? "extract" : "synthesize",
@@ -773,10 +813,10 @@ async function failModelStage(
     "failed",
     failure.usage,
   );
-  if (TERMINAL_STATES.has(failedStep.status)) {
-    return result(200, "stopped", failedStep, {}, origin);
+  if (TERMINAL_STATES.has(failedStep.run.status)) {
+    return result(200, "stopped", failedStep.run, {}, origin);
   }
-  const failedRun = await transitionRun(client, failedStep, invocationKey, "failed", {
+  const failedRun = await transitionRun(client, failedStep.run, invocationKey, "failed", {
     failure_code: failure.code,
     failure_message: failure.publicMessage,
   });
@@ -814,6 +854,7 @@ async function processInvocation(
   if (run.status === "executing") {
     const blockedStep = await recordStep(
       auth.client,
+      auth.user.id,
       run,
       invocation.invocationKey,
       "execute",
@@ -823,7 +864,7 @@ async function processInvocation(
       { errorCode: "external_write_unsupported" },
       "blocked",
     );
-    run = await transitionRun(auth.client, blockedStep, invocation.invocationKey, "blocked", {
+    run = await transitionRun(auth.client, blockedStep.run, invocation.invocationKey, "blocked", {
       failure_code: "external_write_unsupported",
       failure_message: "Approved external execution is not supported by this runtime.",
     });
@@ -835,6 +876,7 @@ async function processInvocation(
     if (PROVIDER_EXECUTION_UNSUPPORTED) {
       const blockedStep = await recordStep(
         auth.client,
+        auth.user.id,
         run,
         invocation.invocationKey,
         stage,
@@ -846,7 +888,7 @@ async function processInvocation(
       );
       const blockedRun = await transitionRun(
         auth.client,
-        blockedStep,
+        blockedStep.run,
         invocation.invocationKey,
         "blocked",
         {
@@ -875,6 +917,7 @@ async function processInvocation(
       if (error instanceof SafeFailure)
         return await failModelStage(
           auth.client,
+          auth.user.id,
           run,
           invocation.invocationKey,
           stage,
@@ -885,6 +928,7 @@ async function processInvocation(
     }
     const stepRun = await recordStep(
       auth.client,
+      auth.user.id,
       run,
       invocation.invocationKey,
       stage === "extract" ? "extract" : "synthesize",
@@ -895,11 +939,15 @@ async function processInvocation(
       "completed",
       response.usage,
     );
-    if (TERMINAL_STATES.has(stepRun.status)) return result(200, "stopped", stepRun, {}, origin);
+    if (TERMINAL_STATES.has(stepRun.run.status))
+      return result(200, "stopped", stepRun.run, {}, origin);
+    if (stage === "synthesize") {
+      await materializeRuntimeFindings(auth.user.id, stepRun.stepId);
+    }
     if (isApprovalOutput(response.output)) {
       const approvalRun = await createApproval(
         auth.client,
-        stepRun,
+        stepRun.run,
         invocation.invocationKey,
         stage,
         response.output,
@@ -911,13 +959,14 @@ async function processInvocation(
       return result(200, "paused", currentRun, {}, origin);
     }
     const nextStatus = stage === "extract" ? "synthesizing" : "verifying";
-    run = await transitionRun(auth.client, stepRun, invocation.invocationKey, nextStatus);
+    run = await transitionRun(auth.client, stepRun.run, invocation.invocationKey, nextStatus);
     return result(200, "advanced", run, {}, origin);
   }
 
   if (run.status === "verifying") {
     const verified = await recordStep(
       auth.client,
+      auth.user.id,
       run,
       invocation.invocationKey,
       "verify",
@@ -926,8 +975,9 @@ async function processInvocation(
       { stage: "verify" },
       { verification: "bounded", checks: ["run_state", "no_external_execution"] },
     );
-    if (TERMINAL_STATES.has(verified.status)) return result(200, "stopped", verified, {}, origin);
-    run = await transitionRun(auth.client, verified, invocation.invocationKey, "completed");
+    if (TERMINAL_STATES.has(verified.run.status))
+      return result(200, "stopped", verified.run, {}, origin);
+    run = await transitionRun(auth.client, verified.run, invocation.invocationKey, "completed");
     return result(200, "completed", run, {}, origin);
   }
 

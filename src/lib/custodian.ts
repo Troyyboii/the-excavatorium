@@ -627,21 +627,31 @@ export async function fetchCustodianRecordContext(
   if (!ownerId.trim()) throw new Error("ownerId is required for Custodian reads");
   if (!recordId.trim()) throw new Error("recordId is required for Custodian reads");
 
-  const [claims, evidence, findings] = await Promise.all([
+  const [claims, evidence, sourceRecordFindings] = await Promise.all([
     fetchCustodianClaims(ownerId, { sourceRecordId: recordId }),
     fetchCustodianEvidence(ownerId, { sourceRecordId: recordId }),
     fetchCustodianFindings(ownerId, { sourceRecordId: recordId }),
   ]);
 
+  const evidenceIds = evidence.map((entry) => entry.id);
+  const findingEvidenceForRecord = await fetchCustodianFindingEvidence(ownerId, {
+    evidenceIds,
+  });
+  const findingIds = [
+    ...new Set([
+      ...sourceRecordFindings.map((finding) => finding.id),
+      ...findingEvidenceForRecord.map((link) => link.findingId),
+    ]),
+  ];
+  const findings = await fetchCustodianFindings(ownerId, { ids: findingIds });
   const caseIds = [...new Set([...claims, ...evidence, ...findings].map((entry) => entry.caseId))];
   const claimIds = claims.map((claim) => claim.id);
-  const evidenceIds = evidence.map((entry) => entry.id);
 
   const [cases, linksByClaim, linksByEvidence, findingEvidence] = await Promise.all([
     fetchCustodianCases(ownerId, { ids: caseIds }),
     fetchCustodianClaimEvidence(ownerId, { claimIds }),
     fetchCustodianClaimEvidence(ownerId, { evidenceIds }),
-    fetchCustodianFindingEvidence(ownerId, { findingIds: findings.map((finding) => finding.id) }),
+    fetchCustodianFindingEvidence(ownerId, { findingIds }),
   ]);
   return composeCustodianRecordContext({
     cases,

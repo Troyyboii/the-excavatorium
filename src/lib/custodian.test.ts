@@ -13,7 +13,14 @@ import {
   upsertCustodianClaim,
   validateConfidence,
 } from "./custodian";
-import type { Claim, ClaimEvidence, CustodianCase, EvidenceItem } from "./custodian-types";
+import type {
+  Claim,
+  ClaimEvidence,
+  CustodianCase,
+  CustodianFinding,
+  CustodianFindingEvidence,
+  EvidenceItem,
+} from "./custodian-types";
 
 const timestamps = {
   created_at: "2026-08-11T19:00:00.000Z",
@@ -184,6 +191,46 @@ describe("Custodian record context", () => {
       updatedAt: timestamps.updated_at,
     } satisfies ClaimEvidence;
     const unrelated = { ...linked, id: "link-2", evidenceId: "other-record-evidence" };
+    const finding = {
+      id: "finding-1",
+      caseId: "case-1",
+      analysisMode: "synthesis",
+      title: "Attributed finding",
+      finding: "A bounded conclusion",
+      confidence: 80,
+      whatWouldChangeMind: "A newer source",
+      revisitCondition: "When the Case changes",
+      sourceRecordId: null,
+      status: "open",
+      lifecycleStatus: "active",
+      originKind: "analysis",
+      analysisOutcome: "finding",
+      originRunId: "run-1",
+      originStepId: "step-1",
+      candidateIndex: 0,
+      analysisResultHash: "hash-result",
+      uncertainties: [],
+      assumptions: [],
+      scopeLimits: [],
+      evidenceGaps: [],
+      createdBy: "owner-1",
+      updatedBy: "owner-1",
+      createdAt: timestamps.created_at,
+      updatedAt: timestamps.updated_at,
+    } satisfies CustodianFinding;
+    const findingLink = {
+      id: "finding-link-1",
+      caseId: "case-1",
+      findingId: "finding-1",
+      evidenceId: "evidence-1",
+      relationshipKind: "supporting",
+      relationshipNote: "Supports the conclusion",
+      lifecycleStatus: "active",
+      createdBy: "owner-1",
+      updatedBy: "owner-1",
+      createdAt: timestamps.created_at,
+      updatedAt: timestamps.updated_at,
+    } satisfies CustodianFindingEvidence;
     const context = composeCustodianRecordContext({
       cases: [
         {
@@ -205,12 +252,14 @@ describe("Custodian record context", () => {
       claims: [claim],
       evidence: [evidence],
       claimEvidence: [linked, unrelated],
-      findings: [],
-      findingEvidence: [],
+      findings: [finding],
+      findingEvidence: [findingLink],
     });
 
     expect(context.cases.map((item) => item.id)).toEqual(["case-1"]);
     expect(context.claimEvidence.map((item) => item.id)).toEqual(["link-1"]);
+    expect(context.findings.map((item) => item.id)).toEqual(["finding-1"]);
+    expect(context.findingEvidence.map((item) => item.id)).toEqual(["finding-link-1"]);
   });
 });
 
