@@ -2,7 +2,7 @@
 -- canonical execution is performed. Approval records a decision only.
 begin;
 
-select plan(14);
+select plan(16);
 
 set local role postgres;
 
@@ -38,6 +38,7 @@ insert into public.agent_runs (
   ('d3333333-3333-4333-8333-333333333333', '11111111-1111-4111-8111-111111111111', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'c1111111-1111-4111-8111-111111111111', 'm3-defer', repeat('e', 32), 'Defer fixture', '{}', repeat('f', 32), 'm3-fixture-v1', array['write_tool']::text[], 'luna', 'awaiting_approval', '11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-111111111111'),
   ('d4444444-4444-4444-8444-444444444444', '11111111-1111-4111-8111-111111111111', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'c1111111-1111-4111-8111-111111111111', 'm3-expire', repeat('1', 32), 'Expire fixture', '{}', repeat('2', 32), 'm3-fixture-v1', array['write_tool']::text[], 'luna', 'awaiting_approval', '11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-111111111111'),
   ('d5555555-5555-4555-8555-555555555555', '11111111-1111-4111-8111-111111111111', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'c1111111-1111-4111-8111-111111111111', 'm3-hash', repeat('3', 32), 'Hash fixture', '{}', repeat('4', 32), 'm3-fixture-v1', array['write_tool']::text[], 'luna', 'awaiting_approval', '11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-111111111111'),
+  ('d7777777-7777-4777-8777-777777777777', '11111111-1111-4111-8111-111111111111', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'c1111111-1111-4111-8111-111111111111', 'm3-required-hash', repeat('5', 32), 'Required hash fixture', '{}', repeat('6', 32), 'm3-fixture-v1', array['write_tool']::text[], 'luna', 'awaiting_approval', '11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-111111111111'),
   ('d6666666-6666-4666-8666-666666666666', '22222222-2222-4222-8222-222222222222', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'c2222222-2222-4222-8222-222222222222', 'm3-foreign', repeat('7', 32), 'Foreign fixture', '{}', repeat('8', 32), 'm3-fixture-v1', array['write_tool']::text[], 'luna', 'awaiting_approval', '22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-222222222222');
 
 insert into public.approval_requests (
@@ -49,6 +50,7 @@ insert into public.approval_requests (
   ('e3333333-3333-4333-8333-333333333333', '11111111-1111-4111-8111-111111111111', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'd3333333-3333-4333-8333-333333333333', 'm3-defer-gate', 'tool_action', 'pending', 'Defer exact action', 'Inspectable', '{"op":"pause"}'::jsonb, '{"tool_name":"write_tool"}'::jsonb, 'cccccccccccccccccccccccccccccccc', '11111111-1111-4111-8111-111111111111', now() + interval '1 day'),
   ('e4444444-4444-4444-8444-444444444444', '11111111-1111-4111-8111-111111111111', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'd4444444-4444-4444-8444-444444444444', 'm3-expire-gate', 'tool_action', 'pending', 'Expire exact action', 'Inspectable', '{"op":"pause"}'::jsonb, '{"tool_name":"write_tool"}'::jsonb, 'dddddddddddddddddddddddddddddddd', '11111111-1111-4111-8111-111111111111', now() - interval '1 hour'),
   ('e5555555-5555-4555-8555-555555555555', '11111111-1111-4111-8111-111111111111', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'd5555555-5555-4555-8555-555555555555', 'm3-hash-gate', 'tool_action', 'pending', 'Hash exact action', 'Inspectable', '{"op":"pause"}'::jsonb, '{"tool_name":"write_tool"}'::jsonb, 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', '11111111-1111-4111-8111-111111111111', now() + interval '1 day'),
+  ('e7777777-7777-4777-8777-777777777777', '11111111-1111-4111-8111-111111111111', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'd7777777-7777-4777-8777-777777777777', 'm3-required-hash-gate', 'tool_action', 'pending', 'Required hash exact action', 'Inspectable', '{"op":"pause"}'::jsonb, '{"tool_name":"write_tool"}'::jsonb, '99999999999999999999999999999999', '11111111-1111-4111-8111-111111111111', now() + interval '1 day'),
   ('e6666666-6666-4666-8666-666666666666', '22222222-2222-4222-8222-222222222222', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'd6666666-6666-4666-8666-666666666666', 'm3-foreign-gate', 'tool_action', 'pending', 'Foreign exact action', 'Inspectable', '{"op":"pause"}'::jsonb, '{"tool_name":"write_tool"}'::jsonb, 'ffffffffffffffffffffffffffffffff', '22222222-2222-4222-8222-222222222222', now() + interval '1 day');
 
 insert into public.change_proposals (
@@ -71,13 +73,19 @@ select ok(
        and pg_get_constraintdef(oid) like '%deferred%'
   )
   and to_regprocedure('public.custodian_respond_approval(uuid,text,text,text,text)') is not null
+  and to_regprocedure('public.custodian_respond_approval(uuid,text,text,text)') is null
+  and (
+    select p.pronargdefaults
+      from pg_catalog.pg_proc p
+     where p.oid = 'public.custodian_respond_approval(uuid,text,text,text,text)'::regprocedure
+  ) = 0
   and pg_catalog.has_function_privilege(
     'authenticated', 'public.custodian_respond_approval(uuid,text,text,text,text)', 'EXECUTE'
   )
   and not pg_catalog.has_function_privilege(
     'anon', 'public.custodian_respond_approval(uuid,text,text,text,text)', 'EXECUTE'
   ),
-  'M3 deferred status and exact-hash respond signature are installed'
+  'M3 deferred status and mandatory exact-hash respond signature are installed'
 );
 
 set local role authenticated;
@@ -236,6 +244,71 @@ end;
 $$;
 
 select ok(true, 'a changed action hash cannot reuse the current owner gate');
+
+do $$
+begin
+  begin
+    execute 'select public.custodian_respond_approval($1::uuid, $2::text, $3::text, $4::text)'
+      using 'e7777777-7777-4777-8777-777777777777',
+            'approved',
+            'Omitted hash.',
+            'owner-gate-omit';
+    raise exception 'omitted expected_action_hash was accepted';
+  exception
+    when undefined_function then null;
+  end;
+  if (select status from public.approval_requests where id = 'e7777777-7777-4777-8777-777777777777') <> 'pending'
+     or exists (
+       select 1 from public.audit_events
+        where target_id = 'e7777777-7777-4777-8777-777777777777'
+          and action = 'respond_approval'
+     ) then
+    raise exception 'omitted expected_action_hash mutated the pending gate';
+  end if;
+end;
+$$;
+
+select ok(true, 'omitting expected_action_hash cannot authorize a decision');
+
+do $$
+begin
+  begin
+    perform public.custodian_respond_approval(
+      'e7777777-7777-4777-8777-777777777777',
+      'approved',
+      'Null hash.',
+      'owner-gate-null',
+      null
+    );
+    raise exception 'null expected_action_hash was accepted';
+  exception
+    when invalid_parameter_value then null;
+  end;
+  begin
+    perform public.custodian_respond_approval(
+      'e7777777-7777-4777-8777-777777777777',
+      'approved',
+      'Blank hash.',
+      'owner-gate-blank',
+      '   '
+    );
+    raise exception 'blank expected_action_hash was accepted';
+  exception
+    when invalid_parameter_value then null;
+  end;
+  if (select status from public.approval_requests where id = 'e7777777-7777-4777-8777-777777777777') <> 'pending'
+     or (select status from public.agent_runs where id = 'd7777777-7777-4777-8777-777777777777') <> 'awaiting_approval'
+     or exists (
+       select 1 from public.audit_events
+        where target_id = 'e7777777-7777-4777-8777-777777777777'
+          and action = 'respond_approval'
+     ) then
+    raise exception 'null or blank expected_action_hash mutated the pending gate';
+  end if;
+end;
+$$;
+
+select ok(true, 'null or blank expected_action_hash cannot authorize a decision');
 
 do $$
 declare

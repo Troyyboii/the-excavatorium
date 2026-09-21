@@ -236,6 +236,22 @@ describe("Custodian owner-gate presentation", () => {
     ).toBe(
       "owner-gate:11111111-1111-4111-8111-111111111111:rejected:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     );
+    expect(() =>
+      assertOwnerGateDecision({
+        approvalId: "11111111-1111-4111-8111-111111111111",
+        decision: "approved",
+        inspectedHash: "",
+        currentHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      }),
+    ).toThrow("inspected exact action hash");
+    expect(() =>
+      assertOwnerGateDecision({
+        approvalId: "11111111-1111-4111-8111-111111111111",
+        decision: "approved",
+        inspectedHash: "   ",
+        currentHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      }),
+    ).toThrow("inspected exact action hash");
   });
 });
 

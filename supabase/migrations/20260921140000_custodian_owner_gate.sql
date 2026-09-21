@@ -1,6 +1,8 @@
 -- Custodian M3: owner-gate decisions remain exact-action scoped. Defer is a
--- pause, not execution. A changed action hash cannot reuse the current gate.
--- This migration does not authorize provider, external, or canonical execution.
+-- pause, not execution. expected_action_hash is mandatory; omitting it, or
+-- passing null/blank, cannot authorize a decision. A changed action hash
+-- cannot reuse the current gate. This migration does not authorize provider,
+-- external, or canonical execution.
 
 alter table public.approval_requests
   drop constraint if exists approval_requests_status_ck;
@@ -21,13 +23,14 @@ alter table public.audit_events
   ));
 
 drop function if exists public.custodian_respond_approval(uuid, text, text, text);
+drop function if exists public.custodian_respond_approval(uuid, text, text, text, text);
 
 create function public.custodian_respond_approval(
   approval_request_id uuid,
   decision text,
   response_note text,
   idempotency_key text,
-  expected_action_hash text default null
+  expected_action_hash text
 )
 returns jsonb
 language plpgsql
@@ -53,6 +56,15 @@ begin
   if not found then
     raise exception 'approval request not found' using errcode = 'P0002';
   end if;
+  if expected_hash_value is null then
+    raise exception 'expected_action_hash is required' using errcode = '22023';
+  end if;
+  if expected_hash_value !~ '^[0-9a-fA-F]{32}$' then
+    raise exception 'expected_action_hash is invalid' using errcode = '22023';
+  end if;
+  if expected_hash_value is distinct from approval_row.exact_action_hash then
+    raise exception 'approval exact action hash does not match the inspected action' using errcode = '22023';
+  end if;
   if approval_row.response_idempotency_key = request_key then
     return jsonb_build_object('approval', to_jsonb(approval_row), 'idempotent', true);
   end if;
@@ -64,14 +76,6 @@ begin
   end if;
   if decision_value not in ('approved', 'rejected', 'expired', 'cancelled', 'deferred') then
     raise exception 'approval decision is not allowed' using errcode = '22023';
-  end if;
-  if expected_hash_value is not null then
-    if expected_hash_value !~ '^[0-9a-fA-F]{32}$' then
-      raise exception 'expected_action_hash is invalid' using errcode = '22023';
-    end if;
-    if expected_hash_value is distinct from approval_row.exact_action_hash then
-      raise exception 'approval exact action hash does not match the inspected action' using errcode = '22023';
-    end if;
   end if;
   if pg_catalog.char_length(note_value) > 10000 then
     raise exception 'response_note exceeds the maximum length' using errcode = '22023';

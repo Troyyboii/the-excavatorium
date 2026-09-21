@@ -676,7 +676,9 @@ non-external, policy-controlled action type, if any, for V1.
 - **Implemented source path:** Approvals reads owner-scoped `approval_requests` and
   linked `change_proposals`, presents the exact action, and records approve / reject /
   defer / expire / cancel through the protected `custodian_respond_approval` RPC. A
-  changed exact action hash cannot reuse the current gate. Approval does not execute
+  changed exact action hash cannot reuse the current gate. The RPC requires
+  `expected_action_hash`; omitting it, or passing null/blank, cannot authorize a
+  decision. Approval does not execute
   provider, external, or canonical work. No internal V1 execution class was selected.
 - **M3 SOURCE IMPLEMENTATION:** **COMPLETE**
 - **LOCAL VALIDATION:** **PARTIAL** — frontend typecheck, lint of changed files, `bun test src`,
