@@ -396,7 +396,9 @@ hold encumbers the conservative maximum. It is not written into `agent_steps` or
 actual tokens and cost null. An owner may reserve a hold. Settlement, release, and
 synthesis output require the service-role runtime, the same trusted producer as
 completed synthesis recording. Daily and monthly totals attribute recorded usage by
-the priced step time and holds by the reservation time, not by run creation time.
+the priced step time. A reservation that remains held continues to encumber the
+current daily and monthly aggregate budgets until it is settled as known usage or
+released as uncontacted. Run creation time does not place either figure.
 The Edge function still does not take a hold before a provider call, and
 `PROVIDER_EXECUTION_UNSUPPORTED` remains `true`. The first paid Custodian run
 requires separate explicit authorization after the entire gate is verified.

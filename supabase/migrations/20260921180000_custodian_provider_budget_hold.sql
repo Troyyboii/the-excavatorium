@@ -3,9 +3,10 @@
 -- Recorded tokens and cost stay on agent_steps and agent_runs, and only after
 -- parsed provider usage is settled by the trusted service-role runtime.
 -- Unknown usage leaves those columns unchanged and keeps the conservative
--- maximum on this table. Daily and monthly totals follow the priced step or
--- reservation event, not the run creation time. This migration does not call
--- a provider, open a provider gate, or create evidence items.
+-- maximum on this table. Recorded usage follows the priced step time. A hold
+-- keeps encumbering the current daily and monthly aggregates until it is
+-- settled as known usage or released as uncontacted. This migration does not
+-- call a provider, open a provider gate, or create evidence items.
 
 create or replace function public.custodian_provider_require_integer(
   payload jsonb,
@@ -629,8 +630,7 @@ begin
     into daily_hold_tokens, daily_hold_cost
     from public.agent_provider_reservations h
    where h.owner_id = caller_id
-     and h.status = 'held'
-     and h.created_at >= pg_catalog.date_trunc('day', pg_catalog.now());
+     and h.status = 'held';
   daily_tokens := daily_tokens + daily_hold_tokens;
   daily_cost := daily_cost + daily_hold_cost;
 
@@ -643,8 +643,7 @@ begin
     into monthly_hold_tokens, monthly_hold_cost
     from public.agent_provider_reservations h
    where h.owner_id = caller_id
-     and h.status = 'held'
-     and h.created_at >= pg_catalog.date_trunc('month', pg_catalog.now());
+     and h.status = 'held';
   monthly_tokens := monthly_tokens + monthly_hold_tokens;
   monthly_cost := monthly_cost + monthly_hold_cost;
 
@@ -897,8 +896,7 @@ begin
     into daily_hold_tokens, daily_hold_cost
     from public.agent_provider_reservations h
    where h.owner_id = caller_id
-     and h.status = 'held'
-     and h.created_at >= pg_catalog.date_trunc('day', pg_catalog.now());
+     and h.status = 'held';
 
   select coalesce(sum(s.tokens_used), 0), coalesce(sum(s.cost_usd), 0)
     into monthly_tokens, monthly_cost
@@ -909,8 +907,7 @@ begin
     into monthly_hold_tokens, monthly_hold_cost
     from public.agent_provider_reservations h
    where h.owner_id = caller_id
-     and h.status = 'held'
-     and h.created_at >= pg_catalog.date_trunc('month', pg_catalog.now());
+     and h.status = 'held';
 
   projected_tokens := run_row.tokens_used + existing_hold_tokens + hold_tokens;
   projected_cost := run_row.cost_usd + existing_hold_cost + hold_cost;

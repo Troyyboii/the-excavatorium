@@ -2,7 +2,7 @@
 -- item is created, and no product-default model tier or cost ceiling is used.
 begin;
 
-select plan(52);
+select plan(56);
 
 set local role postgres;
 
@@ -1118,6 +1118,179 @@ $$;
 
 select ok(true, 'a reservation today counts against today even when its run was created yesterday');
 select ok(true, 'a reservation this month counts against this month even when its run was created earlier');
+
+do $$
+declare
+  policy_id uuid;
+  created_run jsonb;
+  yesterday_run uuid;
+  prior_run uuid;
+  reserved jsonb;
+  budget jsonb;
+  baseline_daily numeric;
+  baseline_monthly numeric;
+  released jsonb;
+  settled jsonb;
+begin
+  select id into policy_id
+    from public.tool_policies
+   where owner_id = '14141414-1414-4414-8414-141414141414'
+     and policy_name = 'm4a-known-policy';
+  budget := public.custodian_run_budget_status(
+    (select id from public.agent_runs where idempotency_key = 'm4a-run-known')
+  );
+  baseline_daily := (budget ->> 'daily_cost')::numeric;
+  baseline_monthly := (budget ->> 'monthly_cost')::numeric;
+
+  created_run := public.custodian_create_readonly_analysis_run(
+    '24242424-2424-4424-8424-242424242424',
+    'm4a-run-held-yesterday',
+    jsonb_build_object(
+      'model_tier', 'terra',
+      'prompt_version', 'm4a-fixture-v1',
+      'objective', 'Keep an unknown hold across the day boundary.',
+      'tool_policy_id', policy_id
+    )
+  );
+  yesterday_run := (created_run #>> '{run,id}')::uuid;
+  perform public.custodian_transition_agent_run(yesterday_run, 'queued', 'retrieving', 'm4a-run-held-yesterday-retrieve', '{}'::jsonb);
+  perform public.custodian_transition_agent_run(yesterday_run, 'retrieving', 'synthesizing', 'm4a-run-held-yesterday-synthesize', '{}'::jsonb);
+  reserved := public.custodian_reserve_provider_call(
+    yesterday_run,
+    'm4a-hold-held-yesterday',
+    jsonb_build_object(
+      'stage', 'synthesize',
+      'pricing_version', 'm4a-fixture-price',
+      'model_name', 'gpt-5.6-terra',
+      'model_tier', 'terra',
+      'hold_tokens', 6,
+      'hold_cost_usd', 0.11
+    )
+  );
+  if coalesce((reserved ->> 'reserved')::boolean, false) is not true then
+    raise exception 'yesterday unknown hold was denied: %', reserved ->> 'reason';
+  end if;
+  execute 'set local role postgres';
+  update public.agent_provider_reservations
+     set created_at = date_trunc('day', now()) - interval '1 day'
+   where idempotency_key = 'm4a-hold-held-yesterday';
+  execute 'set local role authenticated';
+  perform set_config('request.jwt.claim.role', 'authenticated', true);
+  perform set_config('request.jwt.claim.sub', '14141414-1414-4414-8414-141414141414', true);
+  budget := public.custodian_run_budget_status(yesterday_run);
+  if (select created_at >= date_trunc('day', now()) from public.agent_provider_reservations where idempotency_key = 'm4a-hold-held-yesterday')
+     or (select status from public.agent_provider_reservations where idempotency_key = 'm4a-hold-held-yesterday') <> 'held'
+     or (select actual_cost_usd is not null from public.agent_provider_reservations where idempotency_key = 'm4a-hold-held-yesterday')
+     or (budget ->> 'daily_cost')::numeric <> baseline_daily + 0.11
+     or (budget ->> 'daily_cost_remaining')::numeric <> 10 - (baseline_daily + 0.11)
+     or (select cost_usd from public.agent_runs where id = yesterday_run) <> 0 then
+    raise exception 'a held reservation from yesterday left today''s aggregate: %', budget;
+  end if;
+
+  created_run := public.custodian_create_readonly_analysis_run(
+    '24242424-2424-4424-8424-242424242424',
+    'm4a-run-held-prior-month',
+    jsonb_build_object(
+      'model_tier', 'terra',
+      'prompt_version', 'm4a-fixture-v1',
+      'objective', 'Keep an unknown hold across the month boundary.',
+      'tool_policy_id', policy_id
+    )
+  );
+  prior_run := (created_run #>> '{run,id}')::uuid;
+  perform public.custodian_transition_agent_run(prior_run, 'queued', 'retrieving', 'm4a-run-held-prior-month-retrieve', '{}'::jsonb);
+  perform public.custodian_transition_agent_run(prior_run, 'retrieving', 'synthesizing', 'm4a-run-held-prior-month-synthesize', '{}'::jsonb);
+  reserved := public.custodian_reserve_provider_call(
+    prior_run,
+    'm4a-hold-held-prior-month',
+    jsonb_build_object(
+      'stage', 'synthesize',
+      'pricing_version', 'm4a-fixture-price',
+      'model_name', 'gpt-5.6-terra',
+      'model_tier', 'terra',
+      'hold_tokens', 7,
+      'hold_cost_usd', 0.13
+    )
+  );
+  if coalesce((reserved ->> 'reserved')::boolean, false) is not true then
+    raise exception 'prior-month unknown hold was denied: %', reserved ->> 'reason';
+  end if;
+  execute 'set local role postgres';
+  update public.agent_provider_reservations
+     set created_at = date_trunc('month', now()) - interval '1 day'
+   where idempotency_key = 'm4a-hold-held-prior-month';
+  execute 'set local role authenticated';
+  perform set_config('request.jwt.claim.role', 'authenticated', true);
+  perform set_config('request.jwt.claim.sub', '14141414-1414-4414-8414-141414141414', true);
+  budget := public.custodian_run_budget_status(prior_run);
+  if (select created_at >= date_trunc('month', now()) from public.agent_provider_reservations where idempotency_key = 'm4a-hold-held-prior-month')
+     or (select status from public.agent_provider_reservations where idempotency_key = 'm4a-hold-held-prior-month') <> 'held'
+     or (select actual_cost_usd is not null from public.agent_provider_reservations where idempotency_key = 'm4a-hold-held-prior-month')
+     or (budget ->> 'monthly_cost')::numeric <> baseline_monthly + 0.24
+     or (budget ->> 'monthly_cost_remaining')::numeric <> 10 - (baseline_monthly + 0.24)
+     or (select cost_usd from public.agent_runs where id = prior_run) <> 0 then
+    raise exception 'a held reservation from a prior month left this month''s aggregate: %', budget;
+  end if;
+
+  perform set_config('request.jwt.claim.role', 'service_role', true);
+  perform set_config('request.jwt.claim.sub', '99999999-9999-4999-8999-999999999999', true);
+  execute 'set local role service_role';
+  released := public.custodian_settle_provider_reservation(
+    '14141414-1414-4414-8414-141414141414',
+    yesterday_run,
+    'm4a-hold-held-yesterday',
+    jsonb_build_object('usage_knowledge', 'none')
+  );
+  execute 'set local role authenticated';
+  perform set_config('request.jwt.claim.role', 'authenticated', true);
+  perform set_config('request.jwt.claim.sub', '14141414-1414-4414-8414-141414141414', true);
+  budget := public.custodian_run_budget_status(yesterday_run);
+  if (released #>> '{reservation,status}') <> 'released_uncontacted'
+     or (select count(*) from public.agent_steps where idempotency_key = 'm4a-hold-held-yesterday') <> 0
+     or (select cost_usd from public.agent_runs where id = yesterday_run) <> 0
+     or (budget ->> 'daily_cost')::numeric <> baseline_daily + 0.13
+     or (budget ->> 'monthly_cost')::numeric <> baseline_monthly + 0.13
+     or (budget ->> 'run_hold_cost_usd')::numeric <> 0 then
+    raise exception 'an uncontacted release still affected aggregate allowance: %', budget;
+  end if;
+
+  perform set_config('request.jwt.claim.role', 'service_role', true);
+  perform set_config('request.jwt.claim.sub', '99999999-9999-4999-8999-999999999999', true);
+  execute 'set local role service_role';
+  settled := public.custodian_settle_provider_reservation(
+    '14141414-1414-4414-8414-141414141414',
+    prior_run,
+    'm4a-hold-held-prior-month',
+    jsonb_build_object(
+      'usage_knowledge', 'known',
+      'actual_tokens', 2,
+      'actual_cost_usd', 0.04,
+      'step_status', 'completed',
+      'latency_ms', 10,
+      'input_payload', jsonb_build_object('bounded', true),
+      'output_payload', jsonb_build_object('kind', 'fixture')
+    )
+  );
+  execute 'set local role authenticated';
+  perform set_config('request.jwt.claim.role', 'authenticated', true);
+  perform set_config('request.jwt.claim.sub', '14141414-1414-4414-8414-141414141414', true);
+  budget := public.custodian_run_budget_status(prior_run);
+  if (settled #>> '{reservation,status}') <> 'settled_known'
+     or (settled #>> '{reservation,actual_cost_usd}')::numeric <> 0.04
+     or (select cost_usd from public.agent_steps where idempotency_key = 'm4a-hold-held-prior-month') <> 0.04
+     or (select cost_usd from public.agent_runs where id = prior_run) <> 0.04
+     or (budget ->> 'run_hold_cost_usd')::numeric <> 0
+     or (budget ->> 'daily_cost')::numeric <> baseline_daily + 0.04
+     or (budget ->> 'monthly_cost')::numeric <> baseline_monthly + 0.04 then
+    raise exception 'settled usage kept its former hold in the aggregate: %', budget;
+  end if;
+end;
+$$;
+
+select ok(true, 'a held unknown reservation from yesterday still reduces today''s aggregate allowance');
+select ok(true, 'a held unknown reservation from a prior month still reduces this month''s aggregate allowance');
+select ok(true, 'released uncontacted contributes neither a hold nor factual usage');
+select ok(true, 'settled known usage stops contributing its hold and contributes only recorded usage');
 
 set local role postgres;
 update public.agent_provider_reservations
