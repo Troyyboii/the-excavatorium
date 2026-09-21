@@ -135,6 +135,8 @@ type World = {
   holdApprovals: Promise<void> | null;
   releaseApprovals: (() => void) | null;
   approvalAttempts: number;
+  failApprovalRunReread: boolean;
+  failApprovalRunRead: boolean;
   pricing: string | undefined;
   apiKey: string | undefined;
   allowedTiers: Array<"luna" | "terra" | "sol" | "pro">;
@@ -179,6 +181,8 @@ function world(status = "synthesizing"): World {
     holdApprovals: null,
     releaseApprovals: null,
     approvalAttempts: 0,
+    failApprovalRunReread: false,
+    failApprovalRunRead: false,
     pricing: pricingJson,
     apiKey,
     allowedTiers: ["luna", "terra"],
@@ -220,7 +224,10 @@ function reservationRow(reservation: ReservationView) {
 
 function ioFor(state: World): CustodianIo {
   return {
-    getRun: () => Promise.resolve(state.run),
+    getRun: () => {
+      if (state.failApprovalRunRead) return Promise.reject(new Error("run_unreadable"));
+      return Promise.resolve(state.run);
+    },
     getBudget: () => {
       if (state.run.cancel_requested_at) {
         return Promise.resolve({
@@ -408,8 +415,8 @@ function ioFor(state: World): CustodianIo {
       }
       const existing = state.approvalRecords.find((record) => record.key === key);
       if (existing) {
-        state.run = { ...run, status: "awaiting_approval" };
-        return { run: state.run, approval: existing.approval };
+        if (state.failApprovalRunReread) state.failApprovalRunRead = true;
+        return { run: null, approval: existing.approval };
       }
       const approval: ApprovalIdentity = {
         id: `approval-${state.approvalRecords.length + 1}`,
@@ -419,7 +426,7 @@ function ioFor(state: World): CustodianIo {
       };
       state.approvalRecords.push({ key, approval });
       state.approvals += 1;
-      state.run = { ...run, status: "awaiting_approval" };
+      state.run = { ...state.run, status: "awaiting_approval" };
       return { run: state.run, approval };
     },
     readVerificationArtifacts: () => {
@@ -1488,6 +1495,10 @@ Deno.test("concurrent approval replays share one stable gate", async () => {
   assertEquals(state.run.status, "awaiting_approval");
   assertEquals(first.body.state, "paused");
   assertEquals(second.body.state, "paused");
+  assertEquals((first.body.run as { status: string }).status, "awaiting_approval");
+  assertEquals((second.body.run as { status: string }).status, "awaiting_approval");
+  assertEquals(JSON.stringify(first).includes("synthesizing"), false);
+  assertEquals(JSON.stringify(second).includes("synthesizing"), false);
   assertEquals(first.body.approval, second.body.approval);
   assertEquals(
     state.approvalRecords.map((record) => record.key),
@@ -1514,6 +1525,51 @@ Deno.test("concurrent approval replays share one stable gate", async () => {
     state.approvalRecords.map((record) => record.key),
     [approvalIdempotencyKey(runId), approvalIdempotencyKey(otherRunId)],
   );
+});
+
+Deno.test("an unconfirmed approval replay does not invent awaiting_approval", async () => {
+  const inconsistent = world();
+  seedSettledApproval(inconsistent);
+  inconsistent.approvalRecords.push({
+    key: approvalIdempotencyKey(runId),
+    approval: {
+      id: "approval-1",
+      status: "pending",
+      approvalKind: "tool_action",
+      exactActionHash: "abc",
+    },
+  });
+  inconsistent.approvals = 1;
+  const stale = await advance(inconsistent, "invocation-replay");
+  assertEquals(inconsistent.fetches, 0);
+  assertEquals(inconsistent.approvals, 1);
+  assertEquals(inconsistent.run.status, "synthesizing");
+  assertEquals(stale.status, 503);
+  assertEquals(stale.body.state, "unavailable");
+  assertEquals(stale.body.reason, "approval_run_unconfirmed");
+  assertEquals(JSON.stringify(stale).includes("awaiting_approval"), false);
+
+  const unreadable = world();
+  seedSettledApproval(unreadable);
+  unreadable.approvalRecords.push({
+    key: approvalIdempotencyKey(runId),
+    approval: {
+      id: "approval-1",
+      status: "pending",
+      approvalKind: "tool_action",
+      exactActionHash: "abc",
+    },
+  });
+  unreadable.approvals = 1;
+  unreadable.failApprovalRunReread = true;
+  const hidden = await advance(unreadable, "invocation-unreadable");
+  assertEquals(unreadable.fetches, 0);
+  assertEquals(unreadable.approvals, 1);
+  assertEquals(hidden.status, 503);
+  assertEquals(hidden.body.state, "unavailable");
+  assertEquals(hidden.body.reason, "approval_run_unconfirmed");
+  assertEquals(unreadable.run.status, "synthesizing");
+  assertEquals(JSON.stringify(hidden).includes("awaiting_approval"), false);
 });
 
 Deno.test("verification binds the stable provider-free retrieval step", () => {

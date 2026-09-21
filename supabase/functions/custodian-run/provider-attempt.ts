@@ -228,7 +228,7 @@ export type CustodianIo = {
   createApproval(
     run: SynthesisRun,
     output: Record<string, unknown>,
-  ): Promise<{ run: SynthesisRun; approval: ApprovalIdentity }>;
+  ): Promise<{ run: SynthesisRun | null; approval: ApprovalIdentity }>;
   readVerificationArtifacts(runId: string): Promise<VerificationArtifacts | null>;
   getEnv(name: string): string | undefined;
   fetchProvider(url: string, init: ProviderFetchInit): Promise<Response>;
@@ -260,6 +260,16 @@ export function retrievalStepKey(runId: string): string {
 
 export function approvalIdempotencyKey(runId: string): string {
   return `approval:${providerAttemptKey(runId)}`;
+}
+
+export function confirmedPendingApprovalRun<T extends { status: string }>(
+  run: T | null,
+  approvalStatus: string,
+): T {
+  if (!run || approvalStatus !== "pending" || run.status !== "awaiting_approval") {
+    throw new Error("approval_run_unconfirmed");
+  }
+  return run;
 }
 
 export const KNOWN_DISALLOWED_TOOL_CLASSES = [
@@ -1000,26 +1010,13 @@ async function continueFromRecordedStep(
   const output = step.output ?? {};
   if (output.requiresApproval === true) {
     try {
-      const approval = await io.createApproval(run, output);
-      return outcome(
-        200,
-        "paused",
-        approval.run,
-        accountingFromReservation(approval.run, reservation),
-        {
-          approval: approval.approval,
-        },
-      );
+      const created = await io.createApproval(run, output);
+      const durable = await readConfirmedApprovalRun(io, run.id, created);
+      return outcome(200, "paused", durable, accountingFromReservation(durable, reservation), {
+        approval: created.approval,
+      });
     } catch {
-      return transitionFailure(
-        io,
-        run,
-        invocationKey,
-        "failed",
-        "approval_recording_failed",
-        "Provider usage was recorded, but the approval request was not recorded. The provider was not called again.",
-        accounting,
-      );
+      return approvalUnconfirmed(run);
     }
   }
   if (TERMINAL_STATES.has(run.status)) return outcome(200, "stopped", run, accounting);
@@ -1032,6 +1029,31 @@ async function continueFromRecordedStep(
       detail: "Provider usage remains recorded. The provider was not called again.",
     });
   }
+}
+
+async function readConfirmedApprovalRun(
+  io: CustodianIo,
+  runId: string,
+  created: { run: SynthesisRun | null; approval: ApprovalIdentity },
+): Promise<SynthesisRun> {
+  const durable = created.run ?? (await io.getRun(runId));
+  return confirmedPendingApprovalRun(durable, created.approval.status);
+}
+
+function approvalUnconfirmed(run: SynthesisRun): AdvanceResult {
+  return {
+    status: 503,
+    body: {
+      state: "unavailable",
+      reason: "approval_run_unconfirmed",
+      detail:
+        "The approval could not be confirmed against the durable run. This response does not mark the run awaiting approval.",
+      run: {
+        id: run.id,
+        caseId: run.case_id,
+      },
+    },
+  };
 }
 
 async function blockUnsupported(

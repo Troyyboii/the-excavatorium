@@ -427,8 +427,10 @@ held encumbrance separately; it does not label factual cost `unpriced`. The atte
 identity is `provider-attempt:<run id>:synthesize`, so a repeated invocation reuses
 that reservation instead of opening a second paid attempt. An approval gate for that
 synthesis uses `approval:provider-attempt:<run id>:synthesize`, so concurrent replays
-share one gate instead of the caller's invocation key. The exact action hash remains
-the M3 server hash of the proposed diff and tool action. The database still keys
+share one gate instead of the caller's invocation key. An idempotent approval replay
+that omits the run is re-read from the durable run and must already be
+`awaiting_approval`; the caller’s earlier status is not reused. The exact action hash
+remains the M3 server hash of the proposed diff and tool action. The database still keys
 reservations by idempotency key; this source does not add a second synthesis key.
 `PROVIDER_EXECUTION_UNSUPPORTED` remains `true`, so the production handler never
 enters this path. The first paid Custodian run requires the separate M4D sequence.

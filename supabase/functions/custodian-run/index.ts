@@ -30,6 +30,7 @@ import {
 import {
   advanceCustodianRun,
   approvalIdempotencyKey,
+  confirmedPendingApprovalRun,
   countDisallowedToolEvents,
   countKnownDisallowedToolClasses,
   parseReservationView,
@@ -649,11 +650,20 @@ async function createApproval(
     },
     idempotency_key: approvalIdempotencyKey(run.id),
   });
-  const updatedRun = isObject(approval) && isObject(approval.run) ? parseAgentRun(approval) : run;
   const approvalSummary = publicApproval(approval);
   if (!approvalSummary) throw new RpcFailure();
+  let durable: AgentRun;
+  try {
+    durable =
+      isObject(approval) && isObject(approval.run)
+        ? parseAgentRun(approval)
+        : await getRun(client, run.id);
+    durable = confirmedPendingApprovalRun(durable, approvalSummary.status);
+  } catch {
+    throw new RpcFailure();
+  }
   return {
-    run: updatedRun,
+    run: durable,
     approval: {
       id: approvalSummary.id,
       status: approvalSummary.status,
