@@ -155,8 +155,12 @@ Important gaps and contradictions must remain visible:
    of every tool operation class other than `read_only` (`evidence_write`,
    `canonical_write`, `archive_change`, and `external_write`). An exact disallowed-event
    count is required; a sampled tool-event page is not proof that no mutation occurred.
-   `semantic_correctness` is `not_claimed`. Reaching `verifying` or `completed` is not
-   proof that a model conclusion is correct. Deployed behavior remains **UNVERIFIED**.
+   Subtype flags are recorded only from exact class counts, or as false when that count
+   is zero. An unexplained disallowed event does not mark every subtype false. Retrieval
+   verification uses `provider-free-retrieve:<run id>` and fails if any retrieval artifact
+   records provider contact or evidence creation. `semantic_correctness` is `not_claimed`.
+   Reaching `verifying` or `completed` is not proof that a model conclusion is correct.
+   Deployed behavior remains **UNVERIFIED**.
 5. Approvals and automation foundations exist. The browser Approvals route is an
    owner-scoped proposal/gate decision surface; execution remains unavailable, and no
    resident loop was found in the inspected source.
@@ -421,7 +425,10 @@ from aggregate accounting. Ambiguous contact leaves the hold with null actuals a
 uncontacted. The public runtime projection reports recorded cost, unknown usage, and
 held encumbrance separately; it does not label factual cost `unpriced`. The attempt
 identity is `provider-attempt:<run id>:synthesize`, so a repeated invocation reuses
-that reservation instead of opening a second paid attempt. The database still keys
+that reservation instead of opening a second paid attempt. An approval gate for that
+synthesis uses `approval:provider-attempt:<run id>:synthesize`, so concurrent replays
+share one gate instead of the caller's invocation key. The exact action hash remains
+the M3 server hash of the proposed diff and tool action. The database still keys
 reservations by idempotency key; this source does not add a second synthesis key.
 `PROVIDER_EXECUTION_UNSUPPORTED` remains `true`, so the production handler never
 enters this path. The first paid Custodian run requires the separate M4D sequence.
@@ -499,18 +506,24 @@ Verification is a real stage, not a status label. A run must establish, as appli
 - contradictory evidence, refusal, partial result, and verification failure.
 
 The M4 read-only verification stage inspects durable artifacts: run identity,
-provider-free retrieval, reservation identity and settlement, known factual tokens and
-cost, and a completed synthesis step whose idempotency key, pricing version, tokens,
-and cost match that reservation. Known actual tokens and cost must be present and must
-not exceed the conservative hold. It also checks finding count, approval and proposal
-identity when present, and the absence of every tool operation class other than
-`read_only`, including `evidence_write`, `canonical_write`, `archive_change`, and
-`external_write`. That absence comes from an exact count of disallowed tool events, not
-from a bounded sample. `semantic_correctness` is always `not_claimed`. Unknown or
-missing provider usage fails the run closed. A hold that was exceeded fails verification
-and keeps the factual actual usage. This proves persistence and boundary integrity. It
-does not prove that a model conclusion is correct. The closed Edge gate does not
-advance a run into this stage. M5 execution verification remains unimplemented.
+the stable provider-free retrieval step `provider-free-retrieve:<run id>`, reservation
+identity and settlement, known factual tokens and cost, and a completed synthesis step
+whose idempotency key, pricing version, tokens, and cost match that reservation. The
+stable retrieval step must be completed, with provider contact and evidence creation
+both false. Another retrieve step cannot replace it. Any retrieval artifact that records
+provider contact or evidence creation fails verification. Known actual tokens and cost
+must be present and must not exceed the conservative hold. It also checks finding count,
+approval and proposal identity when present, and the absence of every tool operation
+class other than `read_only`, including `evidence_write`, `canonical_write`,
+`archive_change`, and `external_write`. That absence comes from an exact count of
+disallowed tool events, not from a bounded sample. Known subtype flags come from exact
+per-class counts. When a disallowed event is known only as a count, verification fails
+and does not record every subtype as false. `semantic_correctness` is always
+`not_claimed`. Unknown or missing provider usage fails the run closed. A hold that was
+exceeded fails verification and keeps the factual actual usage. This proves persistence
+and boundary integrity. It does not prove that a model conclusion is correct. The closed
+Edge gate does not advance a run into this stage. M5 execution verification remains
+unimplemented.
 
 ## 17. Resident attention and automation
 

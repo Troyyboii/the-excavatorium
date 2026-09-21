@@ -29,7 +29,9 @@ import {
 } from "./runtime.ts";
 import {
   advanceCustodianRun,
+  approvalIdempotencyKey,
   countDisallowedToolEvents,
+  countKnownDisallowedToolClasses,
   parseReservationView,
   providerAttemptKey,
   type DisallowedToolEventCounter,
@@ -632,7 +634,6 @@ function publicApproval(value: unknown): ApprovalSummary | null {
 async function createApproval(
   client: AuthenticatedSupabase["client"],
   run: AgentRun,
-  invocationKey: string,
   output: JsonRecord,
 ): Promise<{ run: AgentRun; approval: ApprovalIdentity }> {
   const approval = await rpc(client, "custodian_create_approval_request", {
@@ -646,7 +647,7 @@ async function createApproval(
       tool_action: output.toolAction,
       provenance: { runtime: "custodian-run", stage: "synthesize", evidence_untrusted: true },
     },
-    idempotency_key: `${invocationKey}:approval:synthesize`.slice(0, MAX_INVOCATION_KEY_LENGTH),
+    idempotency_key: approvalIdempotencyKey(run.id),
   });
   const updatedRun = isObject(approval) && isObject(approval.run) ? parseAgentRun(approval) : run;
   const approvalSummary = publicApproval(approval);
@@ -708,44 +709,53 @@ async function readVerificationArtifacts(
 ): Promise<VerificationArtifacts | null> {
   const reservationSelect =
     "id,status,usage_knowledge,hold_tokens,hold_cost_usd,actual_tokens,actual_cost_usd,pricing_version,failure_code,in_flight_until,idempotency_key";
-  const [steps, reservations, findings, approvals, proposals, disallowedToolEventCount] =
-    await Promise.all([
-      client
-        .from("agent_steps")
-        .select(
-          "id,step_kind,status,idempotency_key,output_payload,tokens_used,cost_usd,pricing_version",
-        )
-        .eq("run_id", runId),
-      client
-        .from("agent_provider_reservations")
-        .select(reservationSelect)
-        .eq("run_id", runId)
-        .eq("idempotency_key", providerAttemptKey(runId)),
-      client
-        .from("custodian_findings")
-        .select("id", { count: "exact", head: true })
-        .eq("origin_run_id", runId),
-      client
-        .from("approval_requests")
-        .select("id")
-        .eq("run_id", runId)
-        .order("created_at", { ascending: false })
-        .limit(1),
-      client
-        .from("change_proposals")
-        .select("id")
-        .eq("run_id", runId)
-        .order("created_at", { ascending: false })
-        .limit(1),
-      countDisallowedToolEvents(client as unknown as DisallowedToolEventCounter, runId),
-    ]);
+  const [
+    steps,
+    reservations,
+    findings,
+    approvals,
+    proposals,
+    disallowedToolEventCount,
+    toolClassCounts,
+  ] = await Promise.all([
+    client
+      .from("agent_steps")
+      .select(
+        "id,step_kind,status,idempotency_key,output_payload,tokens_used,cost_usd,pricing_version",
+      )
+      .eq("run_id", runId),
+    client
+      .from("agent_provider_reservations")
+      .select(reservationSelect)
+      .eq("run_id", runId)
+      .eq("idempotency_key", providerAttemptKey(runId)),
+    client
+      .from("custodian_findings")
+      .select("id", { count: "exact", head: true })
+      .eq("origin_run_id", runId),
+    client
+      .from("approval_requests")
+      .select("id")
+      .eq("run_id", runId)
+      .order("created_at", { ascending: false })
+      .limit(1),
+    client
+      .from("change_proposals")
+      .select("id")
+      .eq("run_id", runId)
+      .order("created_at", { ascending: false })
+      .limit(1),
+    countDisallowedToolEvents(client as unknown as DisallowedToolEventCounter, runId),
+    countKnownDisallowedToolClasses(client as unknown as DisallowedToolEventCounter, runId),
+  ]);
   if (
     steps.error ||
     reservations.error ||
     findings.error ||
     approvals.error ||
     proposals.error ||
-    disallowedToolEventCount === null
+    disallowedToolEventCount === null ||
+    toolClassCounts === null
   ) {
     return null;
   }
@@ -769,7 +779,8 @@ async function readVerificationArtifacts(
     findingCount: findings.count ?? 0,
     approvalId,
     proposalId,
-    toolOperationClasses: [],
+    toolOperationClasses: null,
+    toolClassCounts,
     disallowedToolEventCount,
   };
 }
@@ -829,8 +840,7 @@ function createCustodianIo(auth: AuthenticatedSupabase): CustodianIo {
     getStepByIdempotency: (runId, idempotencyKey) => readStep(auth.client, runId, idempotencyKey),
     materializeFindings: (runtimeOwnerId, stepId) =>
       materializeRuntimeFindings(runtimeOwnerId, stepId),
-    createApproval: (run, invocationKey, output) =>
-      createApproval(auth.client, run as AgentRun, invocationKey, output),
+    createApproval: (run, output) => createApproval(auth.client, run as AgentRun, output),
     readVerificationArtifacts: (runId) => readVerificationArtifacts(auth.client, runId),
     getEnv: (name) => Deno.env.get(name),
     fetchProvider: (url, init) => fetch(url, init),

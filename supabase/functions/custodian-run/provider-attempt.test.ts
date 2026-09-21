@@ -1,6 +1,7 @@
 import { PROVIDER_EXECUTION_UNSUPPORTED, validSynthesis } from "./index.ts";
 import {
   advanceCustodianRun,
+  approvalIdempotencyKey,
   boundedProviderTimeoutMs,
   countDisallowedToolEvents,
   evaluateReadonlyVerification,
@@ -8,6 +9,8 @@ import {
   projectPublicRun,
   PROVIDER_ATTEMPT_TIMEOUT_MS,
   providerFreeAdmissionSummary,
+  retrievalStepKey,
+  type ApprovalIdentity,
   type CustodianIo,
   type DisallowedToolEventCounter,
   type ReservationView,
@@ -127,6 +130,11 @@ type World = {
   materializeCalls: number;
   evidenceWrites: number;
   approvals: number;
+  approvalRecords: Array<{ key: string; approval: ApprovalIdentity }>;
+  materializedStepIds: string[];
+  holdApprovals: Promise<void> | null;
+  releaseApprovals: (() => void) | null;
+  approvalAttempts: number;
   pricing: string | undefined;
   apiKey: string | undefined;
   allowedTiers: Array<"luna" | "terra" | "sol" | "pro">;
@@ -166,6 +174,11 @@ function world(status = "synthesizing"): World {
     materializeCalls: 0,
     evidenceWrites: 0,
     approvals: 0,
+    approvalRecords: [],
+    materializedStepIds: [],
+    holdApprovals: null,
+    releaseApprovals: null,
+    approvalAttempts: 0,
     pricing: pricingJson,
     apiKey,
     allowedTiers: ["luna", "terra"],
@@ -378,23 +391,36 @@ function ioFor(state: World): CustodianIo {
     },
     getStepByIdempotency: (_runId, key) =>
       Promise.resolve(state.steps.find((step) => step.idempotencyKey === key) ?? null),
-    materializeFindings: () => {
-      state.materializeCalls += 1;
+    materializeFindings: (_ownerId, stepId) => {
       if (state.materializeError) return Promise.reject(new Error("attribution_failed"));
-      return Promise.resolve({ materialized: true });
+      if (!state.materializedStepIds.includes(stepId)) {
+        state.materializedStepIds.push(stepId);
+        state.materializeCalls += 1;
+      }
+      return Promise.resolve({ materialized: true, idempotent: true });
     },
-    createApproval: (run) => {
+    createApproval: async (run, output) => {
+      const key = approvalIdempotencyKey(run.id);
+      state.approvalAttempts += 1;
+      if (state.holdApprovals) {
+        if (state.approvalAttempts >= 2) state.releaseApprovals?.();
+        await state.holdApprovals;
+      }
+      const existing = state.approvalRecords.find((record) => record.key === key);
+      if (existing) {
+        state.run = { ...run, status: "awaiting_approval" };
+        return { run: state.run, approval: existing.approval };
+      }
+      const approval: ApprovalIdentity = {
+        id: `approval-${state.approvalRecords.length + 1}`,
+        status: "pending",
+        approvalKind: typeof output.approvalKind === "string" ? output.approvalKind : "tool_action",
+        exactActionHash: "abc",
+      };
+      state.approvalRecords.push({ key, approval });
       state.approvals += 1;
       state.run = { ...run, status: "awaiting_approval" };
-      return Promise.resolve({
-        run: state.run,
-        approval: {
-          id: "approval-1",
-          status: "pending",
-          approvalKind: "tool_action",
-          exactActionHash: "abc",
-        },
-      });
+      return { run: state.run, approval };
     },
     readVerificationArtifacts: () => {
       if (state.verificationUnavailable) return Promise.resolve(null);
@@ -404,7 +430,8 @@ function ioFor(state: World): CustodianIo {
         findingCount: state.materializeCalls,
         approvalId: state.approvals > 0 ? "approval-1" : null,
         proposalId: null,
-        toolOperationClasses: [],
+        toolOperationClasses: null,
+        toolClassCounts: null,
         disallowedToolEventCount: 0,
       });
     },
@@ -505,7 +532,8 @@ function echoedReservation(
 function passingVerification(patch?: {
   step?: Partial<StepArtifact>;
   reservation?: Partial<ReservationView>;
-  toolOperationClasses?: string[];
+  toolOperationClasses?: string[] | null;
+  toolClassCounts?: VerificationArtifacts["toolClassCounts"];
   disallowedToolEventCount?: number;
 }): VerificationArtifacts {
   const attemptKey = `provider-attempt:${runId}:synthesize`;
@@ -515,7 +543,7 @@ function passingVerification(patch?: {
         id: "retrieve",
         stepKind: "retrieve",
         status: "completed",
-        idempotencyKey: "retrieve",
+        idempotencyKey: retrievalStepKey(runId),
         output: { providerContact: false, evidenceCreated: false },
         tokensUsed: 0,
         costUsd: 0,
@@ -550,7 +578,9 @@ function passingVerification(patch?: {
     findingCount: 1,
     approvalId: null,
     proposalId: null,
-    toolOperationClasses: patch?.toolOperationClasses ?? ["read_only"],
+    toolOperationClasses:
+      patch?.toolOperationClasses === undefined ? ["read_only"] : patch.toolOperationClasses,
+    toolClassCounts: patch?.toolClassCounts === undefined ? null : patch.toolClassCounts,
     disallowedToolEventCount: patch?.disallowedToolEventCount ?? 0,
   };
 }
@@ -874,7 +904,7 @@ Deno.test("verification records boundary checks and does not claim semantic corr
           id: "retrieve",
           stepKind: "retrieve",
           status: "completed",
-          idempotencyKey: "retrieve",
+          idempotencyKey: retrievalStepKey(runId),
           output: { providerContact: false, evidenceCreated: false },
           tokensUsed: 0,
           costUsd: 0,
@@ -908,6 +938,7 @@ Deno.test("verification records boundary checks and does not claim semantic corr
       approvalId: null,
       proposalId: null,
       toolOperationClasses: [],
+      toolClassCounts: null,
       disallowedToolEventCount: 0,
     },
   });
@@ -925,7 +956,7 @@ Deno.test("verification records boundary checks and does not claim semantic corr
           id: "retrieve",
           stepKind: "retrieve",
           status: "completed",
-          idempotencyKey: "retrieve",
+          idempotencyKey: retrievalStepKey(runId),
           output: { providerContact: false, evidenceCreated: false },
           tokensUsed: 0,
           costUsd: 0,
@@ -949,6 +980,7 @@ Deno.test("verification records boundary checks and does not claim semantic corr
       approvalId: null,
       proposalId: null,
       toolOperationClasses: [],
+      toolClassCounts: null,
       disallowedToolEventCount: 0,
     },
   });
@@ -1417,4 +1449,167 @@ Deno.test("verification artifact failure preserves settled provider accounting",
   assertEquals(JSON.stringify(unavailable).includes("usageKnowledge"), false);
   assertEquals(unreadable.fetches, 0);
   assertEquals(unreadable.run.status, "verifying");
+});
+
+function seedSettledApproval(state: World) {
+  state.reservation = settledReservation(state);
+  state.steps.push({
+    id: "step-known",
+    stepKind: "synthesize",
+    status: "completed",
+    idempotencyKey: `provider-attempt:${runId}:synthesize`,
+    output: synthesis([finding("no_finding")], true),
+    tokensUsed: 1_250,
+    costUsd: 0.0024,
+    pricingVersion: "2026-09-21",
+  });
+  state.run.last_step_number = 2;
+}
+
+Deno.test("concurrent approval replays share one stable gate", async () => {
+  const state = world();
+  seedSettledApproval(state);
+  let release: (() => void) | undefined;
+  state.holdApprovals = new Promise((resolve) => {
+    release = resolve;
+  });
+  state.releaseApprovals = () => release?.();
+  const [first, second] = await Promise.race([
+    Promise.all([advance(state, "invocation-a"), advance(state, "invocation-b")]),
+    new Promise<never>((_resolve, reject) => {
+      setTimeout(() => reject(new Error("approval replays did not meet")), 1_000);
+    }),
+  ]);
+  assertEquals(state.fetches, 0);
+  assertEquals(state.reserveCalls, 0);
+  assertEquals(state.approvals, 1);
+  assertEquals(state.approvalAttempts, 2);
+  assertEquals(state.materializeCalls, 1);
+  assertEquals(state.run.status, "awaiting_approval");
+  assertEquals(first.body.state, "paused");
+  assertEquals(second.body.state, "paused");
+  assertEquals(first.body.approval, second.body.approval);
+  assertEquals(
+    state.approvalRecords.map((record) => record.key),
+    [approvalIdempotencyKey(runId)],
+  );
+  assertEquals(approvalIdempotencyKey(runId).includes("invocation"), false);
+
+  const replay = await advance(state, "invocation-c");
+  assertEquals(state.approvals, 1);
+  assertEquals(state.approvalAttempts, 2);
+  assertEquals(state.fetches, 0);
+  assertEquals(replay.body.state, "paused");
+
+  const otherRunId = "223e4567-e89b-12d3-a456-426614174999";
+  state.holdApprovals = null;
+  const other = await ioFor(state).createApproval(
+    { ...state.run, id: otherRunId },
+    synthesis([finding("no_finding")], true),
+  );
+  assertEquals(state.approvals, 2);
+  assertEquals(other.approval.id === (first.body.approval as { id: string }).id, false);
+  assertEquals(approvalIdempotencyKey(otherRunId) === approvalIdempotencyKey(runId), false);
+  assertEquals(
+    state.approvalRecords.map((record) => record.key),
+    [approvalIdempotencyKey(runId), approvalIdempotencyKey(otherRunId)],
+  );
+});
+
+Deno.test("verification binds the stable provider-free retrieval step", () => {
+  const run = baseRun("verifying");
+  const benign: StepArtifact = {
+    id: "retrieve-stable",
+    stepKind: "retrieve",
+    status: "completed",
+    idempotencyKey: retrievalStepKey(runId),
+    output: { providerContact: false, evidenceCreated: false },
+    tokensUsed: 0,
+    costUsd: 0,
+    pricingVersion: null,
+  };
+  const synthesize = passingVerification().steps[1];
+  const evaluate = (steps: StepArtifact[]) =>
+    evaluateReadonlyVerification({
+      run,
+      artifacts: { ...passingVerification(), steps: [...steps, synthesize] },
+    });
+  const recorded = evaluate([benign]);
+  assertEquals(recorded.ok, true);
+  assertEquals(recorded.checks.retrieve_idempotency_key, retrievalStepKey(runId));
+
+  const wrong = evaluate([{ ...benign, idempotencyKey: "retrieve" }]);
+  assertEquals(wrong.ok, false);
+  assertEquals(wrong.failureCode, "retrieval_not_recorded");
+
+  const contacted = evaluate([
+    benign,
+    {
+      ...benign,
+      id: "retrieve-other",
+      idempotencyKey: "other-retrieve",
+      output: { providerContact: true, evidenceCreated: false },
+    },
+  ]);
+  assertEquals(contacted.ok, false);
+  assertEquals(contacted.failureCode, "retrieval_provider_contact");
+  assertEquals(contacted.checks.retrieve_provider_contact, true);
+
+  const created = evaluate([
+    benign,
+    {
+      ...benign,
+      id: "retrieve-evidence",
+      idempotencyKey: "evidence-retrieve",
+      output: { providerContact: false, evidenceCreated: true },
+    },
+  ]);
+  assertEquals(created.ok, false);
+  assertEquals(created.failureCode, "evidence_creation_unexpected");
+  assertEquals(created.checks.evidence_created, true);
+});
+
+Deno.test("unexplained mutation does not record every subtype as false", () => {
+  const run = baseRun("verifying");
+  for (const toolOperationClasses of [null, [] as string[]]) {
+    const result = evaluateReadonlyVerification({
+      run,
+      artifacts: passingVerification({
+        toolOperationClasses,
+        disallowedToolEventCount: 3,
+      }),
+    });
+    assertEquals(result.ok, false);
+    assertEquals(result.failureCode, "verification_boundary_violated");
+    assertEquals(result.checks.mutating_tool_event, true);
+    const subtypes = [
+      result.checks.canonical_mutation,
+      result.checks.evidence_write,
+      result.checks.archive_change,
+      result.checks.external_execution,
+      result.checks.other_disallowed_operation,
+    ];
+    assertEquals(
+      subtypes.every((value) => value === false),
+      false,
+    );
+  }
+
+  const counted = evaluateReadonlyVerification({
+    run,
+    artifacts: passingVerification({
+      toolOperationClasses: null,
+      toolClassCounts: {
+        evidence_write: 2,
+        canonical_write: 0,
+        archive_change: 0,
+        external_write: 0,
+      },
+      disallowedToolEventCount: 2,
+    }),
+  });
+  assertEquals(counted.ok, false);
+  assertEquals(counted.checks.evidence_write, true);
+  assertEquals(counted.checks.canonical_mutation, false);
+  assertEquals(counted.checks.other_disallowed_operation, false);
 });

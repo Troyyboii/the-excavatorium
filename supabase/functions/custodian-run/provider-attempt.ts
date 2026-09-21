@@ -44,6 +44,10 @@ export type DisallowedToolEventCounter = {
           column: "operation_class",
           value: "read_only",
         ): PromiseLike<{ count: number | null; error: { message: string } | null }>;
+        eq(
+          column: "operation_class",
+          value: KnownDisallowedToolClass,
+        ): PromiseLike<{ count: number | null; error: { message: string } | null }>;
       };
     };
   };
@@ -60,6 +64,38 @@ export async function countDisallowedToolEvents(
     .neq("operation_class", "read_only");
   if (result.error || typeof result.count !== "number" || result.count < 0) return null;
   return result.count;
+}
+
+export async function countToolEventsForClass(
+  client: DisallowedToolEventCounter,
+  runId: string,
+  operationClass: KnownDisallowedToolClass,
+): Promise<number | null> {
+  const result = await client
+    .from("tool_events")
+    .select("id", { count: "exact", head: true })
+    .eq("run_id", runId)
+    .eq("operation_class", operationClass);
+  if (result.error || typeof result.count !== "number" || result.count < 0) return null;
+  return result.count;
+}
+
+export async function countKnownDisallowedToolClasses(
+  client: DisallowedToolEventCounter,
+  runId: string,
+): Promise<ToolClassCounts | null> {
+  const counts = await Promise.all(
+    KNOWN_DISALLOWED_TOOL_CLASSES.map((operationClass) =>
+      countToolEventsForClass(client, runId, operationClass),
+    ),
+  );
+  if (counts.some((count) => count === null)) return null;
+  return {
+    evidence_write: counts[0] ?? 0,
+    canonical_write: counts[1] ?? 0,
+    archive_change: counts[2] ?? 0,
+    external_write: counts[3] ?? 0,
+  };
 }
 const MAX_HOLD_TOKENS = 10_000_000;
 
@@ -128,7 +164,8 @@ export type VerificationArtifacts = {
   findingCount: number;
   approvalId: string | null;
   proposalId: string | null;
-  toolOperationClasses: string[];
+  toolOperationClasses: string[] | null;
+  toolClassCounts: ToolClassCounts | null;
   disallowedToolEventCount: number;
 };
 
@@ -190,7 +227,6 @@ export type CustodianIo = {
   materializeFindings(ownerId: string, stepId: string): Promise<unknown>;
   createApproval(
     run: SynthesisRun,
-    invocationKey: string,
     output: Record<string, unknown>,
   ): Promise<{ run: SynthesisRun; approval: ApprovalIdentity }>;
   readVerificationArtifacts(runId: string): Promise<VerificationArtifacts | null>;
@@ -221,6 +257,20 @@ export function providerAttemptKey(runId: string): string {
 export function retrievalStepKey(runId: string): string {
   return `provider-free-retrieve:${runId}`;
 }
+
+export function approvalIdempotencyKey(runId: string): string {
+  return `approval:${providerAttemptKey(runId)}`;
+}
+
+export const KNOWN_DISALLOWED_TOOL_CLASSES = [
+  "evidence_write",
+  "canonical_write",
+  "archive_change",
+  "external_write",
+] as const;
+
+export type KnownDisallowedToolClass = (typeof KNOWN_DISALLOWED_TOOL_CLASSES)[number];
+export type ToolClassCounts = Record<KnownDisallowedToolClass, number>;
 
 export function emptyAccounting(run: SynthesisRun): PublicAccounting {
   return {
@@ -573,17 +623,56 @@ export function evaluateReadonlyVerification(input: {
   const synthesizeCandidates = input.artifacts.steps.filter(
     (step) => step.stepKind === "synthesize",
   );
-  const retrieve = input.artifacts.steps.find((step) => step.stepKind === "retrieve");
+  const retrieveSteps = input.artifacts.steps.filter((step) => step.stepKind === "retrieve");
+  const retrieve = retrieveSteps.find(
+    (step) => step.idempotencyKey === retrievalStepKey(input.run.id),
+  );
+  const retrievalProviderContact = retrieveSteps.some(
+    (step) => step.output?.providerContact === true,
+  );
+  const retrievalEvidenceCreated = retrieveSteps.some(
+    (step) => step.output?.evidenceCreated === true,
+  );
   const reservation = input.artifacts.reservation;
-  const disallowedClasses = input.artifacts.toolOperationClasses.filter(
+  const disallowedClasses = (input.artifacts.toolOperationClasses ?? []).filter(
     (operation) => operation !== "read_only",
   );
   const completedExecute = input.artifacts.steps.some(
     (step) => step.stepKind === "execute" && step.status === "completed",
   );
+  const classCounts = input.artifacts.toolClassCounts;
+  const unexplainedDisallowed =
+    input.artifacts.disallowedToolEventCount > 0 &&
+    classCounts === null &&
+    disallowedClasses.length === 0;
+  const subtype = (name: KnownDisallowedToolClass): boolean | null => {
+    if (disallowedClasses.includes(name)) return true;
+    if (classCounts) return classCounts[name] > 0;
+    if (unexplainedDisallowed || input.artifacts.toolOperationClasses === null) {
+      return input.artifacts.disallowedToolEventCount === 0 ? false : null;
+    }
+    return false;
+  };
+  const knownCount = classCounts
+    ? KNOWN_DISALLOWED_TOOL_CLASSES.reduce((sum, name) => sum + classCounts[name], 0)
+    : 0;
+  const otherDisallowed = classCounts
+    ? input.artifacts.disallowedToolEventCount > knownCount ||
+      disallowedClasses.some(
+        (operation) =>
+          !KNOWN_DISALLOWED_TOOL_CLASSES.includes(operation as KnownDisallowedToolClass),
+      )
+    : unexplainedDisallowed
+      ? null
+      : disallowedClasses.some(
+          (operation) =>
+            !KNOWN_DISALLOWED_TOOL_CLASSES.includes(operation as KnownDisallowedToolClass),
+        );
+  const externalWrite = subtype("external_write");
   const mutatingToolEvent =
     disallowedClasses.length > 0 ||
     input.artifacts.disallowedToolEventCount > 0 ||
+    otherDisallowed === true ||
     completedExecute;
   const matchedSynthesis =
     reservation === null
@@ -604,17 +693,19 @@ export function evaluateReadonlyVerification(input: {
     hold_cost_usd: reservation?.holdCostUsd ?? null,
     pricing_version: reservation?.pricingVersion ?? null,
     retrieve_step_status: retrieve?.status ?? null,
-    retrieve_provider_contact: retrieve?.output?.providerContact === true,
-    evidence_created: retrieve?.output?.evidenceCreated === true,
+    retrieve_idempotency_key: retrieve?.idempotencyKey ?? null,
+    retrieve_provider_contact: retrievalProviderContact,
+    evidence_created: retrievalEvidenceCreated,
     synthesize_step_status: matchedSynthesis?.status ?? null,
     synthesize_idempotency_key: matchedSynthesis?.idempotencyKey ?? null,
     finding_count: input.artifacts.findingCount,
     approval_id: input.artifacts.approvalId,
     proposal_id: input.artifacts.proposalId,
-    canonical_mutation: disallowedClasses.includes("canonical_write"),
-    evidence_write: disallowedClasses.includes("evidence_write"),
-    archive_change: disallowedClasses.includes("archive_change"),
-    external_execution: disallowedClasses.includes("external_write") || completedExecute,
+    canonical_mutation: subtype("canonical_write"),
+    evidence_write: subtype("evidence_write"),
+    archive_change: subtype("archive_change"),
+    external_execution: completedExecute ? true : externalWrite,
+    other_disallowed_operation: otherDisallowed,
     mutating_tool_event: mutatingToolEvent,
     semantic_correctness: "not_claimed",
   };
@@ -623,16 +714,21 @@ export function evaluateReadonlyVerification(input: {
   if (mutatingToolEvent) {
     ok = false;
     failureCode = "verification_boundary_violated";
+  } else if (retrievalProviderContact) {
+    ok = false;
+    failureCode = "retrieval_provider_contact";
+  } else if (retrievalEvidenceCreated) {
+    ok = false;
+    failureCode = "evidence_creation_unexpected";
   } else if (
     !retrieve ||
     retrieve.status !== "completed" ||
-    retrieve.output?.providerContact !== false
+    retrieve.idempotencyKey !== retrievalStepKey(input.run.id) ||
+    retrieve.output?.providerContact !== false ||
+    retrieve.output?.evidenceCreated !== false
   ) {
     ok = false;
     failureCode = "retrieval_not_recorded";
-  } else if (retrieve.output?.evidenceCreated !== false) {
-    ok = false;
-    failureCode = "evidence_creation_unexpected";
   } else if (!reservation) {
     ok = false;
     failureCode = "provider_reservation_absent";
@@ -904,7 +1000,7 @@ async function continueFromRecordedStep(
   const output = step.output ?? {};
   if (output.requiresApproval === true) {
     try {
-      const approval = await io.createApproval(run, invocationKey, output);
+      const approval = await io.createApproval(run, output);
       return outcome(
         200,
         "paused",
