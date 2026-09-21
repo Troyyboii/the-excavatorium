@@ -27,6 +27,23 @@ import {
   type ModelTier,
   type RunStage,
 } from "./runtime.ts";
+import {
+  advanceCustodianRun,
+  approvalIdempotencyKey,
+  confirmedPendingApprovalRun,
+  countDisallowedToolEvents,
+  countKnownDisallowedToolClasses,
+  parseReservationView,
+  providerAttemptKey,
+  type DisallowedToolEventCounter,
+  type ApprovalIdentity,
+  type BudgetSnapshot,
+  type CustodianIo,
+  type ReservationView,
+  type StepArtifact,
+  type SynthesisRun,
+  type VerificationArtifacts,
+} from "./provider-attempt.ts";
 
 export const MAX_REQUEST_BYTES = 16_384;
 export const MAX_INVOCATION_KEY_LENGTH = 300;
@@ -332,33 +349,30 @@ async function recordStep(
     latencyMs: 0,
   },
 ): Promise<RecordedStep> {
-  const trustedSynthesis = stepKind === "synthesize" && status === "completed";
-  const value = await rpc(
-    trustedSynthesis ? trustedRuntimeClient() : client,
-    trustedSynthesis ? "custodian_record_runtime_agent_step" : "custodian_record_agent_step",
-    {
-      ...(trustedSynthesis ? { runtime_owner_id: ownerId } : {}),
-      run_id: run.id,
-      idempotency_key: idempotencyKey,
-      step_payload: {
-        sequence_no: run.last_step_number + 1,
-        step_kind: stepKind,
-        status,
-        model_tier: modelTier,
-        prompt_version: run.prompt_version,
-        input_payload: inputPayload,
-        output_payload: outputPayload,
-        tokens_used: usage.tokens,
-        cost_usd: usage.costUsd,
-        latency_ms: usage.latencyMs,
-        ...(usage.pricingVersion ? { pricing_version: usage.pricingVersion } : {}),
-        provenance: {
-          runtime: "custodian-run",
-          evidence_untrusted: true,
-        },
+  if (stepKind === "synthesize" && status === "completed") {
+    throw new RpcFailure();
+  }
+  const value = await rpc(client, "custodian_record_agent_step", {
+    run_id: run.id,
+    idempotency_key: idempotencyKey,
+    step_payload: {
+      sequence_no: run.last_step_number + 1,
+      step_kind: stepKind,
+      status,
+      model_tier: modelTier,
+      prompt_version: run.prompt_version,
+      input_payload: inputPayload,
+      output_payload: outputPayload,
+      tokens_used: usage.tokens,
+      cost_usd: usage.costUsd,
+      latency_ms: usage.latencyMs,
+      ...(usage.pricingVersion ? { pricing_version: usage.pricingVersion } : {}),
+      provenance: {
+        runtime: "custodian-run",
+        evidence_untrusted: true,
       },
     },
-  );
+  });
   if (!isObject(value) || !isObject(value.step) || typeof value.step.id !== "string") {
     throw new RpcFailure();
   }
@@ -373,21 +387,6 @@ async function materializeRuntimeFindings(ownerId: string, stepId: string): Prom
     runtime_owner_id: ownerId,
     agent_step_id: stepId,
   });
-}
-
-function boundedEvidence(value: JsonRecord): unknown {
-  let serialized: string;
-  try {
-    serialized = JSON.stringify(value);
-  } catch {
-    return { bounded: true, reason: "evidence_serialization_failed" };
-  }
-  if (serialized.length <= MAX_EVIDENCE_CHARS) return value;
-  return {
-    bounded: true,
-    reason: "evidence_exceeded_runtime_bound",
-    originalChars: serialized.length,
-  };
 }
 
 function boundedObject(value: unknown, maxChars = 120_000): value is JsonRecord {
@@ -584,25 +583,31 @@ export function evaluatePricedProviderResponse(
   return { output, usage: accountedUsage };
 }
 
-function publicRun(run: AgentRun): JsonRecord {
+function finiteDbNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function stepArtifact(value: unknown): StepArtifact | null {
+  if (!isObject(value) || typeof value.id !== "string") return null;
+  if (typeof value.step_kind !== "string" || typeof value.status !== "string") return null;
+  if (typeof value.idempotency_key !== "string") return null;
+  const tokens = finiteDbNumber(value.tokens_used);
+  const cost = finiteDbNumber(value.cost_usd);
+  if (tokens === null || cost === null) return null;
   return {
-    id: run.id,
-    caseId: run.case_id,
-    status: run.status,
-    lastStepNumber: run.last_step_number,
-    usage: {
-      tokens: run.tokens_used,
-      costUsd: null,
-      costAccounting: "unpriced",
-      latencyMs: run.latency_ms,
-      toolEvents: run.tool_events_count,
-    },
-    failure: run.failure_code
-      ? {
-          code: run.failure_code,
-          message: run.failure_message ?? "The Custodian run did not complete.",
-        }
-      : null,
+    id: value.id,
+    stepKind: value.step_kind,
+    status: value.status,
+    idempotencyKey: value.idempotency_key,
+    output: isObject(value.output_payload) ? value.output_payload : null,
+    tokensUsed: tokens,
+    costUsd: cost,
+    pricingVersion: typeof value.pricing_version === "string" ? value.pricing_version : null,
   };
 }
 
@@ -627,361 +632,232 @@ function publicApproval(value: unknown): ApprovalSummary | null {
   };
 }
 
-function result(
-  status: number,
-  state: string,
-  run: AgentRun,
-  extra: JsonRecord = {},
-  origin: string | null = null,
-): Response {
-  return jsonResponse({ state, run: publicRun(run), ...extra }, status, origin);
-}
-
 async function createApproval(
   client: AuthenticatedSupabase["client"],
   run: AgentRun,
-  invocationKey: string,
-  stage: RunStage,
   output: JsonRecord,
-): Promise<AgentRun> {
+): Promise<{ run: AgentRun; approval: ApprovalIdentity }> {
   const approval = await rpc(client, "custodian_create_approval_request", {
     approval_payload: {
       case_id: run.case_id,
       run_id: run.id,
-      approval_kind: stage === "extract" ? "tool_action" : output.approvalKind,
-      title: `Custodian ${stage} requires approval`,
+      approval_kind: output.approvalKind,
+      title: "Custodian synthesis requires approval",
       rationale: output.summary,
       proposed_diff: output.proposedDiff,
       tool_action: output.toolAction,
-      provenance: { runtime: "custodian-run", stage, evidence_untrusted: true },
+      provenance: { runtime: "custodian-run", stage: "synthesize", evidence_untrusted: true },
     },
-    idempotency_key: `${invocationKey}:approval:${stage}`.slice(0, MAX_INVOCATION_KEY_LENGTH),
+    idempotency_key: approvalIdempotencyKey(run.id),
   });
-  const updatedRun = isObject(approval) && isObject(approval.run) ? parseAgentRun(approval) : run;
   const approvalSummary = publicApproval(approval);
   if (!approvalSummary) throw new RpcFailure();
-  return updatedRun;
+  let durable: AgentRun;
+  try {
+    durable =
+      isObject(approval) && isObject(approval.run)
+        ? parseAgentRun(approval)
+        : await getRun(client, run.id);
+    durable = confirmedPendingApprovalRun(durable, approvalSummary.status);
+  } catch {
+    throw new RpcFailure();
+  }
+  return {
+    run: durable,
+    approval: {
+      id: approvalSummary.id,
+      status: approvalSummary.status,
+      approvalKind: approvalSummary.approval_kind,
+      exactActionHash: approvalSummary.exact_action_hash,
+    },
+  };
 }
 
-async function callResponses(
-  auth: AuthenticatedSupabase,
-  run: AgentRun,
-  stage: RunStage,
-  remainingTokens: number,
-  remainingCostUsd: number,
-): Promise<{
-  output: JsonRecord;
-  usage: { tokens: number; costUsd: number; latencyMs: number; pricingVersion: string };
-  tier: ModelTier;
-}> {
-  const allowedTiers = await resolveAllowedModelTiers(auth.client, auth.user.id, run);
-  let selected: { tier: ModelTier; model: string };
-  try {
-    selected = selectRuntimeModel(stage, run.model_tier, allowedTiers);
-  } catch {
-    throw new SafeFailure(
-      502,
-      "model_tier_not_allowed",
-      "The persisted Custodian model tier is not allowed by its owner policy.",
-    );
-  }
-  const pricing = resolveModelPricing(Deno.env.get(CUSTODIAN_MODEL_PRICING_ENV), selected.model);
-  if (!pricing) {
-    throw new SafeFailure(
-      503,
-      "model_pricing_unavailable",
-      "Custodian model pricing is unavailable, so provider execution remains blocked.",
-    );
-  }
-  let systemPrompt: string;
-  try {
-    systemPrompt = resolveSystemPrompt(run.agent_config);
-  } catch {
-    throw new SafeFailure(
-      502,
-      "agent_config_invalid",
-      "The persisted Custodian agent configuration is malformed.",
-    );
-  }
-  const apiKey = Deno.env.get("OPENAI_API_KEY");
-  if (!apiKey)
-    throw new SafeFailure(
-      503,
-      "openai_not_configured",
-      "Custodian model service is not configured.",
-    );
-  const evidence = boundedEvidence({ objective: run.objective, evidence: run.input_snapshot });
-  const maxOutputTokens = boundedOutputBudget(remainingTokens);
-  const request = buildResponsesRequest({
-    stage,
-    model: selected.model,
-    systemPrompt,
-    untrustedEvidence: evidence,
-    schemaName: stage === "extract" ? "custodian_extraction" : "custodian_synthesis",
-    schema: stage === "extract" ? EXTRACTION_SCHEMA : SYNTHESIS_SCHEMA,
-    maxOutputTokens,
-  });
-  const inputBytes = new TextEncoder().encode(JSON.stringify(request)).byteLength;
-  const maximumCost = maximumPotentialUsageCost(inputBytes, maxOutputTokens, pricing);
-  if (maximumCost === null || maximumCost > remainingCostUsd) {
-    throw new SafeFailure(
-      503,
-      "run_cost_budget_insufficient",
-      "The remaining Custodian cost budget cannot safely cover a provider call.",
-    );
-  }
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS);
-  const startedAt = performance.now();
-  try {
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      signal: controller.signal,
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify(request),
-    });
-    if (!response.ok)
-      throw new SafeFailure(
-        502,
-        "openai_unavailable",
-        "Custodian model service is temporarily unavailable.",
-      );
-    let upstream: unknown;
-    try {
-      upstream = await response.json();
-    } catch {
-      throw new SafeFailure(
-        502,
-        "openai_invalid_response",
-        "Custodian model returned an invalid response.",
-      );
-    }
-    const evaluated = evaluatePricedProviderResponse(
-      upstream,
-      stage,
-      pricing,
-      Math.max(0, Math.round(performance.now() - startedAt)),
-    );
-    return {
-      output: evaluated.output,
-      tier: selected.tier,
-      usage: evaluated.usage,
-    };
-  } catch (error) {
-    const latencyMs = Math.max(0, Math.round(performance.now() - startedAt));
-    if (error instanceof SafeFailure) {
-      throw new SafeFailure(
-        error.status,
-        error.code,
-        error.publicMessage,
-        latencyMs,
-        error.usage ? { ...error.usage, latencyMs } : undefined,
-      );
-    }
-    if (controller.signal.aborted)
-      throw new SafeFailure(504, "openai_timeout", "Custodian model service timed out.", latencyMs);
-    throw new SafeFailure(
-      502,
-      "openai_unavailable",
-      "Custodian model service is temporarily unavailable.",
-      latencyMs,
-    );
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-async function failModelStage(
+async function readReservation(
   client: AuthenticatedSupabase["client"],
-  ownerId: string,
-  run: AgentRun,
-  invocationKey: string,
-  stage: RunStage,
-  failure: SafeFailure,
-  origin: string | null,
-): Promise<Response> {
-  const failedStep = await recordStep(
-    client,
-    ownerId,
-    run,
-    invocationKey,
-    stage === "extract" ? "extract" : "synthesize",
-    stepKey(invocationKey, stage),
-    run.model_tier,
-    { stage },
-    { errorCode: failure.code },
-    "failed",
-    failure.usage,
-  );
-  if (TERMINAL_STATES.has(failedStep.run.status)) {
-    return result(200, "stopped", failedStep.run, {}, origin);
-  }
-  const failedRun = await transitionRun(client, failedStep.run, invocationKey, "failed", {
-    failure_code: failure.code,
-    failure_message: failure.publicMessage,
-  });
-  return result(failure.status, "failed", failedRun, {}, origin);
+  runId: string,
+  idempotencyKey: string,
+): Promise<ReservationView | null> {
+  const { data, error } = await client
+    .from("agent_provider_reservations")
+    .select(
+      "id,status,usage_knowledge,hold_tokens,hold_cost_usd,actual_tokens,actual_cost_usd,pricing_version,failure_code,in_flight_until,idempotency_key",
+    )
+    .eq("run_id", runId)
+    .eq("idempotency_key", idempotencyKey)
+    .maybeSingle();
+  if (error) throw new RpcFailure();
+  if (!data) return null;
+  const reservation = parseReservationView(data);
+  if (!reservation) throw new RpcFailure();
+  return reservation;
 }
 
-async function processInvocation(
-  auth: AuthenticatedSupabase,
-  invocation: Invocation,
-  origin: string | null,
-): Promise<Response> {
-  let run = await getRun(auth.client, invocation.runId);
-  const budget = await getBudget(auth.client, invocation.runId);
+async function readStep(
+  client: AuthenticatedSupabase["client"],
+  runId: string,
+  idempotencyKey: string,
+): Promise<StepArtifact | null> {
+  const { data, error } = await client
+    .from("agent_steps")
+    .select(
+      "id,step_kind,status,idempotency_key,output_payload,tokens_used,cost_usd,pricing_version",
+    )
+    .eq("run_id", runId)
+    .eq("idempotency_key", idempotencyKey)
+    .maybeSingle();
+  if (error) throw new RpcFailure();
+  if (!data) return null;
+  const step = stepArtifact(data);
+  if (!step) throw new RpcFailure();
+  return step;
+}
 
-  if (TERMINAL_STATES.has(run.status)) return result(200, "terminal", run, {}, origin);
-  if (run.status === "awaiting_approval") return result(200, "paused", run, {}, origin);
-
-  if (!budget.allowed) {
-    const stopStatus = budget.reason === "cancel_requested" ? "cancelled" : "budget_stopped";
-    run = await transitionRun(auth.client, run, invocation.invocationKey, stopStatus, {
-      failure_code: budget.reason === "cancel_requested" ? "cancelled" : "budget_exceeded",
-      failure_message:
-        budget.reason === "cancel_requested"
-          ? "The owner requested cancellation."
-          : "The persisted run budget stopped execution.",
-    });
-    return result(200, "stopped", run, {}, origin);
+async function readVerificationArtifacts(
+  client: AuthenticatedSupabase["client"],
+  runId: string,
+): Promise<VerificationArtifacts | null> {
+  const reservationSelect =
+    "id,status,usage_knowledge,hold_tokens,hold_cost_usd,actual_tokens,actual_cost_usd,pricing_version,failure_code,in_flight_until,idempotency_key";
+  const [
+    steps,
+    reservations,
+    findings,
+    approvals,
+    proposals,
+    disallowedToolEventCount,
+    toolClassCounts,
+  ] = await Promise.all([
+    client
+      .from("agent_steps")
+      .select(
+        "id,step_kind,status,idempotency_key,output_payload,tokens_used,cost_usd,pricing_version",
+      )
+      .eq("run_id", runId),
+    client
+      .from("agent_provider_reservations")
+      .select(reservationSelect)
+      .eq("run_id", runId)
+      .eq("idempotency_key", providerAttemptKey(runId)),
+    client
+      .from("custodian_findings")
+      .select("id", { count: "exact", head: true })
+      .eq("origin_run_id", runId),
+    client
+      .from("approval_requests")
+      .select("id")
+      .eq("run_id", runId)
+      .order("created_at", { ascending: false })
+      .limit(1),
+    client
+      .from("change_proposals")
+      .select("id")
+      .eq("run_id", runId)
+      .order("created_at", { ascending: false })
+      .limit(1),
+    countDisallowedToolEvents(client as unknown as DisallowedToolEventCounter, runId),
+    countKnownDisallowedToolClasses(client as unknown as DisallowedToolEventCounter, runId),
+  ]);
+  if (
+    steps.error ||
+    reservations.error ||
+    findings.error ||
+    approvals.error ||
+    proposals.error ||
+    disallowedToolEventCount === null ||
+    toolClassCounts === null
+  ) {
+    return null;
   }
+  const parsedSteps = (steps.data ?? [])
+    .map((row) => stepArtifact(row))
+    .filter((row): row is StepArtifact => row !== null);
+  const reservationRow = reservations.data?.[0];
+  const reservation = reservationRow ? parseReservationView(reservationRow) : null;
+  if (reservationRow && !reservation) return null;
+  const approvalId =
+    approvals.data && approvals.data[0] && typeof approvals.data[0].id === "string"
+      ? approvals.data[0].id
+      : null;
+  const proposalId =
+    proposals.data && proposals.data[0] && typeof proposals.data[0].id === "string"
+      ? proposals.data[0].id
+      : null;
+  return {
+    steps: parsedSteps,
+    reservation,
+    findingCount: findings.count ?? 0,
+    approvalId,
+    proposalId,
+    toolOperationClasses: null,
+    toolClassCounts,
+    disallowedToolEventCount,
+  };
+}
 
-  if (run.status === "queued") {
-    run = await transitionRun(auth.client, run, invocation.invocationKey, "retrieving");
-    return result(200, "advanced", run, {}, origin);
-  }
-
-  if (run.status === "executing") {
-    const blockedStep = await recordStep(
-      auth.client,
-      auth.user.id,
-      run,
-      invocation.invocationKey,
-      "execute",
-      `${invocation.invocationKey}:execute`.slice(0, MAX_INVOCATION_KEY_LENGTH),
-      run.model_tier,
-      { stage: "execute" },
-      { errorCode: "external_write_unsupported" },
-      "blocked",
-    );
-    run = await transitionRun(auth.client, blockedStep.run, invocation.invocationKey, "blocked", {
-      failure_code: "external_write_unsupported",
-      failure_message: "Approved external execution is not supported by this runtime.",
-    });
-    return result(200, "blocked", run, { reason: "external_write_unsupported" }, origin);
-  }
-
-  if (run.status === "retrieving" || run.status === "synthesizing") {
-    const stage: RunStage = run.status === "retrieving" ? "extract" : "synthesize";
-    if (PROVIDER_EXECUTION_UNSUPPORTED) {
-      const blockedStep = await recordStep(
+function createCustodianIo(auth: AuthenticatedSupabase): CustodianIo {
+  const ownerId = auth.user.id;
+  return {
+    getRun: (runId) => getRun(auth.client, runId),
+    getBudget: async (runId) => {
+      const budget = await getBudget(auth.client, runId);
+      const snapshot: BudgetSnapshot = {
+        allowed: budget.allowed,
+        reason: budget.reason,
+        run_tokens_remaining: budget.run_tokens_remaining,
+        run_cost_remaining: budget.run_cost_remaining,
+        run_latency_remaining: budget.run_latency_remaining,
+      };
+      return snapshot;
+    },
+    transitionRun: (run, invocationKey, nextStatus, patch) =>
+      transitionRun(auth.client, run as AgentRun, invocationKey, nextStatus, patch),
+    recordStep: (input) =>
+      recordStep(
         auth.client,
-        auth.user.id,
-        run,
-        invocation.invocationKey,
-        stage,
-        stepKey(invocation.invocationKey, stage),
-        run.model_tier,
-        { stage, providerExecution: "unsupported" },
-        { errorCode: "provider_execution_unsupported" },
-        "blocked",
-      );
-      const blockedRun = await transitionRun(
-        auth.client,
-        blockedStep.run,
-        invocation.invocationKey,
-        "blocked",
-        {
-          failure_code: "provider_execution_unsupported",
-          failure_message: "Provider execution is intentionally unsupported by this runtime.",
-        },
-      );
-      return result(
-        200,
-        "blocked",
-        blockedRun,
-        { reason: "provider_execution_unsupported" },
-        origin,
-      );
-    }
-    let response;
-    try {
-      response = await callResponses(
-        auth,
-        run,
-        stage,
-        budget.run_tokens_remaining,
-        budget.run_cost_remaining,
-      );
-    } catch (error) {
-      if (error instanceof SafeFailure)
-        return await failModelStage(
-          auth.client,
-          auth.user.id,
-          run,
-          invocation.invocationKey,
-          stage,
-          error,
-          origin,
-        );
-      throw error;
-    }
-    const stepRun = await recordStep(
-      auth.client,
-      auth.user.id,
-      run,
-      invocation.invocationKey,
-      stage === "extract" ? "extract" : "synthesize",
-      stepKey(invocation.invocationKey, stage),
-      response.tier,
-      { stage },
-      response.output,
-      "completed",
-      response.usage,
-    );
-    if (TERMINAL_STATES.has(stepRun.run.status))
-      return result(200, "stopped", stepRun.run, {}, origin);
-    if (stage === "synthesize") {
-      await materializeRuntimeFindings(auth.user.id, stepRun.stepId);
-    }
-    if (isApprovalOutput(response.output)) {
-      const approvalRun = await createApproval(
-        auth.client,
-        stepRun.run,
-        invocation.invocationKey,
-        stage,
-        response.output,
-      );
-      const approval = await rpc(auth.client, "custodian_get_agent_run", {
-        run_id: approvalRun.id,
+        ownerId,
+        input.run as AgentRun,
+        input.idempotencyKey,
+        input.stepKind,
+        input.idempotencyKey,
+        input.modelTier,
+        input.inputPayload,
+        input.outputPayload,
+        input.status ?? "completed",
+        input.usage,
+      ),
+    resolveAllowedModelTiers: (run) =>
+      resolveAllowedModelTiers(auth.client, ownerId, run as AgentRun),
+    getReservation: (runId, idempotencyKey) => readReservation(auth.client, runId, idempotencyKey),
+    reserveProviderCall: (runId, idempotencyKey, payload) =>
+      rpc(auth.client, "custodian_reserve_provider_call", {
+        run_id_value: runId,
+        idempotency_key: idempotencyKey,
+        reservation_payload: payload,
+      }),
+    settleProviderReservation: async (runtimeOwnerId, runId, idempotencyKey, settlement) => {
+      const value = await rpc(trustedRuntimeClient(), "custodian_settle_provider_reservation", {
+        runtime_owner_id: runtimeOwnerId,
+        run_id: runId,
+        idempotency_key: idempotencyKey,
+        settlement,
       });
-      const currentRun = parseAgentRun(approval);
-      return result(200, "paused", currentRun, {}, origin);
-    }
-    const nextStatus = stage === "extract" ? "synthesizing" : "verifying";
-    run = await transitionRun(auth.client, stepRun.run, invocation.invocationKey, nextStatus);
-    return result(200, "advanced", run, {}, origin);
-  }
-
-  if (run.status === "verifying") {
-    const verified = await recordStep(
-      auth.client,
-      auth.user.id,
-      run,
-      invocation.invocationKey,
-      "verify",
-      `${invocation.invocationKey}:verify`.slice(0, MAX_INVOCATION_KEY_LENGTH),
-      run.model_tier,
-      { stage: "verify" },
-      { verification: "bounded", checks: ["run_state", "no_external_execution"] },
-    );
-    if (TERMINAL_STATES.has(verified.run.status))
-      return result(200, "stopped", verified.run, {}, origin);
-    run = await transitionRun(auth.client, verified.run, invocation.invocationKey, "completed");
-    return result(200, "completed", run, {}, origin);
-  }
-
-  throw new RpcFailure();
+      if (!isObject(value) || !isObject(value.run)) throw new RpcFailure();
+      const reservation = parseReservationView(value.reservation);
+      if (!reservation) throw new RpcFailure();
+      return { run: parseAgentRun({ run: value.run }), reservation };
+    },
+    getStepByIdempotency: (runId, idempotencyKey) => readStep(auth.client, runId, idempotencyKey),
+    materializeFindings: (runtimeOwnerId, stepId) =>
+      materializeRuntimeFindings(runtimeOwnerId, stepId),
+    createApproval: (run, output) => createApproval(auth.client, run as AgentRun, output),
+    readVerificationArtifacts: (runId) => readVerificationArtifacts(auth.client, runId),
+    getEnv: (name) => Deno.env.get(name),
+    fetchProvider: (url, init) => fetch(url, init),
+    trustedRuntimeAvailable: () =>
+      Boolean(Deno.env.get("SUPABASE_URL") && Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")),
+    now: () => Date.now(),
+  };
 }
 
 export async function handleRequest(request: Request): Promise<Response> {
@@ -1023,7 +899,14 @@ export async function handleRequest(request: Request): Promise<Response> {
     );
 
   try {
-    return await processInvocation(auth, invocation, origin);
+    const advanced = await advanceCustodianRun({
+      io: createCustodianIo(auth),
+      ownerId: auth.user.id,
+      invocation,
+      providerExecutionUnsupported: PROVIDER_EXECUTION_UNSUPPORTED,
+      validSynthesis,
+    });
+    return jsonResponse(advanced.body, advanced.status, origin);
   } catch (error) {
     if (error instanceof SafeFailure) {
       return jsonResponse({ error: error.publicMessage }, error.status, origin);

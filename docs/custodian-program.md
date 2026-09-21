@@ -123,7 +123,7 @@ provider call is available.
 | Bounded Case Reading                                     | **CURRENT** browser-side bundle builder in `src/lib/case-reading.ts`.                                 | **CURRENT** read-only Case Reading presentation.                                                                          | It is provider-free; it is not evidence of a model run.                                                          |
 | Claims, evidence, actions, findings, revisions           | **CURRENT** owner-scoped tables/RPC foundation, including the M2 Finding attribution migration and protected materialization RPC in `20260920090000_custodian_finding_attribution.sql`. | **PARTIAL** existing collections now expose Finding origin, run/step attribution, caveats, and bounded support/contrary descriptors. | Database application and end-to-end workflow are **UNVERIFIED**.                                                 |
 | Durable runs, steps, budgets, approval, proposals, audit | **CURRENT** migration and RPC contracts, including the M3 owner-gate decision RPC.                    | Run Room is **CURRENT** as a read-only owner listing; Approvals is **CURRENT** as an owner decision surface. Approval does not execute unsupported work. | Runtime foundation is not operational proof.                                                                     |
-| Provider-backed analysis                                 | Request, pricing, validation, and recording plumbing are **PARTIAL** source. M4A adds an unwired budget-hold table and a server-built read-only run bootstrap. | Invocation is **BLOCKED** in `src/lib/custodian-runtime.ts`.                                                              | Edge execution is **BLOCKED** by `PROVIDER_EXECUTION_UNSUPPORTED = true`. No paid call is authorized or claimed. |
+| Provider-backed analysis                                 | M4A hold storage is merged source. M4B wires one synthesis attempt in `supabase/functions/custodian-run/provider-attempt.ts`: reserve, at most one fetch, truthful settlement, M2 materialization, and boundary verification. That path is unreachable while the Edge gate is closed. | M4C Run Room inspection is **CURRENT** and inert. Invocation is **BLOCKED** by `CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER = false`. Start analysis does not call the Edge Function. | Edge execution is **BLOCKED** by `PROVIDER_EXECUTION_UNSUPPORTED = true`. No paid call is authorized. Deployed behavior is **UNVERIFIED**. |
 | External or canonical execution                          | Approval and tool-event guard foundations are **CURRENT** source.                                     | No control UI is connected.                                                                                               | **BLOCKED**; current Edge runtime stops approved external execution.                                             |
 | MCP Custodian reads                                      | **CURRENT** bounded reader registrations and safe projections.                                        | `list_cases`, `get_case`, `get_findings`, `get_pending_approvals`, and `get_run` are conditional on deployed foundations; `get_findings` now projects bounded attribution and evidence descriptors. | Fresh authenticated production callability is **UNVERIFIED**.                                                    |
 | MCP run control                                          | Reserved tools exist.                                                                                 | `start_analysis` and `cancel_run` deliberately return unavailable.                                                        | **BLOCKED**, never simulated.                                                                                    |
@@ -135,8 +135,11 @@ Important gaps and contradictions must remain visible:
    null policy. `selectRuntimeModel` requires an explicit owner-policy tier list; the
    exported source model list is not a selection default. `custodian_run_budget_status`
    denies a missing or inactive policy and counts held provider reservations separately
-   from recorded usage. The Edge function does not call the hold RPCs yet, and provider
-   execution remains blocked.
+   from recorded usage. M4B source calls `custodian_reserve_provider_call` and
+   `custodian_settle_provider_reservation` only inside the open-gate synthesis path.
+   `handleRequest` does not enter that path while `PROVIDER_EXECUTION_UNSUPPORTED` is
+   true, so production provider execution remains blocked. Deployed behavior remains
+   **UNVERIFIED**.
 2. The Edge Function contains a real OpenAI Responses call path behind its hard gate.
    This is dormant plumbing, not active provider execution.
 3. The runtime still persists generic `agent_steps` output, and that output remains
@@ -145,9 +148,19 @@ Important gaps and contradictions must remain visible:
    and the protected `custodian_materialize_finding` RPC before creating an analysis
    Finding. Generic automation `brief` output fails closed. Database application and
    deployed behavior remain **UNVERIFIED**.
-4. Verification currently records a bounded run-state/no-external-execution check.
-   Reaching `verifying` or `completed` is not substantive proof that a conclusion,
-   source, action, or external result is correct.
+4. M4 read-only verification checks durable reservation identity and settlement, usage
+   knowledge, factual tokens and cost when known, agreement between that reservation and
+   the completed synthesis step, that known actual usage does not exceed the conservative
+   hold, finding materialization counts, approval and proposal identity, and the absence
+   of every tool operation class other than `read_only` (`evidence_write`,
+   `canonical_write`, `archive_change`, and `external_write`). An exact disallowed-event
+   count is required; a sampled tool-event page is not proof that no mutation occurred.
+   Subtype flags are recorded only from exact class counts, or as false when that count
+   is zero. An unexplained disallowed event does not mark every subtype false. Retrieval
+   verification uses `provider-free-retrieve:<run id>` and fails if any retrieval artifact
+   records provider contact or evidence creation. `semantic_correctness` is `not_claimed`.
+   Reaching `verifying` or `completed` is not proof that a model conclusion is correct.
+   Deployed behavior remains **UNVERIFIED**.
 5. Approvals and automation foundations exist. The browser Approvals route is an
    owner-scoped proposal/gate decision surface; execution remains unavailable, and no
    resident loop was found in the inspected source.
@@ -330,9 +343,12 @@ owner/case checks, allowed transitions, sequence ordering, request hashes, idemp
 keys, and policy constraints. A run can be paused in `awaiting_approval`; cancellation,
 expiry, provider failure, budget stop, and hard blocks remain durable outcomes.
 
-The current Run Room is intentionally read-only: it fetches at most 100 authenticated
-owner run rows and offers no create, resume, cancel, provider, approval, model, or
-execution control. This is an honest current surface, not a missing loading state.
+The current Run Room remains read-only and unable to invoke the provider. It lists at
+most 100 authenticated owner runs. Where the reservation relation is readable, it shows
+recorded provider cost separately from any held budget, unknown usage, pricing version,
+a cancellation request, failure, and the latest step. The Start analysis control is
+disabled and performs no write. A missing reservation relation is shown as unavailable
+rather than as zero spend.
 
 Target V1 runtime behavior is retrieve/extract/synthesize/approval/execute/verify with
 durable artifacts at each boundary. Resume must use the persisted state and exact
@@ -361,11 +377,14 @@ request.
 
 This source plumbing is **PARTIAL** and must remain **BLOCKED** in operation. The browser
 constant `CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER` is `false`; the Edge Function
-constant `PROVIDER_EXECUTION_UNSUPPORTED` is `true`. While that gate is true, retrieval
-or synthesis records a blocked step and a `provider_execution_unsupported` run outcome
-instead of calling a provider. No future documentation may describe a live provider run
-until the hard gate is removed in an explicitly authorized, reviewed, and verified
-provider-activation milestone.
+constant `PROVIDER_EXECUTION_UNSUPPORTED` is `true`. No environment value can bypass
+either constant. While the Edge gate is true, retrieval stays provider-free. A
+synthesizing run records a blocked step and a `provider_execution_unsupported` outcome
+and does not reserve or fetch. The bounded synthesis path in `provider-attempt.ts` is
+not entered. That path, once a later activation opens the gate, is one synthesis
+attempt per run: reserve first, at most one Responses request, then settle. Extract is
+not a second paid call. No documentation may describe a live provider run until M4D
+removes the hard gate under separate authorization and deployed proof.
 
 ## 13. Budget and cost safety
 
@@ -388,20 +407,35 @@ Before any real paid call, V1 must perform all of the following:
 5. Stop visibly on budget exhaustion; do not silently reduce scope or substitute an
    unpriced result.
 
-The dormant Edge code implements server-only pricing lookup, a conservative pre-call
-maximum cost check, a timeout, and provider usage parsing. Source now also has
-`custodian_reserve_provider_call` and `custodian_settle_provider_reservation`. A budget
-hold encumbers the conservative maximum. It is not written into `agent_steps` or
-`agent_runs` unless parsed provider usage is settled as known. Unknown usage leaves
-actual tokens and cost null. An owner may reserve a hold. Settlement, release, and
-synthesis output require the service-role runtime, the same trusted producer as
-completed synthesis recording. Daily and monthly totals attribute recorded usage by
-the priced step time. A reservation that remains held continues to encumber the
-current daily and monthly aggregate budgets until it is settled as known usage or
-released as uncontacted. Run creation time does not place either figure.
-The Edge function still does not take a hold before a provider call, and
-`PROVIDER_EXECUTION_UNSUPPORTED` remains `true`. The first paid Custodian run
-requires separate explicit authorization after the entire gate is verified.
+M4A stores `custodian_reserve_provider_call` and
+`custodian_settle_provider_reservation`. A budget hold encumbers the conservative
+maximum. It is not written into `agent_steps` or `agent_runs` unless parsed provider
+usage is settled as known. Unknown usage leaves actual tokens and cost null. An owner
+may reserve a hold. Settlement, release, and completed synthesis output require the
+service-role runtime. Daily and monthly totals attribute recorded usage by the priced
+step time. A reservation that remains held continues to encumber the current daily and
+monthly aggregate budgets until it is settled as known usage or released as
+uncontacted. Run creation time does not place either figure.
+
+M4B calls that reservation boundary from the Edge synthesis path before any provider
+fetch. A denied, unreadable, in-flight, or already held reservation produces zero
+provider requests. Known settlement records factual tokens and cost and drops the hold
+from aggregate accounting. Ambiguous contact leaves the hold with null actuals and
+`usage_knowledge = unknown`. A definite pre-contact failure releases the hold as
+uncontacted. The public runtime projection reports recorded cost, unknown usage, and
+held encumbrance separately; it does not label factual cost `unpriced`. The attempt
+identity is `provider-attempt:<run id>:synthesize`, so a repeated invocation reuses
+that reservation instead of opening a second paid attempt. An approval gate for that
+synthesis uses `approval:provider-attempt:<run id>:synthesize`, so concurrent replays
+share one gate instead of the caller's invocation key. An idempotent approval replay
+that omits the run is re-read from the durable run and must already be
+`awaiting_approval`; the caller’s earlier status is not reused. If that confirmation
+fails, the response stays unavailable and keeps the already settled provider accounting
+without inventing `awaiting_approval`. The exact action hash
+remains the M3 server hash of the proposed diff and tool action. The database still keys
+reservations by idempotency key; this source does not add a second synthesis key.
+`PROVIDER_EXECUTION_UNSUPPORTED` remains `true`, so the production handler never
+enters this path. The first paid Custodian run requires the separate M4D sequence.
 
 A null daily or monthly cost ceiling is not a product default.
 `custodian_reserve_provider_call` and the read-only policy and run RPCs refuse it.
@@ -475,11 +509,25 @@ Verification is a real stage, not a status label. A run must establish, as appli
 - external result only when an external action was explicitly supported; and
 - contradictory evidence, refusal, partial result, and verification failure.
 
-The current Edge verification step records only `run_state` and
-`no_external_execution` as bounded checks. That is a useful safety assertion but not
-proof of evidence correctness, finding quality, proposal identity, or an external
-outcome. Provider activation must add meaningful verification before it can call a run
-complete.
+The M4 read-only verification stage inspects durable artifacts: run identity,
+the stable provider-free retrieval step `provider-free-retrieve:<run id>`, reservation
+identity and settlement, known factual tokens and cost, and a completed synthesis step
+whose idempotency key, pricing version, tokens, and cost match that reservation. The
+stable retrieval step must be completed, with provider contact and evidence creation
+both false. Another retrieve step cannot replace it. Any retrieval artifact that records
+provider contact or evidence creation fails verification. Known actual tokens and cost
+must be present and must not exceed the conservative hold. It also checks finding count,
+approval and proposal identity when present, and the absence of every tool operation
+class other than `read_only`, including `evidence_write`, `canonical_write`,
+`archive_change`, and `external_write`. That absence comes from an exact count of
+disallowed tool events, not from a bounded sample. Known subtype flags come from exact
+per-class counts. When a disallowed event is known only as a count, verification fails
+and does not record every subtype as false. `semantic_correctness` is always
+`not_claimed`. Unknown or missing provider usage fails the run closed. A hold that was
+exceeded fails verification and keeps the factual actual usage. This proves persistence
+and boundary integrity. It does not prove that a model conclusion is correct. The closed
+Edge gate does not advance a run into this stage. M5 execution verification remains
+unimplemented.
 
 ## 17. Resident attention and automation
 
@@ -521,7 +569,7 @@ only for inverse interpretation, refusal, security, code, and execution boundari
 | Findings                     | **PARTIAL** persisted finding display via evidence readers and case collections.                                  | Separate attributable interpretation from source truth and expose support/contrary evidence.                 |
 | Proposal / Gate              | **CURRENT** inspectable exact-action presentation on Approvals.                                                   | Show exact before/diff/after and owner decision, never a vague "approve agent" button.                       |
 | Approvals                    | **CURRENT** owner-scoped inspect-and-decide surface; execution remains **BLOCKED**.                               | Read and decide exact owner-scoped requests with expiry/reject/defer audit.                                  |
-| Run Room                     | **CURRENT** read-only owner run list.                                                                             | Inspect lifecycle, budgets, costs, steps, state, failures, and future controls only when safely implemented. |
+| Run Room                     | **CURRENT** inert owner inspection. Start analysis is disabled and does not invoke the Edge Function.             | Show status, objective, model tier, recorded cost and tokens, held budget, unknown usage, pricing version, cancellation, failure, and step state. A hold is encumbrance, not recorded spend. |
 | Observatory                  | **BLOCKED/PLANNED** scaffold with no runtime source.                                                              | Present truthful resident/rule/cost/verification evidence only after it exists.                              |
 | Quiet state                  | A required product state.                                                                                         | Say no meaningful matter is known; do not create AI theatre.                                                 |
 
@@ -739,6 +787,21 @@ read-only analysis path.
   first paid run has separate explicit authorization.
 - **Authorization boundary:** provider activation, secret configuration, migration
   application, deployment, and first paid run are all distinct external approvals.
+- **M4A SOURCE FOUNDATION:** **MERGED** on main. Hold storage, service-role settlement,
+  owner-scoped reserve, persistent unknown holds, aggregate budgets, policy bootstrap,
+  the server-built read-only snapshot, allowed model tiers, and in-flight cancellation
+  semantics exist. No M4A migration was rewritten by the later source slice.
+- **M4B SOURCE WIRING:** **PRESENT, UNREACHABLE.** `provider-attempt.ts` can perform
+  exactly one bounded synthesis attempt after a successful reservation. Retrieval stays
+  provider-free. Valid synthesis still materializes only through the M2 contract.
+  `PROVIDER_EXECUTION_UNSUPPORTED` remains `true`, so `handleRequest` does not enter
+  the fetch path.
+- **M4C BROWSER PREPARATION:** **PRESENT, INERT.**
+  `CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER` remains `false`. The prepared invocation
+  body is only `{ runId, invocationKey }`. The Run Room control has no click handler.
+- **M4 PROVIDER ACTIVATION:** **BLOCKED.** M4 is not complete.
+- **PRODUCTION / DEPLOYED BEHAVIOR:** **UNVERIFIED** until a separately authorized
+  deploy and proof. M4D, M5, and M6 are not started.
 
 ### M5 — finish V1 lifecycle inspection and permitted execution
 
@@ -888,10 +951,10 @@ into release notes.
 | Backend procedure           | `docs/supabase-setup.md`, `docs/supabase-verification.md`                                                                                                                                                                            | Directly managed backend setup and verification distinction.                          |
 | Cases and evidence          | `src/lib/custodian.ts`, `src/lib/custodian-types.ts`, `src/lib/case-reading.ts`, `src/lib/evidence-display.ts`, `src/components/custodian/`                                                                                          | Owner case contracts, bounded reading, display and source tests.                      |
 | Runtime client              | `src/lib/custodian-runtime.ts`, `src/lib/custodian-runtime-types.ts`, `src/lib/custodian-approvals.ts`                                                                                                                                | Browser read boundary, state machine, owner-gate decision client, budget/model/request contracts. |
-| Frontend surfaces           | `src/routes/index.tsx`, `src/routes/inbox.tsx`, `src/routes/cases.index.tsx`, `src/routes/cases.$caseId.index.tsx`, `src/routes/run-room.tsx`, `src/routes/approvals.tsx`, `src/routes/observatory.tsx`, `src/components/custodian/approvals-surface.tsx` | Current Desk, Inbox, Cases, read-only Run Room, owner-gate Approvals, and scaffold Observatory. |
+| Frontend surfaces           | `src/routes/index.tsx`, `src/routes/inbox.tsx`, `src/routes/cases.index.tsx`, `src/routes/cases.$caseId.index.tsx`, `src/routes/run-room.tsx`, `src/routes/approvals.tsx`, `src/routes/observatory.tsx`, `src/components/custodian/approvals-surface.tsx`, `src/components/custodian/run-room-surface.tsx` | Current Desk, Inbox, Cases, inert Run Room, owner-gate Approvals, and scaffold Observatory. |
 | MCP                         | `src/lib/mcp/index.ts`, `src/lib/mcp/capability-handlers.ts`, `src/lib/mcp/tools/`, `src/lib/mcp/security.ts`                                                                                                                        | Bounded archive/Custodian client surface and authentication.                          |
 | Plugin guidance             | `plugins/the-excavatorium/skills/custodian/SKILL.md`, `plugins/the-excavatorium/.mcp.json`                                                                                                                                           | Client retrieval discipline and MCP endpoint metadata.                                |
-| Provider runtime            | `supabase/functions/custodian-run/index.ts`, `supabase/functions/custodian-run/runtime.ts`, their tests                                                                                                                              | Dormant provider, parsing, pricing, state, failure, and hard-gate source.             |
+| Provider runtime            | `supabase/functions/custodian-run/index.ts`, `supabase/functions/custodian-run/runtime.ts`, `supabase/functions/custodian-run/provider-attempt.ts`, their tests                                                                     | Closed-gate handler, pricing, and the unreachable one-attempt synthesis lifecycle.    |
 | Core Custodian migrations   | `supabase/migrations/20260811190000_custodian_tables.sql` through `20260811190300_custodian_write_rpcs.sql`, plus `supabase/migrations/20260920090000_custodian_finding_attribution.sql`                                              | Case/analysis schema, indexes, RLS, write RPCs, and the M2 Finding attribution/materialization boundary. |
 | Runtime migrations          | `supabase/migrations/20260811191000_custodian_runtime_tables.sql` through `20260811191200_custodian_runtime_rpcs.sql`                                                                                                                | Runtime/policy/approval/automation/audit foundation.                                  |
 | Hardening and case scope    | `supabase/migrations/20260817163457_custodian_tool_policy_delete_guard.sql`, `supabase/migrations/20260822214714_harden_archive_and_custodian_boundaries.sql`, `supabase/migrations/20260904090000_custodian_case_archive_scope.sql`, `supabase/migrations/20260921140000_custodian_owner_gate.sql` | Policy, exact action, audit, cost hardening, selected archive scope, and the M3 owner-gate decision contract. |
@@ -901,13 +964,16 @@ into release notes.
 
 ### Known gaps and deliberate deferrals
 
-- Provider execution, paid calls, live findings, and run controls remain blocked.
-  M4A stores the provider budget hold and a server-built read-only run bootstrap.
-  Settlement is service-role only. The Edge function does not reserve, settle, or
-  call a provider. The owner must
-  choose the model allowlist and cost ceilings before activation; the policy RPC has
-  no product-default tiers or ceilings. M4B wires settlement without opening the gate.
-  M4C keeps the browser control inert. M4D is the separate activation sequence.
+- Provider execution, paid calls, and live run controls remain **BLOCKED**. M4A is
+  merged and stores the provider budget hold and server-built read-only run bootstrap.
+  Settlement stays service-role only. M4B source can reserve, settle, and fetch once,
+  but the production handler does not enter that path while
+  `PROVIDER_EXECUTION_UNSUPPORTED` is true. M4C keeps the browser control inert.
+  The owner must still choose the model allowlist and numeric cost/token ceilings
+  before activation; the policy RPC has no product-default tiers or ceilings. M4D is
+  the separate activation sequence, including deployed two-way concurrency proof
+  before any paid owner run. M4 is not complete, and production behavior is
+  **UNVERIFIED**.
 - Interactive Approvals exist as an owner decision surface; meaningful verification
   after execution and a selected internal V1 execution class still need implementation.
 - External execution is intentionally unsupported; canonical writes are not implied by

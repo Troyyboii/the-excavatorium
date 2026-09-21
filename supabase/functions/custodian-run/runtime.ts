@@ -258,11 +258,26 @@ export function buildResponsesRequest(input: {
   };
 }
 
-export function extractResponsesJson(response: unknown): Record<string, unknown> | null {
-  if (!response || typeof response !== "object") return null;
+export type ResponsesOutputClass =
+  | { kind: "json"; value: Record<string, unknown> }
+  | { kind: "refusal" }
+  | { kind: "malformed" };
+
+function assistantOutputText(response: unknown): {
+  status: unknown;
+  refusal: boolean;
+  text: string;
+  malformed: boolean;
+} {
+  if (!response || typeof response !== "object") {
+    return { status: null, refusal: false, text: "", malformed: true };
+  }
   const value = response as { status?: unknown; output?: unknown };
-  if (value.status !== "completed" || !Array.isArray(value.output)) return null;
+  if (!Array.isArray(value.output)) {
+    return { status: value.status, refusal: false, text: "", malformed: true };
+  }
   let text = "";
+  let refusal = false;
   for (const item of value.output) {
     if (!item || typeof item !== "object") continue;
     const message = item as { type?: unknown; role?: unknown; content?: unknown };
@@ -270,26 +285,44 @@ export function extractResponsesJson(response: unknown): Record<string, unknown>
       message.type !== "message" ||
       message.role !== "assistant" ||
       !Array.isArray(message.content)
-    )
+    ) {
       continue;
+    }
     for (const part of message.content) {
-      if (!part || typeof part !== "object") return null;
+      if (!part || typeof part !== "object") {
+        return { status: value.status, refusal, text, malformed: true };
+      }
       const content = part as { type?: unknown; text?: unknown };
-      if (content.type === "refusal") return null;
+      if (content.type === "refusal") refusal = true;
       if (content.type === "output_text") {
-        if (typeof content.text !== "string") return null;
+        if (typeof content.text !== "string") {
+          return { status: value.status, refusal, text, malformed: true };
+        }
         text += content.text;
       }
     }
   }
-  if (!text) return null;
+  return { status: value.status, refusal, text, malformed: false };
+}
+
+export function extractResponsesJson(response: unknown): Record<string, unknown> | null {
+  const classified = classifyResponsesOutput(response);
+  return classified.kind === "json" ? classified.value : null;
+}
+
+/** Distinguishes a provider refusal from malformed JSON without treating either as a Finding. */
+export function classifyResponsesOutput(response: unknown): ResponsesOutputClass {
+  const extracted = assistantOutputText(response);
+  if (extracted.malformed) return { kind: "malformed" };
+  if (extracted.refusal) return { kind: "refusal" };
+  if (extracted.status !== "completed" || extracted.text.length === 0) return { kind: "malformed" };
   try {
-    const parsed: unknown = JSON.parse(text);
+    const parsed: unknown = JSON.parse(extracted.text);
     return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null;
+      ? { kind: "json", value: parsed as Record<string, unknown> }
+      : { kind: "malformed" };
   } catch {
-    return null;
+    return { kind: "malformed" };
   }
 }
 
@@ -350,6 +383,29 @@ function parsePricing(value: unknown): ModelPricing | null {
   };
 }
 
+export type PricingClassification =
+  | { status: "ready"; pricing: ModelPricing }
+  | { status: "missing" }
+  | { status: "malformed" }
+  | { status: "model_unpriced" };
+
+function parsedPricingMap(
+  serialized: string,
+): { ok: true; entries: Record<string, unknown> } | { ok: false } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(serialized);
+  } catch {
+    return { ok: false };
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { ok: false };
+  const entries = parsed as Record<string, unknown>;
+  for (const [configuredModel, pricing] of Object.entries(entries)) {
+    if (!isAllowlistedModelName(configuredModel) || !parsePricing(pricing)) return { ok: false };
+  }
+  return { ok: true, entries };
+}
+
 /**
  * Reads only exact allowlisted model names. Pricing is deliberately server-only:
  * a missing or malformed configuration is never interpreted as free usage.
@@ -358,21 +414,22 @@ export function resolveModelPricing(
   serialized: string | undefined,
   model: string,
 ): ModelPricing | null {
-  if (!serialized || !isAllowlistedModelName(model)) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(serialized);
-  } catch {
-    return null;
-  }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-  const entries = parsed as Record<string, unknown>;
-  for (const [configuredModel, pricing] of Object.entries(entries)) {
-    if (!isAllowlistedModelName(configuredModel) || !parsePricing(pricing)) {
-      return null;
-    }
-  }
-  return parsePricing(entries[model]);
+  const classified = classifyModelPricing(serialized, model);
+  return classified.status === "ready" ? classified.pricing : null;
+}
+
+/** Separates an absent price map from a malformed one. Neither is free usage. */
+export function classifyModelPricing(
+  serialized: string | undefined,
+  model: string,
+): PricingClassification {
+  if (!serialized || serialized.trim().length === 0) return { status: "missing" };
+  if (!isAllowlistedModelName(model)) return { status: "model_unpriced" };
+  const parsed = parsedPricingMap(serialized);
+  if (!parsed.ok) return { status: "malformed" };
+  const pricing = parsePricing(parsed.entries[model]);
+  if (!pricing) return { status: "model_unpriced" };
+  return { status: "ready", pricing };
 }
 
 /** Returns null when a provider response cannot support safe accounting. */
