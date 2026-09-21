@@ -16,6 +16,51 @@ import {
 
 export const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 export const PROVIDER_ATTEMPT_TIMEOUT_MS = 25_000;
+
+export function boundedProviderTimeoutMs(
+  remainingLatencyMs: number,
+  requestedMs = PROVIDER_ATTEMPT_TIMEOUT_MS,
+): number {
+  if (!Number.isFinite(remainingLatencyMs) || remainingLatencyMs <= 0) return 0;
+  const requested =
+    Number.isFinite(requestedMs) && requestedMs > 0 ? requestedMs : PROVIDER_ATTEMPT_TIMEOUT_MS;
+  return Math.min(PROVIDER_ATTEMPT_TIMEOUT_MS, requested, Math.floor(remainingLatencyMs));
+}
+
+const RESERVATION_UNESTABLISHED_DETAIL =
+  "The provider reservation could not be read. Provider contact and usage could not be established. This invocation made no new provider call.";
+
+export type DisallowedToolEventCounter = {
+  from(table: "tool_events"): {
+    select(
+      columns: "id",
+      options: { count: "exact"; head: true },
+    ): {
+      eq(
+        column: "run_id",
+        value: string,
+      ): {
+        neq(
+          column: "operation_class",
+          value: "read_only",
+        ): PromiseLike<{ count: number | null; error: { message: string } | null }>;
+      };
+    };
+  };
+};
+
+export async function countDisallowedToolEvents(
+  client: DisallowedToolEventCounter,
+  runId: string,
+): Promise<number | null> {
+  const result = await client
+    .from("tool_events")
+    .select("id", { count: "exact", head: true })
+    .eq("run_id", runId)
+    .neq("operation_class", "read_only");
+  if (result.error || typeof result.count !== "number" || result.count < 0) return null;
+  return result.count;
+}
 const MAX_HOLD_TOKENS = 10_000_000;
 
 export type UsageKnowledge = "known" | "unknown" | "none";
@@ -84,6 +129,7 @@ export type VerificationArtifacts = {
   approvalId: string | null;
   proposalId: string | null;
   toolOperationClasses: string[];
+  disallowedToolEventCount: number;
 };
 
 export type BudgetSnapshot = {
@@ -91,6 +137,7 @@ export type BudgetSnapshot = {
   reason: string;
   run_tokens_remaining: number;
   run_cost_remaining: number;
+  run_latency_remaining: number;
 };
 
 export type ApprovalIdentity = {
@@ -347,6 +394,24 @@ export function parseReservationView(value: unknown): ReservationView | null {
   };
 }
 
+function reservationMatchesAttempt(
+  reservation: ReservationView | null,
+  attemptKey: string,
+  pricingVersion: string,
+  holdTokens: number,
+  holdCostUsd: number,
+): boolean {
+  return (
+    reservation !== null &&
+    reservation.status === "held" &&
+    reservation.usageKnowledge === "unknown" &&
+    reservation.idempotencyKey === attemptKey &&
+    reservation.pricingVersion === pricingVersion &&
+    reservation.holdTokens === holdTokens &&
+    sameAmount(reservation.holdCostUsd, holdCostUsd)
+  );
+}
+
 function parseReservePayload(value: unknown): {
   reserved: boolean;
   replay: boolean;
@@ -427,14 +492,13 @@ function budgetDenial(reason: string): {
   };
 }
 
-function reservationUnread(run: SynthesisRun): AdvanceResult {
+function reservationUnestablished(run: SynthesisRun, reason: string): AdvanceResult {
   return {
     status: 503,
     body: {
       state: "unavailable",
-      reason: "provider_reservation_unreadable",
-      detail:
-        "The provider reservation could not be read. No provider usage was assumed, and no provider call was made.",
+      reason,
+      detail: RESERVATION_UNESTABLISHED_DETAIL,
       run: {
         id: run.id,
         caseId: run.case_id,
@@ -442,6 +506,10 @@ function reservationUnread(run: SynthesisRun): AdvanceResult {
       },
     },
   };
+}
+
+function reservationUnread(run: SynthesisRun): AdvanceResult {
+  return reservationUnestablished(run, "provider_reservation_unreadable");
 }
 
 async function readAttemptReservation(
@@ -502,38 +570,57 @@ export function evaluateReadonlyVerification(input: {
   run: SynthesisRun;
   artifacts: VerificationArtifacts;
 }): { ok: boolean; failureCode: string; checks: Record<string, unknown> } {
-  const synthesize = input.artifacts.steps.find((step) => step.stepKind === "synthesize");
+  const synthesizeCandidates = input.artifacts.steps.filter(
+    (step) => step.stepKind === "synthesize",
+  );
   const retrieve = input.artifacts.steps.find((step) => step.stepKind === "retrieve");
   const reservation = input.artifacts.reservation;
-  const mutatingTools = input.artifacts.toolOperationClasses.filter(
+  const disallowedClasses = input.artifacts.toolOperationClasses.filter(
     (operation) => operation !== "read_only",
   );
+  const completedExecute = input.artifacts.steps.some(
+    (step) => step.stepKind === "execute" && step.status === "completed",
+  );
+  const mutatingToolEvent =
+    disallowedClasses.length > 0 ||
+    input.artifacts.disallowedToolEventCount > 0 ||
+    completedExecute;
+  const matchedSynthesis =
+    reservation === null
+      ? undefined
+      : synthesizeCandidates.find(
+          (step) =>
+            step.status === "completed" && step.idempotencyKey === reservation.idempotencyKey,
+        );
   const checks: Record<string, unknown> = {
     run_id: input.run.id,
     reservation_id: reservation?.id ?? null,
     reservation_status: reservation?.status ?? null,
+    reservation_idempotency_key: reservation?.idempotencyKey ?? null,
     usage_knowledge: reservation?.usageKnowledge ?? "none",
     recorded_tokens: reservation?.status === "settled_known" ? reservation.actualTokens : null,
     recorded_cost_usd: reservation?.status === "settled_known" ? reservation.actualCostUsd : null,
+    hold_tokens: reservation?.holdTokens ?? null,
+    hold_cost_usd: reservation?.holdCostUsd ?? null,
     pricing_version: reservation?.pricingVersion ?? null,
     retrieve_step_status: retrieve?.status ?? null,
     retrieve_provider_contact: retrieve?.output?.providerContact === true,
     evidence_created: retrieve?.output?.evidenceCreated === true,
-    synthesize_step_status: synthesize?.status ?? null,
+    synthesize_step_status: matchedSynthesis?.status ?? null,
+    synthesize_idempotency_key: matchedSynthesis?.idempotencyKey ?? null,
     finding_count: input.artifacts.findingCount,
     approval_id: input.artifacts.approvalId,
     proposal_id: input.artifacts.proposalId,
-    canonical_mutation: mutatingTools.includes("canonical_write"),
-    external_execution:
-      mutatingTools.includes("external_write") ||
-      input.artifacts.steps.some(
-        (step) => step.stepKind === "execute" && step.status === "completed",
-      ),
+    canonical_mutation: disallowedClasses.includes("canonical_write"),
+    evidence_write: disallowedClasses.includes("evidence_write"),
+    archive_change: disallowedClasses.includes("archive_change"),
+    external_execution: disallowedClasses.includes("external_write") || completedExecute,
+    mutating_tool_event: mutatingToolEvent,
     semantic_correctness: "not_claimed",
   };
   let failureCode = "verification_failed";
   let ok = true;
-  if (checks.external_execution === true || checks.canonical_mutation === true) {
+  if (mutatingToolEvent) {
     ok = false;
     failureCode = "verification_boundary_violated";
   } else if (
@@ -558,11 +645,36 @@ export function evaluateReadonlyVerification(input: {
   } else if (reservation.actualTokens === null || reservation.actualCostUsd === null) {
     ok = false;
     failureCode = "provider_usage_not_settled";
-  } else if (!synthesize || synthesize.status !== "completed") {
+  } else if (!matchedSynthesis) {
     ok = false;
-    failureCode = "synthesis_not_recorded";
+    failureCode = synthesizeCandidates.some((step) => step.status === "completed")
+      ? "synthesis_identity_mismatch"
+      : "synthesis_not_recorded";
+  } else if (matchedSynthesis.pricingVersion !== reservation.pricingVersion) {
+    ok = false;
+    failureCode = "synthesis_pricing_mismatch";
+  } else if (matchedSynthesis.tokensUsed !== reservation.actualTokens) {
+    ok = false;
+    failureCode = "synthesis_token_mismatch";
+  } else if (!sameAmount(matchedSynthesis.costUsd, reservation.actualCostUsd)) {
+    ok = false;
+    failureCode = "synthesis_cost_mismatch";
+  } else if (
+    reservation.actualTokens > reservation.holdTokens ||
+    exceedsAmount(reservation.actualCostUsd, reservation.holdCostUsd)
+  ) {
+    ok = false;
+    failureCode = "provider_hold_exceeded";
   }
   return { ok, failureCode, checks };
+}
+
+function sameAmount(left: number, right: number): boolean {
+  return Math.abs(left - right) <= 1e-8;
+}
+
+function exceedsAmount(actual: number, ceiling: number): boolean {
+  return actual - ceiling > 1e-8;
 }
 
 async function advanceVerification(
@@ -572,6 +684,8 @@ async function advanceVerification(
 ): Promise<AdvanceResult> {
   const artifacts = await io.readVerificationArtifacts(run.id);
   if (!artifacts) {
+    const reservation = await readAttemptReservation(io, run);
+    if (isAdvanceResult(reservation)) return reservation;
     const failed = await io.transitionRun(
       run,
       invocationKey,
@@ -581,7 +695,7 @@ async function advanceVerification(
         "Verification could not read the durable run artifacts.",
       ),
     );
-    return outcome(200, "failed", failed, emptyAccounting(failed));
+    return outcome(200, "failed", failed, accountingFromReservation(failed, reservation));
   }
   const evaluation = evaluateReadonlyVerification({ run, artifacts });
   const recorded = await io.recordStep({
@@ -900,6 +1014,17 @@ async function executeBoundedSynthesisAttempt(input: {
   if (!input.budget.allowed) {
     return stopForBudget(io, run, input.invocationKey, input.budget);
   }
+  const providerTimeoutMs = boundedProviderTimeoutMs(
+    input.budget.run_latency_remaining,
+    input.providerAttemptTimeoutMs,
+  );
+  if (providerTimeoutMs < 1) {
+    return stopForBudget(io, run, input.invocationKey, {
+      ...input.budget,
+      allowed: false,
+      reason: "per_run_latency",
+    });
+  }
 
   if (run.cancel_requested_at) {
     return transitionFailure(
@@ -1070,9 +1195,7 @@ async function executeBoundedSynthesisAttempt(input: {
   });
   const reserved = parseReservePayload(reservedRaw);
   if (!reserved) {
-    return outcome(503, "failed", run, emptyAccounting(run), {
-      reason: "provider_reservation_unreadable",
-    });
+    return reservationUnestablished(run, "provider_reservation_unreadable");
   }
   if (!reserved.reserved) {
     if (reserved.reservation?.status === "settled_known") {
@@ -1118,6 +1241,17 @@ async function executeBoundedSynthesisAttempt(input: {
       denial.httpStatus,
     );
   }
+  if (
+    !reservationMatchesAttempt(
+      reserved.reservation,
+      attemptKey,
+      pricing.version,
+      holdTokens,
+      holdCost,
+    )
+  ) {
+    return reservationUnestablished(run, "provider_reservation_mismatch");
+  }
 
   const fresh = await io.getRun(run.id);
   run = fresh;
@@ -1135,8 +1269,7 @@ async function executeBoundedSynthesisAttempt(input: {
   }
 
   const controller = new AbortController();
-  const timeoutMs = input.providerAttemptTimeoutMs ?? PROVIDER_ATTEMPT_TIMEOUT_MS;
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const timeout = setTimeout(() => controller.abort(), providerTimeoutMs);
   const startedAt = io.now();
   let response: Response | undefined;
   let upstream: unknown;

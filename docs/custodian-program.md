@@ -149,11 +149,14 @@ Important gaps and contradictions must remain visible:
    Finding. Generic automation `brief` output fails closed. Database application and
    deployed behavior remain **UNVERIFIED**.
 4. M4 read-only verification checks durable reservation identity and settlement, usage
-   knowledge, factual tokens and cost when known, the expected provider step, finding
-   materialization counts, approval and proposal identity, and the absence of canonical
-   or external execution. `semantic_correctness` is `not_claimed`. Reaching `verifying`
-   or `completed` is not proof that a model conclusion is correct. Deployed behavior
-   remains **UNVERIFIED**.
+   knowledge, factual tokens and cost when known, agreement between that reservation and
+   the completed synthesis step, that known actual usage does not exceed the conservative
+   hold, finding materialization counts, approval and proposal identity, and the absence
+   of every tool operation class other than `read_only` (`evidence_write`,
+   `canonical_write`, `archive_change`, and `external_write`). An exact disallowed-event
+   count is required; a sampled tool-event page is not proof that no mutation occurred.
+   `semantic_correctness` is `not_claimed`. Reaching `verifying` or `completed` is not
+   proof that a model conclusion is correct. Deployed behavior remains **UNVERIFIED**.
 5. Approvals and automation foundations exist. The browser Approvals route is an
    owner-scoped proposal/gate decision surface; execution remains unavailable, and no
    resident loop was found in the inspected source.
@@ -497,12 +500,17 @@ Verification is a real stage, not a status label. A run must establish, as appli
 
 The M4 read-only verification stage inspects durable artifacts: run identity,
 provider-free retrieval, reservation identity and settlement, known factual tokens and
-cost, a completed synthesis step, finding count, approval and proposal identity when
-present, and the absence of canonical or external execution. `semantic_correctness` is
-always `not_claimed`. Unknown or missing provider usage fails the run closed. This
-proves persistence and boundary integrity. It does not prove that a model conclusion
-is correct. The closed Edge gate does not advance a run into this stage. M5 execution
-verification remains unimplemented.
+cost, and a completed synthesis step whose idempotency key, pricing version, tokens,
+and cost match that reservation. Known actual tokens and cost must be present and must
+not exceed the conservative hold. It also checks finding count, approval and proposal
+identity when present, and the absence of every tool operation class other than
+`read_only`, including `evidence_write`, `canonical_write`, `archive_change`, and
+`external_write`. That absence comes from an exact count of disallowed tool events, not
+from a bounded sample. `semantic_correctness` is always `not_claimed`. Unknown or
+missing provider usage fails the run closed. A hold that was exceeded fails verification
+and keeps the factual actual usage. This proves persistence and boundary integrity. It
+does not prove that a model conclusion is correct. The closed Edge gate does not
+advance a run into this stage. M5 execution verification remains unimplemented.
 
 ## 17. Resident attention and automation
 

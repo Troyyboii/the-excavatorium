@@ -29,8 +29,10 @@ import {
 } from "./runtime.ts";
 import {
   advanceCustodianRun,
+  countDisallowedToolEvents,
   parseReservationView,
   providerAttemptKey,
+  type DisallowedToolEventCounter,
   type ApprovalIdentity,
   type BudgetSnapshot,
   type CustodianIo,
@@ -706,43 +708,44 @@ async function readVerificationArtifacts(
 ): Promise<VerificationArtifacts | null> {
   const reservationSelect =
     "id,status,usage_knowledge,hold_tokens,hold_cost_usd,actual_tokens,actual_cost_usd,pricing_version,failure_code,in_flight_until,idempotency_key";
-  const [steps, reservations, findings, approvals, proposals, tools] = await Promise.all([
-    client
-      .from("agent_steps")
-      .select(
-        "id,step_kind,status,idempotency_key,output_payload,tokens_used,cost_usd,pricing_version",
-      )
-      .eq("run_id", runId),
-    client
-      .from("agent_provider_reservations")
-      .select(reservationSelect)
-      .eq("run_id", runId)
-      .eq("idempotency_key", providerAttemptKey(runId)),
-    client
-      .from("custodian_findings")
-      .select("id", { count: "exact", head: true })
-      .eq("origin_run_id", runId),
-    client
-      .from("approval_requests")
-      .select("id")
-      .eq("run_id", runId)
-      .order("created_at", { ascending: false })
-      .limit(1),
-    client
-      .from("change_proposals")
-      .select("id")
-      .eq("run_id", runId)
-      .order("created_at", { ascending: false })
-      .limit(1),
-    client.from("tool_events").select("operation_class").eq("run_id", runId).limit(50),
-  ]);
+  const [steps, reservations, findings, approvals, proposals, disallowedToolEventCount] =
+    await Promise.all([
+      client
+        .from("agent_steps")
+        .select(
+          "id,step_kind,status,idempotency_key,output_payload,tokens_used,cost_usd,pricing_version",
+        )
+        .eq("run_id", runId),
+      client
+        .from("agent_provider_reservations")
+        .select(reservationSelect)
+        .eq("run_id", runId)
+        .eq("idempotency_key", providerAttemptKey(runId)),
+      client
+        .from("custodian_findings")
+        .select("id", { count: "exact", head: true })
+        .eq("origin_run_id", runId),
+      client
+        .from("approval_requests")
+        .select("id")
+        .eq("run_id", runId)
+        .order("created_at", { ascending: false })
+        .limit(1),
+      client
+        .from("change_proposals")
+        .select("id")
+        .eq("run_id", runId)
+        .order("created_at", { ascending: false })
+        .limit(1),
+      countDisallowedToolEvents(client as unknown as DisallowedToolEventCounter, runId),
+    ]);
   if (
     steps.error ||
     reservations.error ||
     findings.error ||
     approvals.error ||
     proposals.error ||
-    tools.error
+    disallowedToolEventCount === null
   ) {
     return null;
   }
@@ -766,11 +769,8 @@ async function readVerificationArtifacts(
     findingCount: findings.count ?? 0,
     approvalId,
     proposalId,
-    toolOperationClasses: (tools.data ?? [])
-      .map((row) =>
-        isObject(row) && typeof row.operation_class === "string" ? row.operation_class : "",
-      )
-      .filter((operation) => operation.length > 0),
+    toolOperationClasses: [],
+    disallowedToolEventCount,
   };
 }
 
@@ -785,6 +785,7 @@ function createCustodianIo(auth: AuthenticatedSupabase): CustodianIo {
         reason: budget.reason,
         run_tokens_remaining: budget.run_tokens_remaining,
         run_cost_remaining: budget.run_cost_remaining,
+        run_latency_remaining: budget.run_latency_remaining,
       };
       return snapshot;
     },

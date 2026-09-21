@@ -1,14 +1,19 @@
 import { PROVIDER_EXECUTION_UNSUPPORTED, validSynthesis } from "./index.ts";
 import {
   advanceCustodianRun,
+  boundedProviderTimeoutMs,
+  countDisallowedToolEvents,
   evaluateReadonlyVerification,
   OPENAI_RESPONSES_URL,
   projectPublicRun,
+  PROVIDER_ATTEMPT_TIMEOUT_MS,
   providerFreeAdmissionSummary,
   type CustodianIo,
+  type DisallowedToolEventCounter,
   type ReservationView,
   type StepArtifact,
   type SynthesisRun,
+  type VerificationArtifacts,
 } from "./provider-attempt.ts";
 import { classifyModelPricing, classifyResponsesOutput } from "./runtime.ts";
 
@@ -137,8 +142,13 @@ type World = {
     reason: string;
     run_tokens_remaining: number;
     run_cost_remaining: number;
+    run_latency_remaining: number;
   };
   reservationReadError: boolean;
+  verificationUnavailable: boolean;
+  reserveResponse?:
+    | unknown
+    | ((idempotencyKey: string, payload: Record<string, unknown>) => unknown);
   fetchImpl: (
     url: string,
     init: { headers: Record<string, string>; signal?: AbortSignal },
@@ -171,8 +181,10 @@ function world(status = "synthesizing"): World {
       reason: "allowed",
       run_tokens_remaining: 100_000,
       run_cost_remaining: 10,
+      run_latency_remaining: 60_000,
     },
     reservationReadError: false,
+    verificationUnavailable: false,
     fetchImpl: () => Promise.resolve(Response.json(providerResponse(synthesis([finding()])))),
   };
 }
@@ -203,6 +215,7 @@ function ioFor(state: World): CustodianIo {
           reason: "cancel_requested",
           run_tokens_remaining: state.budget.run_tokens_remaining,
           run_cost_remaining: state.budget.run_cost_remaining,
+          run_latency_remaining: state.budget.run_latency_remaining,
         });
       }
       return Promise.resolve(state.budget);
@@ -257,8 +270,15 @@ function ioFor(state: World): CustodianIo {
       if (state.reservationReadError) return Promise.reject(new Error("reservation_unreadable"));
       return Promise.resolve(state.reservation);
     },
-    reserveProviderCall: () => {
+    reserveProviderCall: (_runId, idempotencyKey, payload) => {
       state.reserveCalls += 1;
+      if (state.reserveResponse !== undefined) {
+        const response =
+          typeof state.reserveResponse === "function"
+            ? state.reserveResponse(idempotencyKey, payload)
+            : state.reserveResponse;
+        return Promise.resolve(response);
+      }
       if (state.reservation) {
         const inFlight = Date.parse(state.reservation.inFlightUntil) > state.now;
         return Promise.resolve({
@@ -285,14 +305,14 @@ function ioFor(state: World): CustodianIo {
         id: "reservation-1",
         status: "held",
         usageKnowledge: "unknown",
-        holdTokens: 100,
-        holdCostUsd: 0.05,
+        holdTokens: payload.hold_tokens as number,
+        holdCostUsd: payload.hold_cost_usd as number,
         actualTokens: null,
         actualCostUsd: null,
-        pricingVersion: "2026-09-21",
+        pricingVersion: String(payload.pricing_version),
         failureCode: null,
         inFlightUntil: new Date(state.now + 90_000).toISOString(),
-        idempotencyKey: `provider-attempt:${runId}:synthesize`,
+        idempotencyKey,
       };
       if (state.cancelOnReserve) state.run.cancel_requested_at = new Date(state.now).toISOString();
       return Promise.resolve({
@@ -376,15 +396,18 @@ function ioFor(state: World): CustodianIo {
         },
       });
     },
-    readVerificationArtifacts: () =>
-      Promise.resolve({
+    readVerificationArtifacts: () => {
+      if (state.verificationUnavailable) return Promise.resolve(null);
+      return Promise.resolve({
         steps: state.steps,
         reservation: state.reservation,
         findingCount: state.materializeCalls,
         approvalId: state.approvals > 0 ? "approval-1" : null,
         proposalId: null,
         toolOperationClasses: [],
-      }),
+        disallowedToolEventCount: 0,
+      });
+    },
     getEnv: (name) => {
       if (name === "OPENAI_API_KEY") return state.apiKey;
       if (name === "CUSTODIAN_MODEL_PRICING_JSON") return state.pricing;
@@ -436,6 +459,99 @@ function heldReservation(state: World, inFlight = true): ReservationView {
     failureCode: null,
     inFlightUntil: new Date(state.now + (inFlight ? 30_000 : -1_000)).toISOString(),
     idempotencyKey: `provider-attempt:${runId}:synthesize`,
+  };
+}
+
+function unreadableDetail(): string {
+  return "The provider reservation could not be read. Provider contact and usage could not be established. This invocation made no new provider call.";
+}
+
+function claimsNoPriorProviderContact(value: unknown): boolean {
+  const text = JSON.stringify(value).toLowerCase();
+  return (
+    text.includes("never contacted") ||
+    text.includes("no provider call was made") ||
+    text.includes("no provider usage was assumed")
+  );
+}
+
+function echoedReservation(
+  key: string,
+  payload: Record<string, unknown>,
+  patch: Partial<ReservationView> = {},
+) {
+  const reservation: ReservationView = {
+    id: "reservation-1",
+    status: "held",
+    usageKnowledge: "unknown",
+    holdTokens: payload.hold_tokens as number,
+    holdCostUsd: payload.hold_cost_usd as number,
+    actualTokens: null,
+    actualCostUsd: null,
+    pricingVersion: String(payload.pricing_version),
+    failureCode: null,
+    inFlightUntil: "2026-09-21T19:02:00.000Z",
+    idempotencyKey: key,
+    ...patch,
+  };
+  return {
+    reserved: true,
+    replay: false,
+    reason: "reserved",
+    reservation: reservationRow(reservation),
+  };
+}
+
+function passingVerification(patch?: {
+  step?: Partial<StepArtifact>;
+  reservation?: Partial<ReservationView>;
+  toolOperationClasses?: string[];
+  disallowedToolEventCount?: number;
+}): VerificationArtifacts {
+  const attemptKey = `provider-attempt:${runId}:synthesize`;
+  return {
+    steps: [
+      {
+        id: "retrieve",
+        stepKind: "retrieve",
+        status: "completed",
+        idempotencyKey: "retrieve",
+        output: { providerContact: false, evidenceCreated: false },
+        tokensUsed: 0,
+        costUsd: 0,
+        pricingVersion: null,
+      },
+      {
+        id: "synthesize",
+        stepKind: "synthesize",
+        status: "completed",
+        idempotencyKey: attemptKey,
+        output: synthesis([finding()]),
+        tokensUsed: 12,
+        costUsd: 0.001,
+        pricingVersion: "2026-09-21",
+        ...patch?.step,
+      },
+    ],
+    reservation: {
+      id: "reservation-1",
+      status: "settled_known",
+      usageKnowledge: "known",
+      holdTokens: 20,
+      holdCostUsd: 0.01,
+      actualTokens: 12,
+      actualCostUsd: 0.001,
+      pricingVersion: "2026-09-21",
+      failureCode: null,
+      inFlightUntil: "2026-09-21T19:00:00.000Z",
+      idempotencyKey: attemptKey,
+      ...patch?.reservation,
+    },
+    findingCount: 1,
+    approvalId: null,
+    proposalId: null,
+    toolOperationClasses: patch?.toolOperationClasses ?? ["read_only"],
+    disallowedToolEventCount: patch?.disallowedToolEventCount ?? 0,
   };
 }
 
@@ -768,7 +884,7 @@ Deno.test("verification records boundary checks and does not claim semantic corr
           id: "synthesize",
           stepKind: "synthesize",
           status: "completed",
-          idempotencyKey: "synthesize",
+          idempotencyKey: `provider-attempt:${runId}:synthesize`,
           output: synthesis([finding()]),
           tokensUsed: 12,
           costUsd: 0.001,
@@ -779,19 +895,20 @@ Deno.test("verification records boundary checks and does not claim semantic corr
         id: "reservation-1",
         status: "settled_known",
         usageKnowledge: "known",
-        holdTokens: 10,
+        holdTokens: 20,
         holdCostUsd: 0.01,
         actualTokens: 12,
         actualCostUsd: 0.001,
         pricingVersion: "2026-09-21",
         failureCode: null,
         inFlightUntil: "2026-09-21T19:00:00.000Z",
-        idempotencyKey: "provider-attempt",
+        idempotencyKey: `provider-attempt:${runId}:synthesize`,
       },
       findingCount: 1,
       approvalId: null,
       proposalId: null,
       toolOperationClasses: [],
+      disallowedToolEventCount: 0,
     },
   });
   assertEquals(checks.ok, true);
@@ -832,6 +949,7 @@ Deno.test("verification records boundary checks and does not claim semantic corr
       approvalId: null,
       proposalId: null,
       toolOperationClasses: [],
+      disallowedToolEventCount: 0,
     },
   });
   assertEquals(unknown.ok, false);
@@ -983,6 +1101,8 @@ Deno.test("terminal and paused reads keep the provider reservation accounting", 
   const unavailable = await advance(unreadable);
   assertEquals(unavailable.status, 503);
   assertEquals(unavailable.body.reason, "provider_reservation_unreadable");
+  assertEquals(unavailable.body.detail, unreadableDetail());
+  assertEquals(claimsNoPriorProviderContact(unavailable), false);
   assertEquals(JSON.stringify(unavailable).includes('"usageKnowledge":"none"'), false);
   assertEquals(unreadable.fetches, 0);
 });
@@ -1027,4 +1147,274 @@ Deno.test("a stalled response body after headers remains an unknown hold", async
   assertEquals(state.fetches, 1);
   assertEquals(usage(replay).usageKnowledge, "unknown");
   assertEquals(usage(replay).hold, usage(timed).hold);
+});
+
+Deno.test("remaining latency blocks contact and caps the provider timeout", async () => {
+  assertEquals(boundedProviderTimeoutMs(0), 0);
+  assertEquals(boundedProviderTimeoutMs(-5, 30_000), 0);
+  assertEquals(boundedProviderTimeoutMs(Number.NaN, 30), 0);
+  assertEquals(boundedProviderTimeoutMs(20), 20);
+  assertEquals(boundedProviderTimeoutMs(20, 30), 20);
+  assertEquals(boundedProviderTimeoutMs(60_000), PROVIDER_ATTEMPT_TIMEOUT_MS);
+  assertEquals(boundedProviderTimeoutMs(60_000, 30_000), PROVIDER_ATTEMPT_TIMEOUT_MS);
+  assertEquals(boundedProviderTimeoutMs(60_000, 30), 30);
+
+  const exhausted = world();
+  exhausted.budget.run_latency_remaining = 0;
+  exhausted.fetchImpl = () => Promise.reject(new Error("fetch_must_not_run"));
+  const stopped = await advance(exhausted, "invocation-1", true, 30_000);
+  assertEquals(exhausted.reserveCalls, 0);
+  assertEquals(exhausted.fetches, 0);
+  assertEquals(exhausted.run.status, "budget_stopped");
+  assertEquals(exhausted.run.failure_code, "per_run_latency");
+  assertEquals(stopped.body.state, "stopped");
+
+  const tight = world();
+  tight.budget.run_latency_remaining = 20;
+  tight.fetchImpl = (_url, init) => {
+    const body = new ReadableStream({
+      start(controller) {
+        const abort = () =>
+          controller.error(Object.assign(new Error("aborted"), { name: "AbortError" }));
+        if (init.signal?.aborted) abort();
+        else init.signal?.addEventListener("abort", abort, { once: true });
+      },
+    });
+    return Promise.resolve(
+      new Response(body, { status: 200, headers: { "content-type": "application/json" } }),
+    );
+  };
+  const timed = await Promise.race([
+    advance(tight),
+    new Promise<never>((_resolve, reject) => {
+      setTimeout(() => reject(new Error("20ms latency budget was not enforced")), 1_000);
+    }),
+  ]);
+  assertEquals(tight.fetches, 1);
+  assertEquals(tight.reserveCalls, 1);
+  assertEquals(tight.reservation?.usageKnowledge, "unknown");
+  assertEquals(usage(timed).usageKnowledge, "unknown");
+  assertEquals(boundedProviderTimeoutMs(tight.budget.run_latency_remaining) <= 20, true);
+});
+
+Deno.test("a successful reserve must identify the expected hold before fetch", async () => {
+  const cases: Array<{
+    response: unknown | ((key: string, payload: Record<string, unknown>) => unknown);
+    reason: string;
+  }> = [
+    {
+      response: { reserved: true, reason: "reserved", reservation: null },
+      reason: "provider_reservation_mismatch",
+    },
+    {
+      response: { reserved: true, reservation: null },
+      reason: "provider_reservation_unreadable",
+    },
+    {
+      response: (key: string, payload: Record<string, unknown>) =>
+        echoedReservation(key, payload, { idempotencyKey: "other" }),
+      reason: "provider_reservation_mismatch",
+    },
+    {
+      response: (key: string, payload: Record<string, unknown>) =>
+        echoedReservation(key, payload, { pricingVersion: "other" }),
+      reason: "provider_reservation_mismatch",
+    },
+    {
+      response: (key: string, payload: Record<string, unknown>) =>
+        echoedReservation(key, payload, { holdTokens: (payload.hold_tokens as number) + 1 }),
+      reason: "provider_reservation_mismatch",
+    },
+    {
+      response: (key: string, payload: Record<string, unknown>) =>
+        echoedReservation(key, payload, { holdCostUsd: (payload.hold_cost_usd as number) + 1 }),
+      reason: "provider_reservation_mismatch",
+    },
+    {
+      response: (key: string, payload: Record<string, unknown>) =>
+        echoedReservation(key, payload, { status: "settled_known" }),
+      reason: "provider_reservation_mismatch",
+    },
+    {
+      response: (key: string, payload: Record<string, unknown>) =>
+        echoedReservation(key, payload, { usageKnowledge: "known" }),
+      reason: "provider_reservation_mismatch",
+    },
+  ];
+  for (const item of cases) {
+    const state = world();
+    state.reserveResponse = item.response;
+    state.fetchImpl = () => Promise.reject(new Error("fetch_must_not_run"));
+    const result = await advance(state);
+    assertEquals(state.fetches, 0);
+    assertEquals(state.reserveCalls, 1);
+    assertEquals(result.status, 503);
+    assertEquals(result.body.state, "unavailable");
+    assertEquals(result.body.reason, item.reason);
+    assertEquals(result.body.detail, unreadableDetail());
+    assertEquals(claimsNoPriorProviderContact(result), false);
+    assertEquals(JSON.stringify(result).includes("usageKnowledge"), false);
+  }
+});
+
+Deno.test("verification fails for every non-read-only tool class", () => {
+  const run = baseRun("verifying");
+  for (const operation of [
+    "evidence_write",
+    "archive_change",
+    "canonical_write",
+    "external_write",
+  ]) {
+    const violated = evaluateReadonlyVerification({
+      run,
+      artifacts: passingVerification({ toolOperationClasses: [operation] }),
+    });
+    assertEquals(violated.ok, false);
+    assertEquals(violated.failureCode, "verification_boundary_violated");
+  }
+  const readOnly = evaluateReadonlyVerification({ run, artifacts: passingVerification() });
+  assertEquals(readOnly.ok, true);
+  assertEquals(readOnly.checks.mutating_tool_event, false);
+
+  const sampledAway = evaluateReadonlyVerification({
+    run,
+    artifacts: passingVerification({
+      toolOperationClasses: Array.from({ length: 50 }, () => "read_only"),
+      disallowedToolEventCount: 51,
+    }),
+  });
+  assertEquals(sampledAway.ok, false);
+  assertEquals(sampledAway.failureCode, "verification_boundary_violated");
+
+  const tail = evaluateReadonlyVerification({
+    run,
+    artifacts: passingVerification({
+      toolOperationClasses: [...Array.from({ length: 50 }, () => "read_only"), "evidence_write"],
+    }),
+  });
+  assertEquals(tail.ok, false);
+  assertEquals(tail.failureCode, "verification_boundary_violated");
+});
+
+Deno.test("disallowed tool count is exact and does not use a row limit", async () => {
+  let sawLimit = false;
+  const client = {
+    from(table: string) {
+      assertEquals(table, "tool_events");
+      return {
+        select(columns: string, options: { count: string; head: boolean }) {
+          assertEquals(columns, "id");
+          assertEquals(options.count, "exact");
+          assertEquals(options.head, true);
+          return {
+            eq(column: string, value: string) {
+              assertEquals(column, "run_id");
+              assertEquals(value, runId);
+              return {
+                neq(columnName: string, operationClass: string) {
+                  assertEquals(columnName, "operation_class");
+                  assertEquals(operationClass, "read_only");
+                  return Promise.resolve({ count: 51, error: null });
+                },
+                limit() {
+                  sawLimit = true;
+                  return Promise.resolve({ count: 0, error: null });
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+  const count = await countDisallowedToolEvents(
+    client as unknown as DisallowedToolEventCounter,
+    runId,
+  );
+  assertEquals(count, 51);
+  assertEquals(sawLimit, false);
+
+  const unreadable = await countDisallowedToolEvents(
+    {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            neq: () => Promise.resolve({ count: null, error: { message: "unavailable" } }),
+          }),
+        }),
+      }),
+    } as unknown as DisallowedToolEventCounter,
+    runId,
+  );
+  assertEquals(unreadable, null);
+});
+
+Deno.test("verification rejects synthesis and reservation identity mismatches", () => {
+  const run = baseRun("verifying");
+  const cases: Array<{ patch: Parameters<typeof passingVerification>[0]; code: string }> = [
+    {
+      patch: { step: { idempotencyKey: "synthesize" } },
+      code: "synthesis_identity_mismatch",
+    },
+    {
+      patch: { step: { pricingVersion: "other" } },
+      code: "synthesis_pricing_mismatch",
+    },
+    {
+      patch: { step: { tokensUsed: 11 } },
+      code: "synthesis_token_mismatch",
+    },
+    {
+      patch: { step: { costUsd: 0.002 } },
+      code: "synthesis_cost_mismatch",
+    },
+    {
+      patch: { reservation: { holdTokens: 10, holdCostUsd: 0.0001 } },
+      code: "provider_hold_exceeded",
+    },
+  ];
+  for (const item of cases) {
+    const result = evaluateReadonlyVerification({
+      run,
+      artifacts: passingVerification(item.patch),
+    });
+    assertEquals(result.ok, false);
+    assertEquals(result.failureCode, item.code);
+  }
+  const exceeded = evaluateReadonlyVerification({
+    run,
+    artifacts: passingVerification({ reservation: { holdTokens: 10 } }),
+  });
+  assertEquals(exceeded.ok, false);
+  assertEquals(exceeded.failureCode, "provider_hold_exceeded");
+  assertEquals(exceeded.checks.recorded_tokens, 12);
+  assertEquals(exceeded.checks.recorded_cost_usd, 0.001);
+});
+
+Deno.test("verification artifact failure preserves settled provider accounting", async () => {
+  const state = world("verifying");
+  state.verificationUnavailable = true;
+  state.reservation = settledReservation(state);
+  state.fetchImpl = () => Promise.reject(new Error("fetch_must_not_run"));
+  const failed = await advance(state);
+  assertEquals(state.fetches, 0);
+  assertEquals(state.reserveCalls, 0);
+  assertEquals(failed.body.state, "failed");
+  assertEquals(state.run.failure_code, "verification_artifacts_unavailable");
+  assertEquals(usage(failed).usageKnowledge, "known");
+  assertEquals(usage(failed).costUsd, 0.0024);
+  assertEquals(usage(failed).pricingVersion, "2026-09-21");
+
+  const unreadable = world("verifying");
+  unreadable.verificationUnavailable = true;
+  unreadable.reservationReadError = true;
+  unreadable.reservation = settledReservation(unreadable);
+  const unavailable = await advance(unreadable);
+  assertEquals(unavailable.status, 503);
+  assertEquals(unavailable.body.reason, "provider_reservation_unreadable");
+  assertEquals(unavailable.body.detail, unreadableDetail());
+  assertEquals(claimsNoPriorProviderContact(unavailable), false);
+  assertEquals(JSON.stringify(unavailable).includes("usageKnowledge"), false);
+  assertEquals(unreadable.fetches, 0);
+  assertEquals(unreadable.run.status, "verifying");
 });
