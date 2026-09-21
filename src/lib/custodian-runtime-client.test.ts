@@ -5,6 +5,7 @@ import {
   custodianRunInvocation,
   custodianRunsKey,
   describeCustodianRunAccounting,
+  interpretCustodianFunctionResult,
   invokeCustodianRun,
   mapCustodianRunRow,
   mapProviderHoldRow,
@@ -134,6 +135,16 @@ describe("Custodian run read contract", () => {
     await expect(invokeCustodianRun(invocation)).resolves.toEqual({
       invoked: false,
       reason: "provider_surface_blocked",
+    });
+    const failed = interpretCustodianFunctionResult({
+      error: { message: "sk-secret Bearer raw-provider-payload" },
+    });
+    expect(failed).toEqual({ invoked: false, reason: "invocation_failed" });
+    expect(JSON.stringify(failed)).not.toContain("sk-secret");
+    expect(JSON.stringify(failed)).not.toContain("Bearer");
+    expect(interpretCustodianFunctionResult({ error: null })).toEqual({
+      invoked: true,
+      reason: "invoked",
     });
   });
 

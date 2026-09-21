@@ -255,16 +255,29 @@ export function custodianRunInvocation(
   return { runId, invocationKey };
 }
 
-export async function invokeCustodianRun(
-  input: CustodianRunInvocation,
-): Promise<{ invoked: boolean; reason: "provider_surface_blocked" | "invoked" }> {
+export function interpretCustodianFunctionResult(result: { error: unknown }): {
+  invoked: boolean;
+  reason: "invoked" | "invocation_failed";
+} {
+  if (result.error) return { invoked: false, reason: "invocation_failed" };
+  return { invoked: true, reason: "invoked" };
+}
+
+export async function invokeCustodianRun(input: CustodianRunInvocation): Promise<{
+  invoked: boolean;
+  reason: "provider_surface_blocked" | "invoked" | "invocation_failed";
+}> {
   const providerSurfaceEnabled = CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER as boolean;
   if (!providerSurfaceEnabled) {
     return { invoked: false, reason: "provider_surface_blocked" };
   }
   const body = custodianRunInvocation(input.runId, input.invocationKey);
-  await supabase.functions.invoke("custodian-run", { body });
-  return { invoked: true, reason: "invoked" };
+  try {
+    const result = await supabase.functions.invoke("custodian-run", { body });
+    return interpretCustodianFunctionResult(result);
+  } catch {
+    return { invoked: false, reason: "invocation_failed" };
+  }
 }
 
 const RUN_SELECT =

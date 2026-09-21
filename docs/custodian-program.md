@@ -135,8 +135,11 @@ Important gaps and contradictions must remain visible:
    null policy. `selectRuntimeModel` requires an explicit owner-policy tier list; the
    exported source model list is not a selection default. `custodian_run_budget_status`
    denies a missing or inactive policy and counts held provider reservations separately
-   from recorded usage. The Edge function does not call the hold RPCs yet, and provider
-   execution remains blocked.
+   from recorded usage. M4B source calls `custodian_reserve_provider_call` and
+   `custodian_settle_provider_reservation` only inside the open-gate synthesis path.
+   `handleRequest` does not enter that path while `PROVIDER_EXECUTION_UNSUPPORTED` is
+   true, so production provider execution remains blocked. Deployed behavior remains
+   **UNVERIFIED**.
 2. The Edge Function contains a real OpenAI Responses call path behind its hard gate.
    This is dormant plumbing, not active provider execution.
 3. The runtime still persists generic `agent_steps` output, and that output remains
@@ -145,9 +148,12 @@ Important gaps and contradictions must remain visible:
    and the protected `custodian_materialize_finding` RPC before creating an analysis
    Finding. Generic automation `brief` output fails closed. Database application and
    deployed behavior remain **UNVERIFIED**.
-4. Verification currently records a bounded run-state/no-external-execution check.
-   Reaching `verifying` or `completed` is not substantive proof that a conclusion,
-   source, action, or external result is correct.
+4. M4 read-only verification checks durable reservation identity and settlement, usage
+   knowledge, factual tokens and cost when known, the expected provider step, finding
+   materialization counts, approval and proposal identity, and the absence of canonical
+   or external execution. `semantic_correctness` is `not_claimed`. Reaching `verifying`
+   or `completed` is not proof that a model conclusion is correct. Deployed behavior
+   remains **UNVERIFIED**.
 5. Approvals and automation foundations exist. The browser Approvals route is an
    owner-scoped proposal/gate decision surface; execution remains unavailable, and no
    resident loop was found in the inspected source.

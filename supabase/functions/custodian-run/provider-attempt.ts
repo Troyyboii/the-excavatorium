@@ -390,23 +390,87 @@ function failurePatch(code: string, message: string): Record<string, unknown> {
   return { failure_code: code, failure_message: message };
 }
 
+const SPEND_BUDGET_REASONS = new Set([
+  "per_run_tokens",
+  "per_run_cost",
+  "per_run_latency",
+  "per_run_tool_events",
+  "daily_tokens",
+  "monthly_tokens",
+  "daily_cost",
+  "monthly_cost",
+]);
+
+function budgetDenial(reason: string): {
+  next: "cancelled" | "budget_stopped" | "blocked";
+  code: string;
+  message: string;
+} {
+  if (reason === "cancel_requested") {
+    return {
+      next: "cancelled",
+      code: "cancelled",
+      message: "The owner requested cancellation before provider contact.",
+    };
+  }
+  if (SPEND_BUDGET_REASONS.has(reason)) {
+    return {
+      next: "budget_stopped",
+      code: reason,
+      message: "The persisted run budget stopped execution before provider contact.",
+    };
+  }
+  return {
+    next: "blocked",
+    code: reason || "budget_denied",
+    message: "The persisted budget status stopped execution before provider contact.",
+  };
+}
+
+function reservationUnread(run: SynthesisRun): AdvanceResult {
+  return {
+    status: 503,
+    body: {
+      state: "unavailable",
+      reason: "provider_reservation_unreadable",
+      detail:
+        "The provider reservation could not be read. No provider usage was assumed, and no provider call was made.",
+      run: {
+        id: run.id,
+        caseId: run.case_id,
+        status: run.status,
+      },
+    },
+  };
+}
+
+async function readAttemptReservation(
+  io: CustodianIo,
+  run: SynthesisRun,
+): Promise<ReservationView | null | AdvanceResult> {
+  try {
+    return await io.getReservation(run.id, providerAttemptKey(run.id));
+  } catch {
+    return reservationUnread(run);
+  }
+}
+
+function isAdvanceResult(value: ReservationView | null | AdvanceResult): value is AdvanceResult {
+  return value !== null && "body" in value && "status" in value;
+}
+
 async function stopForBudget(
   io: CustodianIo,
   run: SynthesisRun,
   invocationKey: string,
   budget: BudgetSnapshot,
 ): Promise<AdvanceResult> {
-  const cancel = budget.reason === "cancel_requested";
+  const denial = budgetDenial(budget.reason);
   const next = await io.transitionRun(
     run,
     invocationKey,
-    cancel ? "cancelled" : "budget_stopped",
-    failurePatch(
-      cancel ? "cancelled" : "budget_exceeded",
-      cancel
-        ? "The owner requested cancellation before provider contact."
-        : "The persisted run budget stopped execution.",
-    ),
+    denial.next,
+    failurePatch(denial.code, denial.message),
   );
   return outcome(200, "stopped", next, emptyAccounting(next));
 }
@@ -800,11 +864,13 @@ async function executeBoundedSynthesisAttempt(input: {
   invocationKey: string;
   budget: BudgetSnapshot;
   validSynthesis: (value: unknown) => boolean;
+  providerAttemptTimeoutMs?: number;
 }): Promise<AdvanceResult> {
   const { io, ownerId } = input;
   let run = input.run;
   const attemptKey = providerAttemptKey(run.id);
-  const existing = await io.getReservation(run.id, attemptKey);
+  const existing = await readAttemptReservation(io, run);
+  if (isAdvanceResult(existing)) return existing;
   if (existing?.status === "settled_known") {
     return continueFromRecordedStep(io, ownerId, run, input.invocationKey, attemptKey, existing);
   }
@@ -829,6 +895,10 @@ async function executeBoundedSynthesisAttempt(input: {
       detail:
         "An unresolved provider hold remains. The runtime will not make another provider call. Cancellation does not prove the provider was never contacted.",
     });
+  }
+
+  if (!input.budget.allowed) {
+    return stopForBudget(io, run, input.invocationKey, input.budget);
   }
 
   if (run.cancel_requested_at) {
@@ -1065,9 +1135,11 @@ async function executeBoundedSynthesisAttempt(input: {
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), PROVIDER_ATTEMPT_TIMEOUT_MS);
+  const timeoutMs = input.providerAttemptTimeoutMs ?? PROVIDER_ATTEMPT_TIMEOUT_MS;
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const startedAt = io.now();
-  let response: Response;
+  let response: Response | undefined;
+  let upstream: unknown;
   try {
     response = await io.fetchProvider(OPENAI_RESPONSES_URL, {
       method: "POST",
@@ -1078,32 +1150,25 @@ async function executeBoundedSynthesisAttempt(input: {
       body: requestBody,
       signal: controller.signal,
     });
+    upstream = await response.json();
   } catch (error) {
-    clearTimeout(timeout);
-    const code = isAbortError(error) ? "openai_timeout" : "openai_unavailable";
-    const message = isAbortError(error)
-      ? "Custodian model service timed out. Usage is unknown and the hold remains."
-      : "Custodian model contact is uncertain. Usage is unknown and the hold remains.";
+    const aborted = isAbortError(error);
+    const received = response;
+    let code = "openai_unavailable";
+    let message = "Custodian model contact is uncertain. Usage is unknown and the hold remains.";
+    if (aborted) {
+      code = "openai_timeout";
+      message = "Custodian model service timed out. Usage is unknown and the hold remains.";
+    } else if (received) {
+      code = received.ok ? "openai_invalid_response" : "openai_unavailable";
+      message =
+        "Provider contact occurred, but reliable usage was not available. The hold remains.";
+    }
     return settleUnknown(io, ownerId, run, input.invocationKey, attemptKey, code, message);
   } finally {
     clearTimeout(timeout);
   }
   const latencyMs = Math.max(0, Math.round(io.now() - startedAt));
-
-  let upstream: unknown;
-  try {
-    upstream = await response.json();
-  } catch {
-    return settleUnknown(
-      io,
-      ownerId,
-      run,
-      input.invocationKey,
-      attemptKey,
-      response.ok ? "openai_invalid_response" : "openai_unavailable",
-      "Provider contact occurred, but reliable usage was not available. The hold remains.",
-    );
-  }
   const usage = readUsage(upstream);
   if (!response.ok || !usage) {
     return settleUnknown(
@@ -1235,11 +1300,20 @@ export async function advanceCustodianRun(input: {
   invocation: { runId: string; invocationKey: string };
   providerExecutionUnsupported: boolean;
   validSynthesis: (value: unknown) => boolean;
+  providerAttemptTimeoutMs?: number;
 }): Promise<AdvanceResult> {
   const { io, ownerId, invocation } = input;
   let run = await io.getRun(invocation.runId);
-  if (TERMINAL_STATES.has(run.status)) return outcome(200, "terminal", run, emptyAccounting(run));
-  if (run.status === "awaiting_approval") return outcome(200, "paused", run, emptyAccounting(run));
+  if (TERMINAL_STATES.has(run.status) || run.status === "awaiting_approval") {
+    const reservation = await readAttemptReservation(io, run);
+    if (isAdvanceResult(reservation)) return reservation;
+    return outcome(
+      200,
+      run.status === "awaiting_approval" ? "paused" : "terminal",
+      run,
+      accountingFromReservation(run, reservation),
+    );
+  }
 
   if (run.status === "executing") {
     const blockedStep = await io.recordStep({
@@ -1280,6 +1354,21 @@ export async function advanceCustodianRun(input: {
 
   if (run.status === "synthesizing") {
     if (input.providerExecutionUnsupported) {
+      const reservation = await readAttemptReservation(io, run);
+      if (isAdvanceResult(reservation)) return reservation;
+      if (reservation) {
+        const state =
+          reservation.status === "held"
+            ? "held"
+            : reservation.status === "settled_known"
+              ? "replay"
+              : "stopped";
+        return outcome(200, state, run, accountingFromReservation(run, reservation), {
+          reason: "provider_execution_unsupported",
+          detail:
+            "Provider execution is unsupported. The existing reservation was left unchanged and no provider call was made.",
+        });
+      }
       if (!budget.allowed) return stopForBudget(io, run, invocation.invocationKey, budget);
       return blockUnsupported(io, run, invocation.invocationKey);
     }
@@ -1290,6 +1379,7 @@ export async function advanceCustodianRun(input: {
       invocationKey: invocation.invocationKey,
       budget,
       validSynthesis: input.validSynthesis,
+      providerAttemptTimeoutMs: input.providerAttemptTimeoutMs,
     });
   }
 

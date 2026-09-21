@@ -132,7 +132,17 @@ type World = {
   materializeError: boolean;
   transitionFailures: number;
   now: number;
-  fetchImpl: (url: string, init: { headers: Record<string, string> }) => Promise<Response>;
+  budget: {
+    allowed: boolean;
+    reason: string;
+    run_tokens_remaining: number;
+    run_cost_remaining: number;
+  };
+  reservationReadError: boolean;
+  fetchImpl: (
+    url: string,
+    init: { headers: Record<string, string>; signal?: AbortSignal },
+  ) => Promise<Response>;
 };
 
 function world(status = "synthesizing"): World {
@@ -156,6 +166,13 @@ function world(status = "synthesizing"): World {
     materializeError: false,
     transitionFailures: 0,
     now: Date.parse("2026-09-21T19:00:00.000Z"),
+    budget: {
+      allowed: true,
+      reason: "allowed",
+      run_tokens_remaining: 100_000,
+      run_cost_remaining: 10,
+    },
+    reservationReadError: false,
     fetchImpl: () => Promise.resolve(Response.json(providerResponse(synthesis([finding()])))),
   };
 }
@@ -179,13 +196,17 @@ function reservationRow(reservation: ReservationView) {
 function ioFor(state: World): CustodianIo {
   return {
     getRun: () => Promise.resolve(state.run),
-    getBudget: () =>
-      Promise.resolve({
-        allowed: state.run.cancel_requested_at === null,
-        reason: state.run.cancel_requested_at ? "cancel_requested" : "allowed",
-        run_tokens_remaining: 100_000,
-        run_cost_remaining: 10,
-      }),
+    getBudget: () => {
+      if (state.run.cancel_requested_at) {
+        return Promise.resolve({
+          allowed: false,
+          reason: "cancel_requested",
+          run_tokens_remaining: state.budget.run_tokens_remaining,
+          run_cost_remaining: state.budget.run_cost_remaining,
+        });
+      }
+      return Promise.resolve(state.budget);
+    },
     transitionRun: (run, _invocationKey, nextStatus, patch) => {
       if (state.transitionFailures > 0) {
         state.transitionFailures -= 1;
@@ -232,7 +253,10 @@ function ioFor(state: World): CustodianIo {
       if (state.policyError) return Promise.reject(new Error("policy"));
       return Promise.resolve(state.allowedTiers);
     },
-    getReservation: () => Promise.resolve(state.reservation),
+    getReservation: () => {
+      if (state.reservationReadError) return Promise.reject(new Error("reservation_unreadable"));
+      return Promise.resolve(state.reservation);
+    },
     reserveProviderCall: () => {
       state.reserveCalls += 1;
       if (state.reservation) {
@@ -379,14 +403,56 @@ function ioFor(state: World): CustodianIo {
   };
 }
 
-async function advance(state: World, invocationKey = "invocation-1", gateOpen = true) {
+async function advance(
+  state: World,
+  invocationKey = "invocation-1",
+  gateOpen = true,
+  timeoutMs?: number,
+) {
   return advanceCustodianRun({
     io: ioFor(state),
     ownerId: "owner-1",
     invocation: { runId, invocationKey },
     providerExecutionUnsupported: gateOpen ? false : PROVIDER_EXECUTION_UNSUPPORTED,
     validSynthesis,
+    providerAttemptTimeoutMs: timeoutMs,
   });
+}
+
+function denyBudget(state: World, reason: string) {
+  state.budget = { ...state.budget, allowed: false, reason };
+}
+
+function heldReservation(state: World, inFlight = true): ReservationView {
+  return {
+    id: "reservation-1",
+    status: "held",
+    usageKnowledge: "unknown",
+    holdTokens: 40,
+    holdCostUsd: 0.02,
+    actualTokens: null,
+    actualCostUsd: null,
+    pricingVersion: "2026-09-21",
+    failureCode: null,
+    inFlightUntil: new Date(state.now + (inFlight ? 30_000 : -1_000)).toISOString(),
+    idempotencyKey: `provider-attempt:${runId}:synthesize`,
+  };
+}
+
+function settledReservation(state: World): ReservationView {
+  return {
+    id: "reservation-1",
+    status: "settled_known",
+    usageKnowledge: "known",
+    holdTokens: 40,
+    holdCostUsd: 0.02,
+    actualTokens: 1_250,
+    actualCostUsd: 0.0024,
+    pricingVersion: "2026-09-21",
+    failureCode: null,
+    inFlightUntil: new Date(state.now + 30_000).toISOString(),
+    idempotencyKey: `provider-attempt:${runId}:synthesize`,
+  };
 }
 
 function usage(body: { body: Record<string, unknown> }) {
@@ -800,4 +866,165 @@ Deno.test("public projection never labels recorded cost as unpriced", () => {
     }).kind,
     "refusal",
   );
+});
+
+Deno.test("latency and tool-event budget denials reserve nothing and fetch nothing", async () => {
+  for (const reason of [
+    "per_run_latency",
+    "per_run_tool_events",
+    "per_run_tokens",
+    "per_run_cost",
+    "daily_cost",
+    "monthly_tokens",
+  ]) {
+    const state = world();
+    denyBudget(state, reason);
+    state.fetchImpl = () => Promise.reject(new Error("fetch_must_not_run"));
+    const stopped = await advance(state);
+    assertEquals(state.reserveCalls, 0);
+    assertEquals(state.fetches, 0);
+    assertEquals(state.reservation, null);
+    assertEquals(state.run.status, "budget_stopped");
+    assertEquals(state.run.failure_code, reason);
+    assertEquals(stopped.body.state, "stopped");
+  }
+
+  const policy = world();
+  denyBudget(policy, "policy_unavailable");
+  policy.fetchImpl = () => Promise.reject(new Error("fetch_must_not_run"));
+  const blocked = await advance(policy);
+  assertEquals(policy.reserveCalls, 0);
+  assertEquals(policy.fetches, 0);
+  assertEquals(policy.run.status, "blocked");
+  assertEquals(policy.run.failure_code, "policy_unavailable");
+  assertEquals(blocked.body.state, "stopped");
+});
+
+Deno.test(
+  "an existing reservation survives a later budget denial without another fetch",
+  async () => {
+    const held = world();
+    denyBudget(held, "per_run_latency");
+    held.reservation = heldReservation(held, false);
+    const replay = await advance(held);
+    assertEquals(held.reserveCalls, 0);
+    assertEquals(held.fetches, 0);
+    assertEquals(held.reservation?.status, "held");
+    assertEquals(usage(replay).usageKnowledge, "unknown");
+    assertEquals(usage(replay).hold, { tokens: 40, costUsd: 0.02, status: "held" });
+    assertEquals(replay.body.reason, "provider_hold_unsettled");
+
+    const settled = world();
+    denyBudget(settled, "per_run_tool_events");
+    settled.reservation = settledReservation(settled);
+    settled.steps.push({
+      id: "step-known",
+      stepKind: "synthesize",
+      status: "completed",
+      idempotencyKey: `provider-attempt:${runId}:synthesize`,
+      output: synthesis([finding()]),
+      tokensUsed: 1_250,
+      costUsd: 0.0024,
+      pricingVersion: "2026-09-21",
+    });
+    const continued = await advance(settled);
+    assertEquals(settled.reserveCalls, 0);
+    assertEquals(settled.fetches, 0);
+    assertEquals(settled.materializeCalls, 1);
+    assertEquals(settled.run.status, "verifying");
+    assertEquals(usage(continued).usageKnowledge, "known");
+    assertEquals(usage(continued).costUsd, 0.0024);
+    assertEquals(usage(continued).pricingVersion, "2026-09-21");
+    assertEquals(usage(continued).hold, null);
+  },
+);
+
+Deno.test("terminal and paused reads keep the provider reservation accounting", async () => {
+  const unknown = world();
+  unknown.fetchImpl = () =>
+    Promise.reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+  const failed = await advance(unknown);
+  assertEquals(unknown.run.status, "failed");
+  assertEquals(unknown.reservation?.status, "held");
+  const heldBudget = usage(failed).hold;
+  const replay = await advance(unknown, "invocation-2");
+  assertEquals(unknown.fetches, 1);
+  assertEquals(usage(replay).usageKnowledge, "unknown");
+  assertEquals(usage(replay).hold, heldBudget);
+  assertEquals(usage(replay).costAccounting, "unknown");
+
+  const known = world("completed");
+  known.reservation = settledReservation(known);
+  const terminal = await advance(known);
+  assertEquals(known.fetches, 0);
+  assertEquals(terminal.body.state, "terminal");
+  assertEquals(usage(terminal).usageKnowledge, "known");
+  assertEquals(usage(terminal).costUsd, 0.0024);
+  assertEquals(usage(terminal).pricingVersion, "2026-09-21");
+
+  const paused = world("awaiting_approval");
+  paused.reservation = settledReservation(paused);
+  const approval = await advance(paused);
+  assertEquals(paused.fetches, 0);
+  assertEquals(approval.body.state, "paused");
+  assertEquals(usage(approval).usageKnowledge, "known");
+  assertEquals(usage(approval).pricingVersion, "2026-09-21");
+
+  const legacy = world("cancelled");
+  const empty = await advance(legacy);
+  assertEquals(legacy.fetches, 0);
+  assertEquals(legacy.reservation, null);
+  assertEquals(usage(empty).usageKnowledge, "none");
+  assertEquals(usage(empty).hold, null);
+
+  const unreadable = world("failed");
+  unreadable.reservationReadError = true;
+  unreadable.reservation = heldReservation(unreadable);
+  const unavailable = await advance(unreadable);
+  assertEquals(unavailable.status, 503);
+  assertEquals(unavailable.body.reason, "provider_reservation_unreadable");
+  assertEquals(JSON.stringify(unavailable).includes('"usageKnowledge":"none"'), false);
+  assertEquals(unreadable.fetches, 0);
+});
+
+Deno.test("a stalled response body after headers remains an unknown hold", async () => {
+  const state = world();
+  state.fetchImpl = (_url, init) => {
+    const body = new ReadableStream({
+      start(controller) {
+        const abort = () =>
+          controller.error(Object.assign(new Error("aborted"), { name: "AbortError" }));
+        if (init.signal?.aborted) abort();
+        else init.signal?.addEventListener("abort", abort, { once: true });
+      },
+    });
+    return Promise.resolve(
+      new Response(body, { status: 200, headers: { "content-type": "application/json" } }),
+    );
+  };
+  const timed = await Promise.race([
+    advance(state, "invocation-1", true, 30),
+    new Promise<never>((_resolve, reject) => {
+      setTimeout(
+        () => reject(new Error("provider timeout did not cover the response body")),
+        1_000,
+      );
+    }),
+  ]);
+  assertEquals(state.fetches, 1);
+  assertEquals(state.reservation?.status, "held");
+  assertEquals(state.reservation?.usageKnowledge, "unknown");
+  assertEquals(state.reservation?.actualTokens, null);
+  assertEquals(state.reservation?.actualCostUsd, null);
+  assertEquals(state.settlePayloads[0]?.usage_knowledge, "unknown");
+  assertEquals(
+    state.settlePayloads.some((item) => item.usage_knowledge === "none"),
+    false,
+  );
+  assertEquals(usage(timed).usageKnowledge, "unknown");
+  assertEquals((usage(timed).hold as { status: string }).status, "held");
+  const replay = await advance(state, "invocation-2");
+  assertEquals(state.fetches, 1);
+  assertEquals(usage(replay).usageKnowledge, "unknown");
+  assertEquals(usage(replay).hold, usage(timed).hold);
 });
