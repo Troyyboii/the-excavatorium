@@ -1,5 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import { projectFindings } from "./capability-handlers";
+import { APPROVAL_SELECT, projectFindings } from "./capability-handlers";
+
+describe("get_pending_approvals projection", () => {
+  test("exposes the exact action without owner identifiers", () => {
+    expect(APPROVAL_SELECT).toContain("exact_action_hash");
+    expect(APPROVAL_SELECT).toContain("proposed_diff");
+    expect(APPROVAL_SELECT).toContain("tool_action");
+    expect(APPROVAL_SELECT).toContain("provenance");
+    expect(APPROVAL_SELECT).not.toContain("owner_id");
+    expect(APPROVAL_SELECT).not.toContain("requested_by");
+    expect(APPROVAL_SELECT).not.toContain("responded_by");
+  });
+});
 
 describe("get_findings projection", () => {
   test("keeps support and contrary evidence distinct and excludes runtime payloads", () => {

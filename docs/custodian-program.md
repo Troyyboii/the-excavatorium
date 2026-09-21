@@ -122,7 +122,7 @@ provider call is available.
 | Owner Cases and selected archive scope                   | **CURRENT** source contract in `supabase/migrations/20260904090000_custodian_case_archive_scope.sql`. | **CURRENT/PARTIAL** Case create/edit and reading UI; no Case UI authoring for every related artifact.                     | Applied migration and owner use are **UNVERIFIED** here.                                                         |
 | Bounded Case Reading                                     | **CURRENT** browser-side bundle builder in `src/lib/case-reading.ts`.                                 | **CURRENT** read-only Case Reading presentation.                                                                          | It is provider-free; it is not evidence of a model run.                                                          |
 | Claims, evidence, actions, findings, revisions           | **CURRENT** owner-scoped tables/RPC foundation, including the M2 Finding attribution migration and protected materialization RPC in `20260920090000_custodian_finding_attribution.sql`. | **PARTIAL** existing collections now expose Finding origin, run/step attribution, caveats, and bounded support/contrary descriptors. | Database application and end-to-end workflow are **UNVERIFIED**.                                                 |
-| Durable runs, steps, budgets, approval, proposals, audit | **CURRENT** migration and RPC contracts.                                                              | Run Room is **CURRENT** as a read-only owner listing; Approvals is a **BLOCKED/PLANNED** scaffold.                        | Runtime foundation is not operational proof.                                                                     |
+| Durable runs, steps, budgets, approval, proposals, audit | **CURRENT** migration and RPC contracts, including the M3 owner-gate decision RPC.                    | Run Room is **CURRENT** as a read-only owner listing; Approvals is **CURRENT** as an owner decision surface. Approval does not execute unsupported work. | Runtime foundation is not operational proof.                                                                     |
 | Provider-backed analysis                                 | Request, pricing, validation, and recording plumbing are **PARTIAL** source.                          | Invocation is **BLOCKED** in `src/lib/custodian-runtime.ts`.                                                              | Edge execution is **BLOCKED** by `PROVIDER_EXECUTION_UNSUPPORTED = true`. No paid call is authorized or claimed. |
 | External or canonical execution                          | Approval and tool-event guard foundations are **CURRENT** source.                                     | No control UI is connected.                                                                                               | **BLOCKED**; current Edge runtime stops approved external execution.                                             |
 | MCP Custodian reads                                      | **CURRENT** bounded reader registrations and safe projections.                                        | `list_cases`, `get_case`, `get_findings`, `get_pending_approvals`, and `get_run` are conditional on deployed foundations; `get_findings` now projects bounded attribution and evidence descriptors. | Fresh authenticated production callability is **UNVERIFIED**.                                                    |
@@ -147,9 +147,9 @@ Important gaps and contradictions must remain visible:
 4. Verification currently records a bounded run-state/no-external-execution check.
    Reaching `verifying` or `completed` is not substantive proof that a conclusion,
    source, action, or external result is correct.
-5. Approvals and automation foundations exist, but the browser Approvals route is a
-   scaffold, execution controls are unavailable, and no resident loop was found in
-   the inspected source.
+5. Approvals and automation foundations exist. The browser Approvals route is an
+   owner-scoped proposal/gate decision surface; execution remains unavailable, and no
+   resident loop was found in the inspected source.
 6. The Desk's attention queue derives from existing archive rules, not a proven
    Custodian monitoring loop. Persisted Cases are available through the Cases surface
    when the case foundation is available; production application state remains
@@ -304,10 +304,9 @@ proposal. Retrying a failed read-only operation is possible only through a durab
 idempotent run contract. Retrying a write never turns a past approval into blanket
 permission.
 
-The database/RPC foundation exists, but the browser Approvals route is a scaffold and
-MCP has no approval-decision tool. Treat interactive approval as PLANNED until an
-owner-scoped UI, action-time confirmation, audit evidence, and policy-restricted
-execution are implemented and verified.
+The database/RPC foundation exists, and the browser Approvals route is an owner-scoped
+inspect-and-decide surface. MCP remains read-only for pending approvals. Approval
+records the exact-action decision only; no internal V1 execution class has been selected.
 
 ## 11. Runtime architecture
 
@@ -435,8 +434,8 @@ These actions are deliberately different:
 | Action                   | Meaning                                                           | Current V1 position                                                                      |
 | ------------------------ | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | Reasoning                | Interpret a bounded evidence bundle.                              | Provider-free case reading exists; provider reasoning is blocked.                        |
-| Proposing                | Persist an exact possible action for review.                      | Foundation exists; workflow UI is incomplete.                                            |
-| Approving                | Owner decision on the exact action hash.                          | Foundation exists; current browser/MCP controls are unavailable.                         |
+| Proposing                | Persist an exact possible action for review.                      | Foundation exists; Approvals exposes linked proposals when persisted.                    |
+| Approving                | Owner decision on the exact action hash.                          | Foundation and owner-scoped UI exist; MCP has no decision tool; execution stays blocked. |
 | Evidence write           | Create a non-canonical evidence artifact within policy and audit. | Foundation exists; only implement after explicit contract and gate.                      |
 | Canonical archive change | Change a protected record or related canonical meaning.           | Not implied by a finding or approval; requires explicit protected path and verification. |
 | External side effect     | Change something outside the archive.                             | Intentionally unsupported by the current Edge runtime.                                   |
@@ -503,8 +502,8 @@ only for inverse interpretation, refusal, security, code, and execution boundari
 | Cases                        | **CURRENT/PARTIAL** owner Case and scope UI; related artifacts display but are not all authorable there.          | Owner defines question, bounded archive scope, and free-text context.                                        |
 | Evidence Room / Case Reading | **CURRENT** provider-free, bounded, provenance-rich reading.                                                      | Inspect what was admitted, excluded, unavailable, superseded, or uncertain.                                  |
 | Findings                     | **PARTIAL** persisted finding display via evidence readers and case collections.                                  | Separate attributable interpretation from source truth and expose support/contrary evidence.                 |
-| Proposal / Gate              | **PLANNED** workflow presentation.                                                                                | Show exact before/diff/after and owner decision, never a vague "approve agent" button.                       |
-| Approvals                    | **BLOCKED/PLANNED** scaffold.                                                                                     | Read and decide exact owner-scoped requests with expiry/reject/defer audit.                                  |
+| Proposal / Gate              | **CURRENT** inspectable exact-action presentation on Approvals.                                                   | Show exact before/diff/after and owner decision, never a vague "approve agent" button.                       |
+| Approvals                    | **CURRENT** owner-scoped inspect-and-decide surface; execution remains **BLOCKED**.                               | Read and decide exact owner-scoped requests with expiry/reject/defer audit.                                  |
 | Run Room                     | **CURRENT** read-only owner run list.                                                                             | Inspect lifecycle, budgets, costs, steps, state, failures, and future controls only when safely implemented. |
 | Observatory                  | **BLOCKED/PLANNED** scaffold with no runtime source.                                                              | Present truthful resident/rule/cost/verification evidence only after it exists.                              |
 | Quiet state                  | A required product state.                                                                                         | Say no meaningful matter is known; do not create AI theatre.                                                 |
@@ -674,6 +673,19 @@ non-external, policy-controlled action type, if any, for V1.
 - **Connector impact:** no connector action unless separately approved.
 - **Security:** action hash, case/run/policy binding, ownership, audit, and replay
   protection are non-negotiable.
+- **Implemented source path:** Approvals reads owner-scoped `approval_requests` and
+  linked `change_proposals`, presents the exact action, and records approve / reject /
+  defer / expire / cancel through the protected `custodian_respond_approval` RPC. A
+  changed exact action hash cannot reuse the current gate. Approval does not execute
+  provider, external, or canonical work. No internal V1 execution class was selected.
+- **M3 SOURCE IMPLEMENTATION:** **COMPLETE**
+- **LOCAL VALIDATION:** **PARTIAL** — frontend typecheck, lint of changed files, `bun test src`,
+  Edge `deno task check`/`test`, and `bun run build` passed in this workspace. Local
+  database runtime validation is **UNVERIFIED/BLOCKED** because Docker is unavailable.
+- **REMOTE MIGRATION APPLICATION:** **UNVERIFIED**
+- **DEPLOYED EDGE BEHAVIOR:** **UNVERIFIED**
+- **PROVIDER EXECUTION:** **BLOCKED**
+- **INTERNAL V1 EXECUTION CLASS:** **UNRESOLVED**
 - **Validation:** rejection, expiry, changed hash, duplicate approval, cross-owner,
   unauthorized write, and audited no-mutation tests.
 - **Stop condition:** the owner can make an inspectable decision, but approval cannot
@@ -856,30 +868,32 @@ into release notes.
 | Release procedure           | `docs/release-verification.md`                                                                                                                                                                                                       | Reusable local/hosted/Supabase/Lovable/connector/production gate.                     |
 | Backend procedure           | `docs/supabase-setup.md`, `docs/supabase-verification.md`                                                                                                                                                                            | Directly managed backend setup and verification distinction.                          |
 | Cases and evidence          | `src/lib/custodian.ts`, `src/lib/custodian-types.ts`, `src/lib/case-reading.ts`, `src/lib/evidence-display.ts`, `src/components/custodian/`                                                                                          | Owner case contracts, bounded reading, display and source tests.                      |
-| Runtime client              | `src/lib/custodian-runtime.ts`, `src/lib/custodian-runtime-types.ts`                                                                                                                                                                 | Browser read boundary, state machine, budget/model/request contracts.                 |
-| Frontend surfaces           | `src/routes/index.tsx`, `src/routes/inbox.tsx`, `src/routes/cases.index.tsx`, `src/routes/cases.$caseId.index.tsx`, `src/routes/run-room.tsx`, `src/routes/approvals.tsx`, `src/routes/observatory.tsx`                              | Current Desk, Inbox, Cases, read-only Run Room, and scaffold boundaries.              |
+| Runtime client              | `src/lib/custodian-runtime.ts`, `src/lib/custodian-runtime-types.ts`, `src/lib/custodian-approvals.ts`                                                                                                                                | Browser read boundary, state machine, owner-gate decision client, budget/model/request contracts. |
+| Frontend surfaces           | `src/routes/index.tsx`, `src/routes/inbox.tsx`, `src/routes/cases.index.tsx`, `src/routes/cases.$caseId.index.tsx`, `src/routes/run-room.tsx`, `src/routes/approvals.tsx`, `src/routes/observatory.tsx`, `src/components/custodian/approvals-surface.tsx` | Current Desk, Inbox, Cases, read-only Run Room, owner-gate Approvals, and scaffold Observatory. |
 | MCP                         | `src/lib/mcp/index.ts`, `src/lib/mcp/capability-handlers.ts`, `src/lib/mcp/tools/`, `src/lib/mcp/security.ts`                                                                                                                        | Bounded archive/Custodian client surface and authentication.                          |
 | Plugin guidance             | `plugins/the-excavatorium/skills/custodian/SKILL.md`, `plugins/the-excavatorium/.mcp.json`                                                                                                                                           | Client retrieval discipline and MCP endpoint metadata.                                |
 | Provider runtime            | `supabase/functions/custodian-run/index.ts`, `supabase/functions/custodian-run/runtime.ts`, their tests                                                                                                                              | Dormant provider, parsing, pricing, state, failure, and hard-gate source.             |
 | Core Custodian migrations   | `supabase/migrations/20260811190000_custodian_tables.sql` through `20260811190300_custodian_write_rpcs.sql`, plus `supabase/migrations/20260920090000_custodian_finding_attribution.sql`                                              | Case/analysis schema, indexes, RLS, write RPCs, and the M2 Finding attribution/materialization boundary. |
 | Runtime migrations          | `supabase/migrations/20260811191000_custodian_runtime_tables.sql` through `20260811191200_custodian_runtime_rpcs.sql`                                                                                                                | Runtime/policy/approval/automation/audit foundation.                                  |
-| Hardening and case scope    | `supabase/migrations/20260817163457_custodian_tool_policy_delete_guard.sql`, `supabase/migrations/20260822214714_harden_archive_and_custodian_boundaries.sql`, `supabase/migrations/20260904090000_custodian_case_archive_scope.sql` | Policy, exact action, audit, cost hardening, and selected archive scope.              |
+| Hardening and case scope    | `supabase/migrations/20260817163457_custodian_tool_policy_delete_guard.sql`, `supabase/migrations/20260822214714_harden_archive_and_custodian_boundaries.sql`, `supabase/migrations/20260904090000_custodian_case_archive_scope.sql`, `supabase/migrations/20260921140000_custodian_owner_gate.sql` | Policy, exact action, audit, cost hardening, selected archive scope, and the M3 owner-gate decision contract. |
 | M2 database proof           | `supabase/tests/database/custodian_finding_attribution.sql`                                                                                                                                                                               | Deterministic structured-result, attribution, evidence, replay, RLS, automation-guard, and archive-isolation coverage. |
-| Database tests              | `supabase/tests/database/custodian_case_archive_scope.sql`, `supabase/tests/database/harden_archive_and_custodian_boundaries.sql`                                                                                                    | Source-level pgTAP/database contract evidence; execution must be recorded separately. |
+| Database tests              | `supabase/tests/database/custodian_case_archive_scope.sql`, `supabase/tests/database/harden_archive_and_custodian_boundaries.sql`, `supabase/tests/database/custodian_owner_gate.sql`                                                    | Source-level pgTAP/database contract evidence; execution must be recorded separately. |
 
 ### Known gaps and deliberate deferrals
 
 - Provider execution, paid calls, provider findings, and real run controls remain
   blocked until M4.
 - Atomic cross-invocation provider budget reservation is required before activation.
-- Interactive Approvals and meaningful verification need implementation.
+- Interactive Approvals exist as an owner decision surface; meaningful verification
+  after execution and a selected internal V1 execution class still need implementation.
 - External execution is intentionally unsupported; canonical writes are not implied by
   findings or proposals.
 - A resident loop, live Observatory, active connector use, and connector-account UI are
   not established by their tables.
 - Retention, the first allowed internal V1 execution class, and long-lived automation
-  policy remain unresolved product/security decisions. M2 adds source-level Finding
-  provenance linkage but does not prove deployment or production behavior.
+  policy remain unresolved product/security decisions. M3 adds the owner gate and
+  keeps execution unavailable. M2 adds source-level Finding provenance linkage but
+  does not prove deployment or production behavior.
 - Current source/test inspection does not prove migration application, Edge deployment,
   live OAuth, production RLS, or provider behavior.
 

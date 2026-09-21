@@ -1,8 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import {
   APPROVAL_KINDS,
+  APPROVAL_STATUSES,
+  CUSTODIAN_OWNER_GATE_CAN_EXECUTE,
+  CUSTODIAN_V1_INTERNAL_EXECUTION_CLASS,
   MAX_SYSTEM_PROMPT_CHARS,
   MODEL_ALLOWLIST,
+  OWNER_GATE_DECISIONS,
   RUNTIME_RUN_STATES,
   TERMINAL_RUN_STATES,
   UNTRUSTED_EVIDENCE_SYSTEM_GUARD,
@@ -117,6 +121,26 @@ describe("Custodian runtime budgets and approvals", () => {
     });
     expect(classifyApprovalRequirement("external_write").required).toBe(true);
     expect(APPROVAL_KINDS).toContain("archive_change");
+    expect(APPROVAL_STATUSES).toEqual([
+      "pending",
+      "approved",
+      "rejected",
+      "expired",
+      "cancelled",
+      "deferred",
+    ]);
+    expect(OWNER_GATE_DECISIONS).toEqual([
+      "approved",
+      "rejected",
+      "deferred",
+      "expired",
+      "cancelled",
+    ]);
+  });
+
+  test("keeps M3 execution unavailable until an internal class is selected", () => {
+    expect(CUSTODIAN_OWNER_GATE_CAN_EXECUTE).toBe(false);
+    expect(CUSTODIAN_V1_INTERNAL_EXECUTION_CLASS).toBeNull();
   });
 });
 
