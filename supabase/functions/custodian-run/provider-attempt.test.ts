@@ -1544,10 +1544,7 @@ Deno.test("an unconfirmed approval replay does not invent awaiting_approval", as
   assertEquals(inconsistent.fetches, 0);
   assertEquals(inconsistent.approvals, 1);
   assertEquals(inconsistent.run.status, "synthesizing");
-  assertEquals(stale.status, 503);
-  assertEquals(stale.body.state, "unavailable");
-  assertEquals(stale.body.reason, "approval_run_unconfirmed");
-  assertEquals(JSON.stringify(stale).includes("awaiting_approval"), false);
+  assertSettledApprovalUnconfirmed(stale);
 
   const unreadable = world();
   seedSettledApproval(unreadable);
@@ -1565,12 +1562,27 @@ Deno.test("an unconfirmed approval replay does not invent awaiting_approval", as
   const hidden = await advance(unreadable, "invocation-unreadable");
   assertEquals(unreadable.fetches, 0);
   assertEquals(unreadable.approvals, 1);
-  assertEquals(hidden.status, 503);
-  assertEquals(hidden.body.state, "unavailable");
-  assertEquals(hidden.body.reason, "approval_run_unconfirmed");
   assertEquals(unreadable.run.status, "synthesizing");
-  assertEquals(JSON.stringify(hidden).includes("awaiting_approval"), false);
+  assertSettledApprovalUnconfirmed(hidden);
 });
+
+function assertSettledApprovalUnconfirmed(result: {
+  status: number;
+  body: Record<string, unknown>;
+}) {
+  assertEquals(result.status, 503);
+  assertEquals(result.body.state, "unavailable");
+  assertEquals(result.body.reason, "approval_run_unconfirmed");
+  assertEquals(JSON.stringify(result).includes("awaiting_approval"), false);
+  assertEquals((result.body.run as { status: string }).status, "synthesizing");
+  const recorded = usage(result);
+  assertEquals(recorded.usageKnowledge, "known");
+  assertEquals(recorded.tokens, 1_250);
+  assertEquals(recorded.costUsd, 0.0024);
+  assertEquals(recorded.pricingVersion, "2026-09-21");
+  assertEquals(recorded.hold, null);
+  assertEquals(recorded.costAccounting, "recorded");
+}
 
 Deno.test("verification binds the stable provider-free retrieval step", () => {
   const run = baseRun("verifying");

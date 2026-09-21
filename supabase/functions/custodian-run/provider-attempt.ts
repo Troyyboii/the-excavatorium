@@ -1016,7 +1016,7 @@ async function continueFromRecordedStep(
         approval: created.approval,
       });
     } catch {
-      return approvalUnconfirmed(run);
+      return approvalUnconfirmed(run, accounting);
     }
   }
   if (TERMINAL_STATES.has(run.status)) return outcome(200, "stopped", run, accounting);
@@ -1040,18 +1040,15 @@ async function readConfirmedApprovalRun(
   return confirmedPendingApprovalRun(durable, created.approval.status);
 }
 
-function approvalUnconfirmed(run: SynthesisRun): AdvanceResult {
+function approvalUnconfirmed(run: SynthesisRun, accounting: PublicAccounting): AdvanceResult {
   return {
     status: 503,
     body: {
       state: "unavailable",
       reason: "approval_run_unconfirmed",
       detail:
-        "The approval could not be confirmed against the durable run. This response does not mark the run awaiting approval.",
-      run: {
-        id: run.id,
-        caseId: run.case_id,
-      },
+        "The approval could not be confirmed against the durable run. This response does not mark the run awaiting approval. Recorded provider usage remains.",
+      run: projectPublicRun(run, accounting),
     },
   };
 }
