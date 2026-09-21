@@ -19,8 +19,8 @@ const EVIDENCE_DESCRIPTOR_SELECT =
   "id,title,source_classification,source_uri,source_record_id,captured_at";
 const RUN_SELECT =
   "id,case_id,objective,model_tier,status,started_at,completed_at,failure_code,failure_message,created_at,updated_at";
-const APPROVAL_SELECT =
-  "id,case_id,run_id,approval_kind,status,title,rationale,requested_at,responded_at,expires_at,created_at,updated_at";
+export const APPROVAL_SELECT =
+  "id,case_id,run_id,approval_kind,status,title,rationale,proposed_diff,tool_action,exact_action_hash,requested_at,responded_at,expires_at,provenance,created_at,updated_at";
 
 type FindingProjectionRow = Record<string, unknown> & { id: string };
 type FindingEvidenceProjectionRow = Record<string, unknown> & {

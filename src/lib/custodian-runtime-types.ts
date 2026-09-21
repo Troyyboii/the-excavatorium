@@ -110,8 +110,60 @@ export const APPROVAL_STATUSES = [
   "rejected",
   "expired",
   "cancelled",
+  "deferred",
 ] as const;
 export type ApprovalStatus = (typeof APPROVAL_STATUSES)[number];
+
+export const OWNER_GATE_DECISIONS = [
+  "approved",
+  "rejected",
+  "deferred",
+  "expired",
+  "cancelled",
+] as const;
+export type OwnerGateDecision = (typeof OWNER_GATE_DECISIONS)[number];
+
+export const CHANGE_PROPOSAL_STATUSES = [
+  "pending",
+  "approved",
+  "applied",
+  "rejected",
+  "expired",
+  "cancelled",
+] as const;
+export type ChangeProposalStatus = (typeof CHANGE_PROPOSAL_STATUSES)[number];
+
+export const CHANGE_PROPOSAL_TARGET_TYPES = [
+  "record",
+  "claim",
+  "evidence_item",
+  "action",
+  "finding",
+  "entity",
+  "relation",
+  "decision_review",
+  "forecast",
+] as const;
+export type ChangeProposalTargetType = (typeof CHANGE_PROPOSAL_TARGET_TYPES)[number];
+
+export const CHANGE_PROPOSAL_OPERATIONS = ["insert", "update", "delete", "archive"] as const;
+export type ChangeProposalOperation = (typeof CHANGE_PROPOSAL_OPERATIONS)[number];
+
+/** No internal V1 execution class has been selected. Approval cannot execute work. */
+export const CUSTODIAN_V1_INTERNAL_EXECUTION_CLASS = null;
+export const CUSTODIAN_OWNER_GATE_CAN_EXECUTE = false;
+
+export const OWNER_GATE_PRESENTATIONS = [
+  "awaiting_decision",
+  "deferred",
+  "rejected",
+  "cancelled",
+  "expired",
+  "approved_execution_unavailable",
+  "action_changed",
+  "invalid",
+] as const;
+export type OwnerGatePresentation = (typeof OWNER_GATE_PRESENTATIONS)[number];
 
 export const TOOL_OPERATION_CLASSES = [
   "read_only",
