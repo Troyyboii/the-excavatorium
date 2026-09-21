@@ -139,7 +139,10 @@ Deno.test("keeps stage defaults, honors Sol/pro overrides, and enforces allowed 
   let omitted = false;
   try {
     (
-      selectRuntimeModel as unknown as (stage: "synthesize", persistedTier: "pro") => {
+      selectRuntimeModel as unknown as (
+        stage: "synthesize",
+        persistedTier: "pro",
+      ) => {
         tier: string;
         model: string;
       }
