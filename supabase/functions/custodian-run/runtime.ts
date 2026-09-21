@@ -8,6 +8,7 @@ export const MODEL_ALLOWLIST = {
 export type ModelTier = keyof typeof MODEL_ALLOWLIST;
 export type RunStage = "extract" | "synthesize";
 
+/** Source model names. Not an owner policy, and not a default for model selection. */
 export const DEFAULT_ALLOWED_MODEL_TIERS: readonly ModelTier[] = ["luna", "terra", "sol", "pro"];
 export const MAX_SYSTEM_PROMPT_CHARS = 8_000;
 export const CUSTODIAN_MODEL_PRICING_ENV = "CUSTODIAN_MODEL_PRICING_JSON";
@@ -171,8 +172,11 @@ export type ResponsesRequest = {
 export function selectRuntimeModel(
   stage: RunStage,
   persistedTier: ModelTier,
-  allowedTiers: readonly ModelTier[] = DEFAULT_ALLOWED_MODEL_TIERS,
+  allowedTiers: readonly ModelTier[],
 ): { tier: ModelTier; model: string } {
+  if (!isAllowedModelTiers(allowedTiers)) {
+    throw new Error("Allowed model tiers must be an explicit owner-policy list");
+  }
   const requestedOverride = persistedTier === "sol" || persistedTier === "pro";
   const stageDefault = stage === "extract" ? "luna" : "terra";
   const tier = requestedOverride
@@ -180,7 +184,7 @@ export function selectRuntimeModel(
     : allowedTiers.includes(stageDefault)
       ? stageDefault
       : persistedTier;
-  if (!isAllowedModelTiers(allowedTiers) || !allowedTiers.includes(tier)) {
+  if (!allowedTiers.includes(tier)) {
     throw new Error(`Model tier ${tier} is not permitted by the persisted owner policy`);
   }
   return { tier, model: MODEL_ALLOWLIST[tier] };

@@ -123,7 +123,7 @@ provider call is available.
 | Bounded Case Reading                                     | **CURRENT** browser-side bundle builder in `src/lib/case-reading.ts`.                                 | **CURRENT** read-only Case Reading presentation.                                                                          | It is provider-free; it is not evidence of a model run.                                                          |
 | Claims, evidence, actions, findings, revisions           | **CURRENT** owner-scoped tables/RPC foundation, including the M2 Finding attribution migration and protected materialization RPC in `20260920090000_custodian_finding_attribution.sql`. | **PARTIAL** existing collections now expose Finding origin, run/step attribution, caveats, and bounded support/contrary descriptors. | Database application and end-to-end workflow are **UNVERIFIED**.                                                 |
 | Durable runs, steps, budgets, approval, proposals, audit | **CURRENT** migration and RPC contracts, including the M3 owner-gate decision RPC.                    | Run Room is **CURRENT** as a read-only owner listing; Approvals is **CURRENT** as an owner decision surface. Approval does not execute unsupported work. | Runtime foundation is not operational proof.                                                                     |
-| Provider-backed analysis                                 | Request, pricing, validation, and recording plumbing are **PARTIAL** source.                          | Invocation is **BLOCKED** in `src/lib/custodian-runtime.ts`.                                                              | Edge execution is **BLOCKED** by `PROVIDER_EXECUTION_UNSUPPORTED = true`. No paid call is authorized or claimed. |
+| Provider-backed analysis                                 | Request, pricing, validation, and recording plumbing are **PARTIAL** source. M4A adds an unwired budget-hold table and a server-built read-only run bootstrap. | Invocation is **BLOCKED** in `src/lib/custodian-runtime.ts`.                                                              | Edge execution is **BLOCKED** by `PROVIDER_EXECUTION_UNSUPPORTED = true`. No paid call is authorized or claimed. |
 | External or canonical execution                          | Approval and tool-event guard foundations are **CURRENT** source.                                     | No control UI is connected.                                                                                               | **BLOCKED**; current Edge runtime stops approved external execution.                                             |
 | MCP Custodian reads                                      | **CURRENT** bounded reader registrations and safe projections.                                        | `list_cases`, `get_case`, `get_findings`, `get_pending_approvals`, and `get_run` are conditional on deployed foundations; `get_findings` now projects bounded attribution and evidence descriptors. | Fresh authenticated production callability is **UNVERIFIED**.                                                    |
 | MCP run control                                          | Reserved tools exist.                                                                                 | `start_analysis` and `cancel_run` deliberately return unavailable.                                                        | **BLOCKED**, never simulated.                                                                                    |
@@ -131,11 +131,12 @@ provider call is available.
 
 Important gaps and contradictions must remain visible:
 
-1. The later hardening migration makes `agent_runs.tool_policy_id` non-null and
-   creation requires it, while the Edge run parser still accepts `null` and falls back
-   to default model tiers. Treat non-null policy as the required database contract and
-   the nullable runtime tolerance as stale defensive compatibility, not permission to
-   run policy-free.
+1. `agent_runs.tool_policy_id` is non-null, and the Edge `parseAgentRun` rejects a
+   null policy. `selectRuntimeModel` requires an explicit owner-policy tier list; the
+   exported source model list is not a selection default. `custodian_run_budget_status`
+   denies a missing or inactive policy and counts held provider reservations separately
+   from recorded usage. The Edge function does not call the hold RPCs yet, and provider
+   execution remains blocked.
 2. The Edge Function contains a real OpenAI Responses call path behind its hard gate.
    This is dormant plumbing, not active provider execution.
 3. The runtime still persists generic `agent_steps` output, and that output remains
@@ -388,10 +389,20 @@ Before any real paid call, V1 must perform all of the following:
    unpriced result.
 
 The dormant Edge code implements server-only pricing lookup, a conservative pre-call
-maximum cost check, a timeout, and provider usage parsing. The inspected source did not
-show an atomic provider-call reservation spanning budget read and paid request. This is
-a hard activation gap, not a minor optimization. The first paid Custodian run requires
-separate explicit authorization after the entire gate is verified.
+maximum cost check, a timeout, and provider usage parsing. Source now also has
+`custodian_reserve_provider_call` and `custodian_settle_provider_reservation`. A budget
+hold encumbers the conservative maximum. It is not written into `agent_steps` or
+`agent_runs` unless parsed provider usage is settled as known. Unknown usage leaves
+actual tokens and cost null. The Edge function still does not take a hold before a
+provider call, and `PROVIDER_EXECUTION_UNSUPPORTED` remains `true`. The first paid
+Custodian run requires separate explicit authorization after the entire gate is verified.
+
+A null daily or monthly cost ceiling is not a product default.
+`custodian_reserve_provider_call` and the read-only policy and run RPCs refuse it.
+`custodian_run_budget_status` still reports a null remaining amount for a legacy policy
+with a null aggregate ceiling, so an existing status reader does not treat that legacy
+row as an immediate budget stop. Held amounts are included in the usage those
+remainings are measured against.
 
 Cost must be visible to the owner as budget, actual usage, pricing version, and failure
 reason without exposing secrets or raw provider headers. A generic completion message
@@ -878,14 +889,18 @@ into release notes.
 | Core Custodian migrations   | `supabase/migrations/20260811190000_custodian_tables.sql` through `20260811190300_custodian_write_rpcs.sql`, plus `supabase/migrations/20260920090000_custodian_finding_attribution.sql`                                              | Case/analysis schema, indexes, RLS, write RPCs, and the M2 Finding attribution/materialization boundary. |
 | Runtime migrations          | `supabase/migrations/20260811191000_custodian_runtime_tables.sql` through `20260811191200_custodian_runtime_rpcs.sql`                                                                                                                | Runtime/policy/approval/automation/audit foundation.                                  |
 | Hardening and case scope    | `supabase/migrations/20260817163457_custodian_tool_policy_delete_guard.sql`, `supabase/migrations/20260822214714_harden_archive_and_custodian_boundaries.sql`, `supabase/migrations/20260904090000_custodian_case_archive_scope.sql`, `supabase/migrations/20260921140000_custodian_owner_gate.sql` | Policy, exact action, audit, cost hardening, selected archive scope, and the M3 owner-gate decision contract. |
+| M4A provider budget hold    | `supabase/migrations/20260921180000_custodian_provider_budget_hold.sql`, `supabase/tests/database/custodian_provider_budget_hold.sql`                                                                                                      | Hold storage separate from factual usage, reserve/settle and fail-closed budget RPCs, explicit owner-policy bootstrap, and a server-built read-only snapshot. Not a provider call. |
 | M2 database proof           | `supabase/tests/database/custodian_finding_attribution.sql`                                                                                                                                                                               | Deterministic structured-result, attribution, evidence, replay, RLS, automation-guard, and archive-isolation coverage. |
-| Database tests              | `supabase/tests/database/custodian_case_archive_scope.sql`, `supabase/tests/database/harden_archive_and_custodian_boundaries.sql`, `supabase/tests/database/custodian_owner_gate.sql`                                                    | Source-level pgTAP/database contract evidence; execution must be recorded separately. |
+| Database tests              | `supabase/tests/database/custodian_case_archive_scope.sql`, `supabase/tests/database/harden_archive_and_custodian_boundaries.sql`, `supabase/tests/database/custodian_owner_gate.sql`, `supabase/tests/database/custodian_provider_budget_hold.sql` | Source-level pgTAP/database contract evidence; execution must be recorded separately. |
 
 ### Known gaps and deliberate deferrals
 
-- Provider execution, paid calls, provider findings, and real run controls remain
-  blocked until M4.
-- Atomic cross-invocation provider budget reservation is required before activation.
+- Provider execution, paid calls, live findings, and run controls remain blocked.
+  M4A stores the provider budget hold and a server-built read-only run bootstrap, but
+  the Edge function does not reserve, settle, or call a provider. The owner must
+  choose the model allowlist and cost ceilings before activation; the policy RPC has
+  no product-default tiers or ceilings. M4B wires settlement without opening the gate.
+  M4C keeps the browser control inert. M4D is the separate activation sequence.
 - Interactive Approvals exist as an owner decision surface; meaningful verification
   after execution and a selected internal V1 execution class still need implementation.
 - External execution is intentionally unsupported; canonical writes are not implied by
