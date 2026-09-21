@@ -116,7 +116,7 @@ Deno.test("keeps stage defaults, honors Sol/pro overrides, and enforces allowed 
     tier: "pro",
     model: "gpt-5.6-pro",
   });
-  assertEquals(selectRuntimeModel("synthesize", "pro"), {
+  assertEquals(selectRuntimeModel("synthesize", "pro", ["luna", "terra", "sol", "pro"]), {
     tier: "pro",
     model: "gpt-5.6-pro",
   });
@@ -136,6 +136,21 @@ Deno.test("keeps stage defaults, honors Sol/pro overrides, and enforces allowed 
   }
   if (!rejected)
     throw new Error("Expected a tier absent from the allowed-tier policy to be rejected");
+  let omitted = false;
+  try {
+    (
+      selectRuntimeModel as unknown as (
+        stage: "synthesize",
+        persistedTier: "pro",
+      ) => {
+        tier: string;
+        model: string;
+      }
+    )("synthesize", "pro");
+  } catch {
+    omitted = true;
+  }
+  if (!omitted) throw new Error("Expected omitted allowed tiers to be rejected");
 });
 
 Deno.test("uses a bounded persisted system policy with a safe fallback", () => {
