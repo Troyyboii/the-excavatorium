@@ -2,7 +2,7 @@
 -- item is created, and no product-default model tier or cost ceiling is used.
 begin;
 
-select plan(39);
+select plan(52);
 
 set local role postgres;
 
@@ -65,17 +65,19 @@ select ok(
   and pg_catalog.has_function_privilege('authenticated', 'public.custodian_ensure_readonly_analysis_policy(uuid,jsonb)', 'EXECUTE')
   and pg_catalog.has_function_privilege('authenticated', 'public.custodian_create_readonly_analysis_run(uuid,text,jsonb)', 'EXECUTE')
   and pg_catalog.has_function_privilege('authenticated', 'public.custodian_reserve_provider_call(uuid,text,jsonb)', 'EXECUTE')
-  and pg_catalog.has_function_privilege('authenticated', 'public.custodian_settle_provider_reservation(uuid,text,jsonb)', 'EXECUTE')
+  and to_regprocedure('public.custodian_settle_provider_reservation(uuid,text,jsonb)') is null
+  and not pg_catalog.has_function_privilege('authenticated', 'public.custodian_settle_provider_reservation(uuid,uuid,text,jsonb)', 'EXECUTE')
+  and not pg_catalog.has_function_privilege('anon', 'public.custodian_settle_provider_reservation(uuid,uuid,text,jsonb)', 'EXECUTE')
+  and pg_catalog.has_function_privilege('service_role', 'public.custodian_settle_provider_reservation(uuid,uuid,text,jsonb)', 'EXECUTE')
   and not pg_catalog.has_function_privilege('anon', 'public.custodian_ensure_readonly_analysis_policy(uuid,jsonb)', 'EXECUTE')
   and not pg_catalog.has_function_privilege('anon', 'public.custodian_create_readonly_analysis_run(uuid,text,jsonb)', 'EXECUTE')
   and not pg_catalog.has_function_privilege('anon', 'public.custodian_reserve_provider_call(uuid,text,jsonb)', 'EXECUTE')
-  and not pg_catalog.has_function_privilege('anon', 'public.custodian_settle_provider_reservation(uuid,text,jsonb)', 'EXECUTE')
   and not pg_catalog.has_function_privilege('authenticated', 'public.custodian_build_readonly_analysis_snapshot(uuid,uuid,text)', 'EXECUTE')
   and not pg_catalog.has_function_privilege('anon', 'public.custodian_build_readonly_analysis_snapshot(uuid,uuid,text)', 'EXECUTE')
   and pg_catalog.has_table_privilege('authenticated', 'public.agent_provider_reservations', 'SELECT')
   and not pg_catalog.has_table_privilege('authenticated', 'public.agent_provider_reservations', 'INSERT')
   and to_regprocedure('public.custodian_materialize_finding(uuid,integer)') is not null,
-  'M4A hold storage is owner-readable, reserve and settle are authenticated, and snapshot building stays internal'
+  'M4A hold storage is owner-readable, reserve stays owner-scoped, and settlement is service-role only'
 );
 
 set local role anon;
@@ -501,11 +503,211 @@ select is(
 
 do $$
 declare
+  run_id uuid;
+  knowledge text;
+begin
+  select id into run_id from public.agent_runs where idempotency_key = 'm4a-run-a';
+  foreach knowledge in array (array['unknown', 'known', 'none']::text[])
+  loop
+    begin
+      perform public.custodian_settle_provider_reservation(
+        '14141414-1414-4414-8414-141414141414',
+        run_id,
+        'm4a-hold-a',
+        case knowledge
+          when 'unknown' then jsonb_build_object('usage_knowledge', 'unknown', 'record_failure_step', true)
+          when 'known' then jsonb_build_object(
+            'usage_knowledge', 'known',
+            'actual_tokens', 12,
+            'actual_cost_usd', 0.20,
+            'step_status', 'completed',
+            'latency_ms', 10,
+            'input_payload', jsonb_build_object('forged', true),
+            'output_payload', jsonb_build_object('forged', true)
+          )
+          else jsonb_build_object('usage_knowledge', 'none')
+        end
+      );
+      raise exception 'authenticated % settlement was accepted', knowledge;
+    exception
+      when insufficient_privilege then
+        if sqlerrm like '%trusted runtime producer is required%'
+           or sqlerrm like '%runtime owner and run do not match%'
+           or sqlerrm like '%completed synthesis%' then
+          raise;
+        end if;
+    end;
+  end loop;
+end;
+$$;
+
+select ok(true, 'authenticated cannot settle, release, or supply provider usage');
+select is(
+  (select status from public.agent_provider_reservations where idempotency_key = 'm4a-hold-a'),
+  'held',
+  'an authenticated settlement attempt leaves the hold in place'
+);
+select is(
+  (select actual_tokens is null and actual_cost_usd is null from public.agent_provider_reservations where idempotency_key = 'm4a-hold-a'),
+  true,
+  'an authenticated settlement attempt does not write actual usage'
+);
+select is(
+  (select count(*)::integer from public.agent_steps where idempotency_key = 'm4a-hold-a'),
+  0,
+  'an authenticated settlement attempt writes no step'
+);
+
+do $$
+declare
+  run_id uuid;
+  knowledge text;
+begin
+  select id into run_id from public.agent_runs where idempotency_key = 'm4a-run-a';
+  execute 'set local role anon';
+  foreach knowledge in array (array['unknown', 'known', 'none']::text[])
+  loop
+    begin
+      perform public.custodian_settle_provider_reservation(
+        '14141414-1414-4414-8414-141414141414',
+        run_id,
+        'm4a-hold-a',
+        jsonb_build_object('usage_knowledge', knowledge, 'record_failure_step', false)
+      );
+      raise exception 'anon % settlement was accepted', knowledge;
+    exception
+      when insufficient_privilege then
+        if sqlerrm like '%trusted runtime producer is required%' then
+          raise;
+        end if;
+    end;
+  end loop;
+end;
+$$;
+
+select ok(true, 'anon cannot settle or release a provider hold');
+
+set local role postgres;
+select set_config('request.jwt.claim.role', 'authenticated', true);
+select set_config('request.jwt.claim.sub', '14141414-1414-4414-8414-141414141414', true);
+
+do $$
+begin
+  perform public.custodian_settle_provider_reservation(
+    '14141414-1414-4414-8414-141414141414',
+    (select id from public.agent_runs where idempotency_key = 'm4a-run-a'),
+    'm4a-hold-a',
+    jsonb_build_object('usage_knowledge', 'none')
+  );
+  raise exception 'a non-service role entered provider settlement';
+exception
+  when insufficient_privilege then
+    if sqlerrm not like '%trusted runtime producer is required%' then raise; end if;
+end;
+$$;
+
+select ok(true, 'a non-service role cannot enter provider settlement');
+
+set local role authenticated;
+select set_config('request.jwt.claim.role', 'authenticated', true);
+select set_config('request.jwt.claim.sub', '14141414-1414-4414-8414-141414141414', true);
+
+do $$
+begin
+  perform public.custodian_record_agent_step(
+    (select id from public.agent_runs where idempotency_key = 'm4a-run-a'),
+    jsonb_build_object(
+      'sequence_no', 1,
+      'step_kind', 'synthesize',
+      'status', 'completed',
+      'model_tier', 'terra',
+      'prompt_version', 'm4a-fixture-v1',
+      'input_payload', jsonb_build_object('forged', true),
+      'output_payload', jsonb_build_object('forged', true),
+      'tokens_used', 9,
+      'cost_usd', 0.25,
+      'latency_ms', 10,
+      'pricing_version', 'm4a-forged-price',
+      'provenance', jsonb_build_object('runtime', 'forged')
+    ),
+    'm4a-forged-complete'
+  );
+  raise exception 'authenticated caller manufactured a completed synthesize step';
+exception
+  when insufficient_privilege then
+    if sqlerrm not like '%completed synthesis steps require a trusted runtime producer%' then raise; end if;
+end;
+$$;
+
+select ok(true, 'an authenticated caller cannot manufacture a completed synthesize step');
+select is(
+  (select count(*)::integer from public.agent_steps where step_kind = 'synthesize' and status = 'completed'),
+  0,
+  'no completed synthesize step was stored for the authenticated caller'
+);
+
+select set_config('request.jwt.claim.role', 'service_role', true);
+select set_config('request.jwt.claim.sub', '99999999-9999-4999-8999-999999999999', true);
+
+do $$
+declare
+  run_id uuid := (select id from public.agent_runs where idempotency_key = 'm4a-run-a');
+  claim_before text := current_setting('request.jwt.claim.sub', true);
+begin
+  execute 'set local role service_role';
+  begin
+    perform public.custodian_settle_provider_reservation(
+      null,
+      run_id,
+      'm4a-hold-a',
+      jsonb_build_object('usage_knowledge', 'none')
+    );
+    raise exception 'null runtime owner was accepted';
+  exception
+    when invalid_parameter_value then
+      if sqlerrm not like '%runtime owner is required%' then raise; end if;
+  end;
+  begin
+    perform public.custodian_settle_provider_reservation(
+      '15151515-1515-4515-8515-151515151515',
+      run_id,
+      'm4a-hold-a',
+      jsonb_build_object('usage_knowledge', 'none')
+    );
+    raise exception 'mismatched runtime owner settled the hold';
+  exception
+    when insufficient_privilege then
+      if sqlerrm not like '%runtime owner and run do not match%' then raise; end if;
+  end;
+  if current_setting('request.jwt.claim.sub', true) is distinct from claim_before then
+    raise exception 'settlement rewrote the request claim before identity matched';
+  end if;
+end;
+$$;
+
+select ok(true, 'service_role settlement validates owner, run, and reservation before rewriting the request claim');
+
+set local role authenticated;
+select set_config('request.jwt.claim.role', 'authenticated', true);
+select set_config('request.jwt.claim.sub', '14141414-1414-4414-8414-141414141414', true);
+
+select is(
+  (select status from public.agent_provider_reservations where idempotency_key = 'm4a-hold-a'),
+  'held',
+  'rejected settlement does not release the hold'
+);
+
+do $$
+declare
   settled jsonb;
   run_id uuid;
 begin
   select id into run_id from public.agent_runs where idempotency_key = 'm4a-run-a';
+  perform set_config('request.jwt.claim.role', 'service_role', true);
+  perform set_config('request.jwt.claim.sub', '99999999-9999-4999-8999-999999999999', true);
+  execute 'set local role service_role';
   settled := public.custodian_settle_provider_reservation(
+    '14141414-1414-4414-8414-141414141414',
     run_id,
     'm4a-hold-a',
     jsonb_build_object(
@@ -523,6 +725,7 @@ begin
     raise exception 'unknown usage was written as a known bill';
   end if;
   settled := public.custodian_settle_provider_reservation(
+    '14141414-1414-4414-8414-141414141414',
     run_id,
     'm4a-hold-a',
     jsonb_build_object(
@@ -537,6 +740,7 @@ begin
   end if;
   begin
     perform public.custodian_settle_provider_reservation(
+      '14141414-1414-4414-8414-141414141414',
       run_id,
       'm4a-hold-a',
       jsonb_build_object(
@@ -551,6 +755,9 @@ begin
     when invalid_parameter_value then
       if sqlerrm not like '%cannot include actual tokens or cost%' then raise; end if;
   end;
+  execute 'set local role authenticated';
+  perform set_config('request.jwt.claim.role', 'authenticated', true);
+  perform set_config('request.jwt.claim.sub', '14141414-1414-4414-8414-141414141414', true);
 end;
 $$;
 
@@ -690,11 +897,18 @@ begin
       'hold_cost_usd', 0.10
     )
   );
+  perform set_config('request.jwt.claim.role', 'service_role', true);
+  perform set_config('request.jwt.claim.sub', '99999999-9999-4999-8999-999999999999', true);
+  execute 'set local role service_role';
   released := public.custodian_settle_provider_reservation(
+    '14141414-1414-4414-8414-141414141414',
     run_id,
     'm4a-hold-release',
     jsonb_build_object('usage_knowledge', 'none')
   );
+  execute 'set local role authenticated';
+  perform set_config('request.jwt.claim.role', 'authenticated', true);
+  perform set_config('request.jwt.claim.sub', '14141414-1414-4414-8414-141414141414', true);
   if (released #>> '{reservation,status}') <> 'released_uncontacted'
      or (released #>> '{reservation,usage_knowledge}') <> 'none'
      or (released #> '{reservation,actual_cost_usd}') <> 'null'::jsonb
@@ -727,7 +941,11 @@ begin
       'hold_cost_usd', 0.50
     )
   );
+  perform set_config('request.jwt.claim.role', 'service_role', true);
+  perform set_config('request.jwt.claim.sub', '99999999-9999-4999-8999-999999999999', true);
+  execute 'set local role service_role';
   settled := public.custodian_settle_provider_reservation(
+    '14141414-1414-4414-8414-141414141414',
     run_id,
     'm4a-hold-known',
     jsonb_build_object(
@@ -748,6 +966,9 @@ begin
      or (settled #>> '{run,tokens_used}')::integer <> 12 then
     raise exception 'known usage was not settled onto the run';
   end if;
+  execute 'set local role authenticated';
+  perform set_config('request.jwt.claim.role', 'authenticated', true);
+  perform set_config('request.jwt.claim.sub', '14141414-1414-4414-8414-141414141414', true);
   budget := public.custodian_run_budget_status(run_id);
   if (budget ->> 'run_hold_cost_usd')::numeric <> 0
      or (budget ->> 'run_cost_remaining')::numeric <> 1.80
@@ -788,6 +1009,115 @@ select is(
   0.2000,
   'the settled reservation stores the parsed cost and stops encumbering the hold'
 );
+select ok(
+  (public.custodian_run_budget_status((select id from public.agent_runs where idempotency_key = 'm4a-run-known')) ->> 'daily_cost')::numeric = 0.8000
+  and (public.custodian_run_budget_status((select id from public.agent_runs where idempotency_key = 'm4a-run-known')) ->> 'daily_tokens')::numeric = 112
+  and (public.custodian_run_budget_status((select id from public.agent_runs where idempotency_key = 'm4a-run-known')) ->> 'run_hold_cost_usd')::numeric = 0
+  and (public.custodian_run_budget_status((select id from public.agent_runs where idempotency_key = 'm4a-run-a')) ->> 'run_hold_cost_usd')::numeric = 0.6000,
+  'settled known usage is not double-counted with its former hold'
+);
+
+do $$
+declare
+  policy_id uuid;
+  created_run jsonb;
+  run_id uuid;
+  reserved jsonb;
+  budget jsonb;
+begin
+  select id into policy_id
+    from public.tool_policies
+   where owner_id = '14141414-1414-4414-8414-141414141414'
+     and policy_name = 'm4a-known-policy';
+  created_run := public.custodian_create_readonly_analysis_run(
+    '24242424-2424-4424-8424-242424242424',
+    'm4a-run-yesterday',
+    jsonb_build_object(
+      'model_tier', 'terra',
+      'prompt_version', 'm4a-fixture-v1',
+      'objective', 'Count a new hold on the reservation day.',
+      'tool_policy_id', policy_id
+    )
+  );
+  run_id := (created_run #>> '{run,id}')::uuid;
+  perform public.custodian_transition_agent_run(run_id, 'queued', 'retrieving', 'm4a-run-yesterday-retrieve', '{}'::jsonb);
+  perform public.custodian_transition_agent_run(run_id, 'retrieving', 'synthesizing', 'm4a-run-yesterday-synthesize', '{}'::jsonb);
+  execute 'set local role postgres';
+  update public.agent_runs
+     set created_at = date_trunc('day', now()) - interval '1 day'
+   where id = run_id;
+  execute 'set local role authenticated';
+  perform set_config('request.jwt.claim.sub', '14141414-1414-4414-8414-141414141414', true);
+  reserved := public.custodian_reserve_provider_call(
+    run_id,
+    'm4a-hold-yesterday',
+    jsonb_build_object(
+      'stage', 'synthesize',
+      'pricing_version', 'm4a-fixture-price',
+      'model_name', 'gpt-5.6-terra',
+      'model_tier', 'terra',
+      'hold_tokens', 3,
+      'hold_cost_usd', 0.05
+    )
+  );
+  if coalesce((reserved ->> 'reserved')::boolean, false) is not true then
+    raise exception 'yesterday run reservation was denied: %', reserved ->> 'reason';
+  end if;
+  budget := public.custodian_run_budget_status(run_id);
+  if (select created_at >= date_trunc('day', now()) from public.agent_runs where id = run_id)
+     or (select created_at < date_trunc('day', now()) from public.agent_provider_reservations where idempotency_key = 'm4a-hold-yesterday')
+     or (budget ->> 'daily_cost')::numeric <> 0.85
+     or (budget ->> 'daily_cost_remaining')::numeric <> 9.15 then
+    raise exception 'today reservation on a yesterday run missed the daily ceiling: %', budget;
+  end if;
+
+  created_run := public.custodian_create_readonly_analysis_run(
+    '24242424-2424-4424-8424-242424242424',
+    'm4a-run-prior-month',
+    jsonb_build_object(
+      'model_tier', 'terra',
+      'prompt_version', 'm4a-fixture-v1',
+      'objective', 'Count a new hold on the reservation month.',
+      'tool_policy_id', policy_id
+    )
+  );
+  run_id := (created_run #>> '{run,id}')::uuid;
+  perform public.custodian_transition_agent_run(run_id, 'queued', 'retrieving', 'm4a-run-prior-month-retrieve', '{}'::jsonb);
+  perform public.custodian_transition_agent_run(run_id, 'retrieving', 'synthesizing', 'm4a-run-prior-month-synthesize', '{}'::jsonb);
+  execute 'set local role postgres';
+  update public.agent_runs
+     set created_at = date_trunc('month', now()) - interval '1 day'
+   where id = run_id;
+  execute 'set local role authenticated';
+  perform set_config('request.jwt.claim.sub', '14141414-1414-4414-8414-141414141414', true);
+  reserved := public.custodian_reserve_provider_call(
+    run_id,
+    'm4a-hold-prior-month',
+    jsonb_build_object(
+      'stage', 'synthesize',
+      'pricing_version', 'm4a-fixture-price',
+      'model_name', 'gpt-5.6-terra',
+      'model_tier', 'terra',
+      'hold_tokens', 4,
+      'hold_cost_usd', 0.07
+    )
+  );
+  if coalesce((reserved ->> 'reserved')::boolean, false) is not true then
+    raise exception 'prior-month run reservation was denied: %', reserved ->> 'reason';
+  end if;
+  budget := public.custodian_run_budget_status(run_id);
+  if (select created_at >= date_trunc('month', now()) from public.agent_runs where id = run_id)
+     or (select created_at < date_trunc('month', now()) from public.agent_provider_reservations where idempotency_key = 'm4a-hold-prior-month')
+     or (budget ->> 'monthly_cost')::numeric <> 0.92
+     or (budget ->> 'monthly_cost_remaining')::numeric <> 9.08
+     or (budget ->> 'daily_cost')::numeric <> 0.92 then
+    raise exception 'this-month reservation on a prior-month run missed the monthly ceiling: %', budget;
+  end if;
+end;
+$$;
+
+select ok(true, 'a reservation today counts against today even when its run was created yesterday');
+select ok(true, 'a reservation this month counts against this month even when its run was created earlier');
 
 set local role postgres;
 update public.agent_provider_reservations

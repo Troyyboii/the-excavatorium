@@ -393,9 +393,13 @@ maximum cost check, a timeout, and provider usage parsing. Source now also has
 `custodian_reserve_provider_call` and `custodian_settle_provider_reservation`. A budget
 hold encumbers the conservative maximum. It is not written into `agent_steps` or
 `agent_runs` unless parsed provider usage is settled as known. Unknown usage leaves
-actual tokens and cost null. The Edge function still does not take a hold before a
-provider call, and `PROVIDER_EXECUTION_UNSUPPORTED` remains `true`. The first paid
-Custodian run requires separate explicit authorization after the entire gate is verified.
+actual tokens and cost null. An owner may reserve a hold. Settlement, release, and
+synthesis output require the service-role runtime, the same trusted producer as
+completed synthesis recording. Daily and monthly totals attribute recorded usage by
+the priced step time and holds by the reservation time, not by run creation time.
+The Edge function still does not take a hold before a provider call, and
+`PROVIDER_EXECUTION_UNSUPPORTED` remains `true`. The first paid Custodian run
+requires separate explicit authorization after the entire gate is verified.
 
 A null daily or monthly cost ceiling is not a product default.
 `custodian_reserve_provider_call` and the read-only policy and run RPCs refuse it.
@@ -896,8 +900,9 @@ into release notes.
 ### Known gaps and deliberate deferrals
 
 - Provider execution, paid calls, live findings, and run controls remain blocked.
-  M4A stores the provider budget hold and a server-built read-only run bootstrap, but
-  the Edge function does not reserve, settle, or call a provider. The owner must
+  M4A stores the provider budget hold and a server-built read-only run bootstrap.
+  Settlement is service-role only. The Edge function does not reserve, settle, or
+  call a provider. The owner must
   choose the model allowlist and cost ceilings before activation; the policy RPC has
   no product-default tiers or ceilings. M4B wires settlement without opening the gate.
   M4C keeps the browser control inert. M4D is the separate activation sequence.

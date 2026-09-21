@@ -1,9 +1,11 @@
 -- Custodian M4A: a provider budget hold is an encumbrance, not a bill.
 --
 -- Recorded tokens and cost stay on agent_steps and agent_runs, and only after
--- parsed provider usage is settled. Unknown usage leaves those columns
--- unchanged and keeps the conservative maximum on this table. This migration
--- does not call a provider, open a provider gate, or create evidence items.
+-- parsed provider usage is settled by the trusted service-role runtime.
+-- Unknown usage leaves those columns unchanged and keeps the conservative
+-- maximum on this table. Daily and monthly totals follow the priced step or
+-- reservation event, not the run creation time. This migration does not call
+-- a provider, open a provider gate, or create evidence items.
 
 create or replace function public.custodian_provider_require_integer(
   payload jsonb,
@@ -618,35 +620,31 @@ begin
     end if;
   end if;
 
-  select coalesce(sum(r.tokens_used), 0), coalesce(sum(r.cost_usd), 0)
+  select coalesce(sum(s.tokens_used), 0), coalesce(sum(s.cost_usd), 0)
     into daily_tokens, daily_cost
-    from public.agent_runs r
-   where r.owner_id = caller_id
-     and r.created_at >= pg_catalog.date_trunc('day', pg_catalog.now());
+    from public.agent_steps s
+   where s.owner_id = caller_id
+     and s.created_at >= pg_catalog.date_trunc('day', pg_catalog.now());
   select coalesce(sum(h.hold_tokens), 0), coalesce(sum(h.hold_cost_usd), 0)
     into daily_hold_tokens, daily_hold_cost
     from public.agent_provider_reservations h
-    join public.agent_runs r
-      on r.owner_id = h.owner_id and r.id = h.run_id
    where h.owner_id = caller_id
      and h.status = 'held'
-     and r.created_at >= pg_catalog.date_trunc('day', pg_catalog.now());
+     and h.created_at >= pg_catalog.date_trunc('day', pg_catalog.now());
   daily_tokens := daily_tokens + daily_hold_tokens;
   daily_cost := daily_cost + daily_hold_cost;
 
-  select coalesce(sum(r.tokens_used), 0), coalesce(sum(r.cost_usd), 0)
+  select coalesce(sum(s.tokens_used), 0), coalesce(sum(s.cost_usd), 0)
     into monthly_tokens, monthly_cost
-    from public.agent_runs r
-   where r.owner_id = caller_id
-     and r.created_at >= pg_catalog.date_trunc('month', pg_catalog.now());
+    from public.agent_steps s
+   where s.owner_id = caller_id
+     and s.created_at >= pg_catalog.date_trunc('month', pg_catalog.now());
   select coalesce(sum(h.hold_tokens), 0), coalesce(sum(h.hold_cost_usd), 0)
     into monthly_hold_tokens, monthly_hold_cost
     from public.agent_provider_reservations h
-    join public.agent_runs r
-      on r.owner_id = h.owner_id and r.id = h.run_id
    where h.owner_id = caller_id
      and h.status = 'held'
-     and r.created_at >= pg_catalog.date_trunc('month', pg_catalog.now());
+     and h.created_at >= pg_catalog.date_trunc('month', pg_catalog.now());
   monthly_tokens := monthly_tokens + monthly_hold_tokens;
   monthly_cost := monthly_cost + monthly_hold_cost;
 
@@ -890,46 +888,36 @@ begin
     from public.agent_provider_reservations h
    where h.owner_id = caller_id and h.run_id = run_row.id and h.status = 'held';
 
-  select coalesce(sum(r.tokens_used), 0), coalesce(sum(r.cost_usd), 0)
+  select coalesce(sum(s.tokens_used), 0), coalesce(sum(s.cost_usd), 0)
     into daily_tokens, daily_cost
-    from public.agent_runs r
-   where r.owner_id = caller_id
-     and r.created_at >= pg_catalog.date_trunc('day', pg_catalog.now());
+    from public.agent_steps s
+   where s.owner_id = caller_id
+     and s.created_at >= pg_catalog.date_trunc('day', pg_catalog.now());
   select coalesce(sum(h.hold_tokens), 0), coalesce(sum(h.hold_cost_usd), 0)
     into daily_hold_tokens, daily_hold_cost
     from public.agent_provider_reservations h
-    join public.agent_runs r on r.owner_id = h.owner_id and r.id = h.run_id
    where h.owner_id = caller_id
      and h.status = 'held'
-     and r.created_at >= pg_catalog.date_trunc('day', pg_catalog.now());
+     and h.created_at >= pg_catalog.date_trunc('day', pg_catalog.now());
 
-  select coalesce(sum(r.tokens_used), 0), coalesce(sum(r.cost_usd), 0)
+  select coalesce(sum(s.tokens_used), 0), coalesce(sum(s.cost_usd), 0)
     into monthly_tokens, monthly_cost
-    from public.agent_runs r
-   where r.owner_id = caller_id
-     and r.created_at >= pg_catalog.date_trunc('month', pg_catalog.now());
+    from public.agent_steps s
+   where s.owner_id = caller_id
+     and s.created_at >= pg_catalog.date_trunc('month', pg_catalog.now());
   select coalesce(sum(h.hold_tokens), 0), coalesce(sum(h.hold_cost_usd), 0)
     into monthly_hold_tokens, monthly_hold_cost
     from public.agent_provider_reservations h
-    join public.agent_runs r on r.owner_id = h.owner_id and r.id = h.run_id
    where h.owner_id = caller_id
      and h.status = 'held'
-     and r.created_at >= pg_catalog.date_trunc('month', pg_catalog.now());
+     and h.created_at >= pg_catalog.date_trunc('month', pg_catalog.now());
 
   projected_tokens := run_row.tokens_used + existing_hold_tokens + hold_tokens;
   projected_cost := run_row.cost_usd + existing_hold_cost + hold_cost;
-  projected_daily_tokens := daily_tokens + daily_hold_tokens;
-  projected_daily_cost := daily_cost + daily_hold_cost;
-  projected_monthly_tokens := monthly_tokens + monthly_hold_tokens;
-  projected_monthly_cost := monthly_cost + monthly_hold_cost;
-  if run_row.created_at >= pg_catalog.date_trunc('day', pg_catalog.now()) then
-    projected_daily_tokens := projected_daily_tokens + hold_tokens;
-    projected_daily_cost := projected_daily_cost + hold_cost;
-  end if;
-  if run_row.created_at >= pg_catalog.date_trunc('month', pg_catalog.now()) then
-    projected_monthly_tokens := projected_monthly_tokens + hold_tokens;
-    projected_monthly_cost := projected_monthly_cost + hold_cost;
-  end if;
+  projected_daily_tokens := daily_tokens + daily_hold_tokens + hold_tokens;
+  projected_daily_cost := daily_cost + daily_hold_cost + hold_cost;
+  projected_monthly_tokens := monthly_tokens + monthly_hold_tokens + hold_tokens;
+  projected_monthly_cost := monthly_cost + monthly_hold_cost + hold_cost;
 
   denial_reason := null;
   if projected_tokens > run_row.budget_tokens then
@@ -987,8 +975,15 @@ grant execute on function public.custodian_reserve_provider_call(uuid, text, jso
   to authenticated;
 
 drop function if exists public.custodian_settle_provider_reservation(uuid, text, jsonb);
+drop function if exists public.custodian_settle_provider_reservation(uuid, uuid, text, jsonb);
+
+-- Factual provider contact, usage, and synthesis output are server facts.
+-- The Edge service-role runtime is the only caller, matching
+-- custodian_record_runtime_agent_step. Identity is checked before the request
+-- claim is rewritten. The completed-synthesis trust trigger is unchanged.
 create or replace function public.custodian_settle_provider_reservation(
-  run_id_value uuid,
+  runtime_owner_id uuid,
+  run_id uuid,
   idempotency_key text,
   settlement jsonb
 )
@@ -998,10 +993,10 @@ security definer
 set search_path = ''
 as $$
 declare
-  caller_id uuid := public.custodian_current_owner();
-  payload jsonb := public.custodian_runtime_require_object(settlement, 'settlement');
-  request_key text := public.custodian_runtime_require_idempotency(idempotency_key);
-  target_run uuid := run_id_value;
+  caller_id uuid;
+  payload jsonb;
+  request_key text;
+  target_run uuid := run_id;
   run_row public.agent_runs;
   reservation public.agent_provider_reservations;
   knowledge text;
@@ -1017,28 +1012,42 @@ declare
   step_count_before integer;
   step_count_after integer;
 begin
+  if auth.role() is distinct from 'service_role' then
+    raise exception 'trusted runtime producer is required' using errcode = '42501';
+  end if;
+  if runtime_owner_id is null then
+    raise exception 'runtime owner is required' using errcode = '22023';
+  end if;
+  payload := public.custodian_runtime_require_object(settlement, 'settlement');
+  request_key := public.custodian_runtime_require_idempotency(idempotency_key);
   perform public.custodian_reject_owner_keys(payload);
-  perform public.custodian_lock(caller_id);
   knowledge := payload ->> 'usage_knowledge';
   if knowledge not in ('known', 'unknown', 'none') then
     raise exception 'usage_knowledge must be known, unknown, or none' using errcode = '22023';
   end if;
 
+  perform public.custodian_lock(runtime_owner_id);
   select * into run_row
     from public.agent_runs
-   where owner_id = caller_id and id = target_run
+   where owner_id = runtime_owner_id and id = target_run
    for update;
   if not found then
-    raise exception 'agent run not found' using errcode = 'P0002';
+    raise exception 'runtime owner and run do not match' using errcode = '42501';
   end if;
   select * into reservation
     from public.agent_provider_reservations h
-   where h.owner_id = caller_id
+   where h.owner_id = runtime_owner_id
      and h.run_id = run_row.id
      and h.idempotency_key = request_key
    for update;
   if not found then
     raise exception 'provider reservation not found' using errcode = 'P0002';
+  end if;
+
+  perform pg_catalog.set_config('request.jwt.claim.sub', runtime_owner_id::text, true);
+  caller_id := public.custodian_current_owner();
+  if caller_id is distinct from runtime_owner_id then
+    raise exception 'runtime owner and run do not match' using errcode = '42501';
   end if;
 
   if reservation.status = 'settled_known' then
@@ -1202,7 +1211,9 @@ begin
     raise exception 'known provider usage conflicts with the recorded step' using errcode = '23505';
   end if;
 
-  perform pg_catalog.set_config('custodian.trusted_runtime', 'true', true);
+  if step_status = 'completed' then
+    perform pg_catalog.set_config('custodian.trusted_runtime', 'true', true);
+  end if;
   perform public.custodian_record_agent_step(
     run_row.id,
     pg_catalog.jsonb_build_object(
@@ -1252,10 +1263,10 @@ begin
 end;
 $$;
 
-revoke execute on function public.custodian_settle_provider_reservation(uuid, text, jsonb)
-  from public, anon;
-grant execute on function public.custodian_settle_provider_reservation(uuid, text, jsonb)
-  to authenticated;
+revoke execute on function public.custodian_settle_provider_reservation(uuid, uuid, text, jsonb)
+  from public, anon, authenticated;
+grant execute on function public.custodian_settle_provider_reservation(uuid, uuid, text, jsonb)
+  to service_role;
 
 create or replace function public.custodian_request_cancel_agent_run(
   run_id uuid,
