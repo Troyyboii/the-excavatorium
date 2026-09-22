@@ -851,6 +851,69 @@ function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
 }
 
+const OPENAI_ERROR_TOKEN = /^[a-z0-9_]{1,80}$/;
+const OPENAI_QUOTA_ERROR_CODES = new Set([
+  "insufficient_quota",
+  "credit_balance_exhausted",
+  "organization_spend_limit_exceeded",
+  "project_spend_limit_exceeded",
+  "organization_usage_limit_exceeded",
+]);
+const PROVIDER_CONTACT_USAGE_UNKNOWN =
+  "Provider contact occurred, but reliable usage was not available. The hold remains.";
+const PROVIDER_TIMEOUT_USAGE_UNKNOWN =
+  "Custodian model service timed out. Usage is unknown and the hold remains.";
+const PROVIDER_CONTACT_UNCERTAIN =
+  "Custodian model contact is uncertain. Usage is unknown and the hold remains.";
+
+function openAiErrorToken(value: unknown): string | null {
+  return typeof value === "string" && OPENAI_ERROR_TOKEN.test(value) ? value : null;
+}
+
+/** Reads only error.type and error.code. Messages, params, and raw bodies are ignored. */
+function openAiErrorTokens(body: unknown): { type: string | null; code: string | null } {
+  if (!isObject(body)) return { type: null, code: null };
+  const error = body.error;
+  if (!isObject(error)) return { type: null, code: null };
+  return { type: openAiErrorToken(error.type), code: openAiErrorToken(error.code) };
+}
+
+/**
+ * Stable internal code for a non-2xx provider response.
+ * Status decides the class. error.type and error.code only separate quota from
+ * rate limits, and model-not-found from other 400 rejections.
+ */
+export function classifyOpenAiHttpFailure(status: number, body: unknown): string {
+  const { type, code } = openAiErrorTokens(body);
+  if (status === 401) return "openai_authentication_failed";
+  if (status === 403) return "openai_permission_denied";
+  if (status === 429) {
+    if (type === "insufficient_quota" || (code !== null && OPENAI_QUOTA_ERROR_CODES.has(code))) {
+      return "openai_quota_exceeded";
+    }
+    return "openai_rate_limited";
+  }
+  if (status === 404 || (status === 400 && code === "model_not_found")) {
+    return "openai_model_unavailable";
+  }
+  if (status >= 400 && status < 500) return "openai_request_rejected";
+  if (status === 500) return "openai_server_error";
+  return "openai_unavailable";
+}
+
+/** One body read. Parse failure keeps the caller on HTTP status alone. */
+async function readProviderResponseBody(
+  response: Response,
+): Promise<{ parsed: boolean; value: unknown }> {
+  const text = await response.text();
+  if (text.length === 0) return { parsed: false, value: undefined };
+  try {
+    return { parsed: true, value: JSON.parse(text) };
+  } catch {
+    return { parsed: false, value: undefined };
+  }
+}
+
 async function transitionFailure(
   io: CustodianIo,
   run: SynthesisRun,
@@ -1388,6 +1451,7 @@ async function executeBoundedSynthesisAttempt(input: {
   const startedAt = io.now();
   let response: Response | undefined;
   let upstream: unknown;
+  let parsedBody = false;
   try {
     response = await io.fetchProvider(OPENAI_RESPONSES_URL, {
       method: "POST",
@@ -1398,35 +1462,71 @@ async function executeBoundedSynthesisAttempt(input: {
       body: requestBody,
       signal: controller.signal,
     });
-    upstream = await response.json();
+    const read = await readProviderResponseBody(response);
+    parsedBody = read.parsed;
+    upstream = read.value;
   } catch (error) {
-    const aborted = isAbortError(error);
     const received = response;
-    let code = "openai_unavailable";
-    let message = "Custodian model contact is uncertain. Usage is unknown and the hold remains.";
-    if (aborted) {
-      code = "openai_timeout";
-      message = "Custodian model service timed out. Usage is unknown and the hold remains.";
-    } else if (received) {
-      code = received.ok ? "openai_invalid_response" : "openai_unavailable";
-      message =
-        "Provider contact occurred, but reliable usage was not available. The hold remains.";
+    if (isAbortError(error)) {
+      return settleUnknown(
+        io,
+        ownerId,
+        run,
+        input.invocationKey,
+        attemptKey,
+        "openai_timeout",
+        PROVIDER_TIMEOUT_USAGE_UNKNOWN,
+      );
     }
-    return settleUnknown(io, ownerId, run, input.invocationKey, attemptKey, code, message);
-  } finally {
-    clearTimeout(timeout);
-  }
-  const latencyMs = Math.max(0, Math.round(io.now() - startedAt));
-  const usage = readUsage(upstream);
-  if (!response.ok || !usage) {
+    if (received) {
+      return settleUnknown(
+        io,
+        ownerId,
+        run,
+        input.invocationKey,
+        attemptKey,
+        received.ok
+          ? "openai_invalid_response"
+          : classifyOpenAiHttpFailure(received.status, undefined),
+        PROVIDER_CONTACT_USAGE_UNKNOWN,
+      );
+    }
     return settleUnknown(
       io,
       ownerId,
       run,
       input.invocationKey,
       attemptKey,
-      response.ok ? "openai_usage_missing" : "openai_unavailable",
-      "Provider contact occurred, but reliable usage was not available. The hold remains.",
+      "openai_unavailable",
+      PROVIDER_CONTACT_UNCERTAIN,
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
+  const latencyMs = Math.max(0, Math.round(io.now() - startedAt));
+  if (!response.ok || !parsedBody) {
+    return settleUnknown(
+      io,
+      ownerId,
+      run,
+      input.invocationKey,
+      attemptKey,
+      response.ok
+        ? "openai_invalid_response"
+        : classifyOpenAiHttpFailure(response.status, parsedBody ? upstream : undefined),
+      PROVIDER_CONTACT_USAGE_UNKNOWN,
+    );
+  }
+  const usage = readUsage(upstream);
+  if (!usage) {
+    return settleUnknown(
+      io,
+      ownerId,
+      run,
+      input.invocationKey,
+      attemptKey,
+      "openai_usage_missing",
+      PROVIDER_CONTACT_USAGE_UNKNOWN,
     );
   }
   const costUsd = calculateUsageCost(usage, pricing);
