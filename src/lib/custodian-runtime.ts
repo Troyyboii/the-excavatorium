@@ -206,7 +206,10 @@ export function formatUsd(value: number): string {
   return `$${value.toFixed(4)}`;
 }
 
-export function describeCustodianRunAccounting(run: CustodianRun): {
+export function describeCustodianRunAccounting(
+  run: CustodianRun,
+  providerHoldProjection: CustodianRunRead["providerHoldProjection"] = "available",
+): {
   recordedProviderCost: string;
   recordedProviderTokens: string;
   heldProviderBudget: string;
@@ -215,6 +218,18 @@ export function describeCustodianRunAccounting(run: CustodianRun): {
   cancellation: string;
 } {
   const hold = run.providerHold;
+  if (providerHoldProjection === "unavailable" && !hold) {
+    return {
+      recordedProviderCost: "Not recorded",
+      recordedProviderTokens: "Not recorded",
+      heldProviderBudget: "Not recorded",
+      usageKnowledge: "Recorded usage is unclaimed. The invocation outcome is not established.",
+      pricingVersion: "Not recorded",
+      cancellation: run.cancelRequestedAt
+        ? `Requested ${run.cancelRequestedAt}. Cancellation does not prove the provider was never contacted.`
+        : "Not requested",
+    };
+  }
   const unknown = hold?.status === "held" || hold?.usageKnowledge === "unknown";
   const known = hold?.status === "settled_known" && hold.usageKnowledge === "known";
   return {
