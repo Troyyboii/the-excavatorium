@@ -238,7 +238,7 @@ Deno.test(
       new Request("https://example.test/custodian-run", { method: "POST", body: "{}" }),
     );
     assertEquals(unauthenticated.status, 401);
-    assertEquals(PROVIDER_EXECUTION_UNSUPPORTED, true);
+    assertEquals(PROVIDER_EXECUTION_UNSUPPORTED, false);
   },
 );
 
