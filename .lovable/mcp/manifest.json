@@ -321,7 +321,7 @@
       {
         "name": "get_pending_approvals",
         "title": "Get pending Custodian approvals",
-        "description": "Read pending caller-owned approvals when the Custodian runtime foundation is available.",
+        "description": "Read pending caller-owned approvals, including the exact proposed action hash, when the Custodian runtime foundation is available. This tool does not record an owner decision or execute work.",
         "annotations": {
           "readOnlyHint": true,
           "idempotentHint": true,
@@ -519,11 +519,6 @@
           ],
           "additionalProperties": false,
           "$schema": "http://json-schema.org/draft-07/schema#"
-        },
-        "_meta": {
-          "openai/fileParams": [
-            "file"
-          ]
         }
       }
     ]
