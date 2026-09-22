@@ -105,7 +105,7 @@ function harness(script: ReadonlyRunObservation[], invokeOk = true) {
 }
 
 describe("readonly analysis start", () => {
-  test("production ports expose the activated source gate without making a call", () => {
+  test("production ports expose the activated source gate without making a call", async () => {
     expect(CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER).toBe(true);
     expect([...READONLY_ANALYSIS_ADVANCE_STATES]).toEqual([
       "queued",
