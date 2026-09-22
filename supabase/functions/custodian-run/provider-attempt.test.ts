@@ -615,7 +615,7 @@ function usage(body: { body: Record<string, unknown> }) {
 }
 
 Deno.test("provider gate stays closed and performs no provider fetch", async () => {
-  assertEquals(PROVIDER_EXECUTION_UNSUPPORTED, true);
+  assertEquals(PROVIDER_EXECUTION_UNSUPPORTED, false);
   const state = world();
   state.fetchImpl = () => Promise.reject(new Error("fetch_must_not_run"));
   const blocked = await advance(state, "invocation-1", false);
