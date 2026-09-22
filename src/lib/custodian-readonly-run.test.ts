@@ -1103,8 +1103,7 @@ describe("readonly analysis adversarial matrix", () => {
       expect(serialized).not.toContain("provider-attempt:");
     }
     const source = await Bun.file(new URL("./custodian-readonly-run.ts", import.meta.url)).text();
-    expect(source).not.toMatch(/PROVIDER_EXECUTION_UNSUPPORTED\s*=\s*false/);
-    expect(source).not.toMatch(/PROVIDER_EXECUTION_UNSUPPORTED\s*=\s*false/);
+    expect(source).not.toContain("provider-attempt:${");
   });
 });
 
