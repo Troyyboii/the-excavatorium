@@ -1293,6 +1293,53 @@ Deno.test("remaining latency blocks contact and caps the provider timeout", asyn
   assertEquals(boundedProviderTimeoutMs(tight.budget.run_latency_remaining) <= 20, true);
 });
 
+Deno.test("a remaining output budget below 16 stops before reserve", async () => {
+  for (const remaining of [1, 15]) {
+    const state = world();
+    state.budget.run_tokens_remaining = remaining;
+    state.fetchImpl = () => Promise.reject(new Error("fetch_must_not_run"));
+    const stopped = await advance(state);
+    assertEquals(state.reserveCalls, 0);
+    assertEquals(state.fetches, 0);
+    assertEquals(state.reservation, null);
+    assertEquals(state.run.status, "budget_stopped");
+    assertEquals(state.run.failure_code, "per_run_tokens");
+    assertEquals(stopped.body.state, "stopped");
+  }
+});
+
+Deno.test("a legal remaining output budget is sent unchanged", async () => {
+  for (const remaining of [16, 4074, 4096]) {
+    const state = world();
+    state.budget.run_tokens_remaining = remaining;
+    let sent: number | undefined;
+    state.fetchImpl = (_url, init) => {
+      const request = JSON.parse((init as { body?: string }).body ?? "{}") as {
+        max_output_tokens?: number;
+      };
+      sent = request.max_output_tokens;
+      return Promise.resolve(Response.json(providerResponse(synthesis([finding()]))));
+    };
+    await advance(state);
+    assertEquals(sent, remaining);
+    assertEquals(state.fetches, 1);
+  }
+
+  const capped = world();
+  capped.budget.run_tokens_remaining = 4097;
+  let cappedSent: number | undefined;
+  capped.fetchImpl = (_url, init) => {
+    const request = JSON.parse((init as { body?: string }).body ?? "{}") as {
+      max_output_tokens?: number;
+    };
+    cappedSent = request.max_output_tokens;
+    return Promise.resolve(Response.json(providerResponse(synthesis([finding()]))));
+  };
+  await advance(capped);
+  assertEquals(cappedSent, 4096);
+  assertEquals(capped.fetches, 1);
+});
+
 Deno.test("a successful reserve must identify the expected hold before fetch", async () => {
   const cases: Array<{
     response: unknown | ((key: string, payload: Record<string, unknown>) => unknown);

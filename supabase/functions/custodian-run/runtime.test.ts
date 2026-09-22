@@ -172,8 +172,12 @@ Deno.test("uses a bounded persisted system policy with a safe fallback", () => {
 });
 
 Deno.test("never requests more output tokens than remain", () => {
-  assertEquals(boundedOutputBudget(1), 1);
+  assertEquals(boundedOutputBudget(1), 0);
+  assertEquals(boundedOutputBudget(15), 0);
+  assertEquals(boundedOutputBudget(16), 16);
   assertEquals(boundedOutputBudget(63), 63);
+  assertEquals(boundedOutputBudget(4074), 4074);
+  assertEquals(boundedOutputBudget(4096), 4096);
   assertEquals(boundedOutputBudget(4097), 4096);
   assertEquals(boundedOutputBudget(0), 0);
 });
@@ -453,25 +457,43 @@ Deno.test("rejects a blank system policy", () => {
   if (!rejected) throw new Error("Expected a blank system policy to be rejected");
 });
 
-Deno.test("rejects a non-positive output budget", () => {
-  let rejected = false;
-  try {
-    buildResponsesRequest({
-      stage: "extract",
-      model: "gpt-5.6-luna",
-      systemPrompt: "system",
-      untrustedEvidence: {},
-      schemaName: "schema",
-      schema: {
-        type: "object",
-        additionalProperties: false,
-        required: [],
-        properties: {},
-      },
-      maxOutputTokens: 0,
-    });
-  } catch {
-    rejected = true;
+Deno.test("rejects an output budget below the Responses minimum", () => {
+  for (const maxOutputTokens of [0, 1, 15]) {
+    let rejected = false;
+    try {
+      buildResponsesRequest({
+        stage: "extract",
+        model: "gpt-5.6-luna",
+        systemPrompt: "system",
+        untrustedEvidence: {},
+        schemaName: "schema",
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          required: [],
+          properties: {},
+        },
+        maxOutputTokens,
+      });
+    } catch {
+      rejected = true;
+    }
+    if (!rejected) throw new Error("Expected an output budget below 16 to be rejected");
   }
-  if (!rejected) throw new Error("Expected a non-positive output budget to be rejected");
+
+  const accepted = buildResponsesRequest({
+    stage: "extract",
+    model: "gpt-5.6-luna",
+    systemPrompt: "system",
+    untrustedEvidence: {},
+    schemaName: "schema",
+    schema: {
+      type: "object",
+      additionalProperties: false,
+      required: [],
+      properties: {},
+    },
+    maxOutputTokens: 16,
+  });
+  assertEquals(accepted.max_output_tokens, 16);
 });
