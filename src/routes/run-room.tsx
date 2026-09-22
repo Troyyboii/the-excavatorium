@@ -1,13 +1,22 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { RunRoomSurface } from "@/components/custodian/run-room-surface";
 import { useOnlineStatus } from "@/hooks/use-online";
 import { isCustodianFoundationMissing } from "@/lib/custodian";
-import { useCustodianRuns } from "@/lib/custodian-runtime";
+import { productionReadonlyAnalysisPorts } from "@/lib/custodian-readonly-run";
+import {
+  CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER,
+  custodianRunsKey,
+  useCustodianRuns,
+} from "@/lib/custodian-runtime";
+import { useCurrentUserId } from "@/lib/session";
 
 export const Route = createFileRoute("/run-room")({ component: RunRoomPage, ssr: false });
 
 function RunRoomPage() {
   const online = useOnlineStatus();
+  const userId = useCurrentUserId();
+  const queryClient = useQueryClient();
   const runs = useCustodianRuns(online);
   const foundationPending = Boolean(runs.error && isCustodianFoundationMissing(runs.error));
   const error = !online
@@ -25,6 +34,13 @@ function RunRoomPage() {
       online={online}
       loading={Boolean(!error && runs.isLoading)}
       error={error}
+      surfaceEnabled={CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER}
+      ports={productionReadonlyAnalysisPorts({
+        ownerId: userId,
+        refreshRuns: async () => {
+          await queryClient.invalidateQueries({ queryKey: custodianRunsKey(userId) });
+        },
+      })}
     />
   );
 }

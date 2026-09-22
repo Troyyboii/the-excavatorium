@@ -4,7 +4,7 @@
 - **Inspected against:** live repository source at the commit that lands this file
 - **Does not authorize:** provider activation, secret changes, migration application, Edge deployment, Lovable publication, or a paid run
 
-This map is the short first-run companion to [`custodian-program.md`](./custodian-program.md). The program remains the canonical product contract. This file answers only: what is complete in source for one bounded read-only analysis, what still needs live proof, and what must stay closed until M4D.
+This map is the short first-run companion to [`custodian-program.md`](./custodian-program.md). The program remains the canonical product contract. This file answers only: what is complete in source for one bounded read-only analysis, what still needs live proof, and what must stay closed. M4D is implemented in source and is not activated.
 
 Use the capability vocabulary from the program. Source inspection here is not evidence that migrations are applied, functions are deployed, Lovable is serving this commit, or a provider can be contacted.
 
@@ -33,9 +33,9 @@ It is not resident monitoring, Observatory, MCP run control, canonical archive m
 | M3 owner gate | **CURRENT** source in `20260921140000_custodian_owner_gate.sql` and Approvals | Exact-action inspect-and-decide through `custodian_respond_approval` with required `expected_action_hash` | Approval does not execute. Internal V1 execution class is **UNRESOLVED**. |
 | M4A budget hold | **CURRENT** source in `20260921180000_custodian_provider_budget_hold.sql` | Hold storage separate from factual usage; owner reserve; service-role settle; explicit policy bootstrap; server-built read-only snapshot | Not a provider call. Remote application is **UNVERIFIED**. |
 | M4B synthesis wiring | **PRESENT, UNREACHABLE** in `supabase/functions/custodian-run/provider-attempt.ts` | One attempt identity `provider-attempt:<run id>:synthesize`; reserve first; at most one Responses fetch; truthful settlement; M2 materialization; M4 verification | `handleRequest` does not enter this path while `PROVIDER_EXECUTION_UNSUPPORTED` is `true`. |
-| M4C Run Room | **PRESENT, INERT** | Read-only listing; recorded cost, hold, unknown usage, and pricing version are distinct; Start analysis is disabled and has no click handler | Browser constant `CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER` is `false`. The route does not call `invokeCustodianRun`. |
+| M4C Run Room | **PRESENT, CLOSED** | Read-only listing; recorded cost, hold, unknown usage, and pricing version are distinct. Start analysis stays disabled while the browser gate is false and does not call policy RPCs or the Edge Function. | Browser constant `CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER` is `false`. The enabled start path exists only behind that constant. |
 | MCP | **CURRENT** readers / **BLOCKED** controls | `list_cases`, `get_case`, `get_findings`, `get_pending_approvals`, `get_run` project when foundations exist. `start_analysis` and `cancel_run` authenticate then return `RUNTIME_UNAVAILABLE` with no write. | Live OAuth callability is **UNVERIFIED**. |
-| M4D activation | **NOT STARTED** | None | Must not be inferred from M4A–M4C source. |
+| M4D activation | **IMPLEMENTED IN SOURCE, NOT ACTIVATED** | Readonly start contract and bounded driver exist. Gates remain closed. | Production activation is not done. Secrets and pricing are not configured. The first paid run is not done. Deployed concurrency proof is pending. M5 is not done. |
 
 Closed gates that remain successful safety states:
 
@@ -56,13 +56,13 @@ These are not source bugs. They are missing operational evidence.
 | Lovable / runtime verification | Browser surfaces can be source-correct and still serve an older bundle, missing table, or unavailable hold relation. | Authenticated production/preview proof of Cases, Case Reading, Findings, Approvals, and inert Run Room on the published commit. A green build is not that proof. |
 | Owner model / pricing policy | `custodian_ensure_readonly_analysis_policy` has no product-default tiers or ceilings. `selectRuntimeModel` rejects an omitted allowlist. Missing or invalid `CUSTODIAN_MODEL_PRICING_JSON` blocks before fetch. | Owner-chosen `allowed_model_tiers` and numeric per-run / daily / monthly token and cost ceilings, plus a server-only versioned pricing secret. Do not print values. |
 | Concurrency / idempotency proof | Source tests cover duplicate invocation keys, shared approval identity, and held/settled/released replay. They are in-process fixtures, not two-way deployed races. | Deployed proof that two concurrent invocations of the same run reuse `provider-attempt:<run id>:synthesize` and cannot spend the same remaining budget twice. Required before any paid owner run. |
-| M4D implementation | Activation is a separate authorized slice: open the two hard gates, add a truthful start path, deploy, and prove one bounded read-only run. | Explicit authorization. This file does not start it. |
+| M4D activation | Source now contains the truthful start path and bounded driver. The two hard gates remain closed. Secrets and pricing are not configured. Deployed concurrency proof, production activation, the first paid run, and M5 are not done. | A separate activation authorization. This file does not open either gate. |
 
 Local database runtime validation remains **UNVERIFIED** in environments without Docker / `supabase test db`. Hosted CI job `database` is the repository's pgTAP runner; a green hosted job still does not replace production verification.
 
-## 4. Exact blockers before M4D
+## 4. Exact blockers before M4D activation
 
-M4D may not start while any of these remain open:
+M4D source is implemented. Activation must not start while any of these remain open:
 
 1. Remote history does not yet prove that `20260920090000_custodian_finding_attribution.sql`, `20260921140000_custodian_owner_gate.sql`, and `20260921180000_custodian_provider_budget_hold.sql` are applied.
 2. Deployed `custodian-run` is not proven to be the inspected closed-gate source, with `PROVIDER_EXECUTION_UNSUPPORTED` still true.
@@ -76,7 +76,7 @@ CI success, this document, and a merged M4B/M4C source slice are not M4D authori
 
 Everything in section 4, plus:
 
-1. M4D is implemented under separate authorization and still keeps write-capable work behind the owner gate.
+1. M4D source is implemented and the provider gates remain closed. Write-capable work stays behind the owner gate. Activation is still a separate authorization.
 2. The deployed function is proven to reserve before any Responses call and to settle known, unknown, or uncontacted outcomes truthfully.
 3. Deployed two-way concurrency and idempotency proof exists for the stable attempt key.
 4. `OPENAI_API_KEY` and `CUSTODIAN_MODEL_PRICING_JSON` are configured as Edge secrets only.
@@ -102,6 +102,6 @@ Retain the outputs. They must contain no secrets. Do not treat a GitHub reposito
 
 ## 7. Smallest next implementation task
 
-The smallest next task is **not M4D**.
+M4D is implemented in source. The gates are still closed. Production activation is not done. Secrets and pricing are not configured. The first paid run is not done. Deployed concurrency proof is pending. M5 is not done.
 
-It is authorized production verification of the three first-run migrations and of the current closed-gate `custodian-run` function, then authenticated Lovable proof of the inert Run Room. Only after that evidence exists should a separately authorized M4D slice consider opening provider execution.
+The next dangerous boundary is activation: opening the two provider constants, configuring secrets and owner pricing, and proving the deployed race. This file does not authorize that boundary.

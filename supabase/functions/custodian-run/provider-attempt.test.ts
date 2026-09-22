@@ -8,6 +8,7 @@ import {
   OPENAI_RESPONSES_URL,
   projectPublicRun,
   PROVIDER_ATTEMPT_TIMEOUT_MS,
+  providerAttemptKey,
   providerFreeAdmissionSummary,
   retrievalStepKey,
   type ApprovalIdentity,
@@ -1703,3 +1704,182 @@ Deno.test("unexplained mutation does not record every subtype as false", () => {
   assertEquals(counted.checks.canonical_mutation, false);
   assertEquals(counted.checks.other_disallowed_operation, false);
 });
+
+Deno.test("mocked readonly races keep one attempt, one fetch, and one outcome", async () => {
+  assertEquals(PROVIDER_EXECUTION_UNSUPPORTED, true);
+  const attemptKey = providerAttemptKey(runId);
+
+  const findingRace = world();
+  const findingIo = racingIo(findingRace);
+  const findingResults = await Promise.all([
+    advanceOpen(findingRace, "invocation-a", findingIo.io),
+    advanceOpen(findingRace, "invocation-b", findingIo.io),
+  ]);
+  const loser = findingResults.find((result) => result.body.state === "held");
+  check("two attempts share one reservation", findingRace.reserveCalls, 2);
+  check("one fetch", findingRace.fetches <= 1 && findingRace.fetches === 1, true);
+  check("loser is a replay", findingIo.replays, 1);
+  check("loser does not win a second hold", loser?.body.state, "held");
+  check("one known settlement", findingRace.settlePayloads.length, 1);
+  check(
+    "one synthesis step",
+    findingRace.steps.filter((step) => step.stepKind === "synthesize").length,
+    1,
+  );
+  check("one finding materialization", findingRace.materializeCalls, 1);
+  check("attempt key stays server owned", findingRace.reservation?.idempotencyKey, attemptKey);
+  check("no second approval on the finding path", findingRace.approvals, 0);
+
+  const approvalRace = world();
+  approvalRace.fetchImpl = () =>
+    Promise.resolve(Response.json(providerResponse(synthesis([finding()], true))));
+  const approvalIo = racingIo(approvalRace);
+  await Promise.all([
+    advanceOpen(approvalRace, "approval-a", approvalIo.io),
+    advanceOpen(approvalRace, "approval-b", approvalIo.io),
+  ]);
+  check("approval race fetches once", approvalRace.fetches, 1);
+  check("one approval identity", approvalRace.approvals, 1);
+  check("approval records share the server key", approvalRace.approvalRecords.length, 1);
+  check(
+    "approval key is the server attempt",
+    approvalRace.approvalRecords[0]?.key,
+    approvalIdempotencyKey(runId),
+  );
+  check("approval race materializes once", approvalRace.materializeCalls, 1);
+  check("approval race settles once", approvalRace.settlePayloads.length, 1);
+
+  const settled = world();
+  settled.reservation = settledReservation(settled);
+  settled.steps.push({
+    id: "step-known",
+    stepKind: "synthesize",
+    status: "completed",
+    idempotencyKey: attemptKey,
+    output: synthesis([finding()]),
+    tokensUsed: 1_250,
+    costUsd: 0.0024,
+    pricingVersion: "2026-09-21",
+  });
+  settled.materializedStepIds.push("step-known");
+  settled.fetchImpl = () => Promise.reject(new Error("fetch_must_not_run"));
+  await advance(settled, "settled-replay");
+  check("settled known does not fetch", settled.fetches, 0);
+  check("settled known does not charge again", settled.settlePayloads.length, 0);
+
+  const inFlight = world();
+  inFlight.reservation = heldReservation(inFlight, true);
+  inFlight.fetchImpl = () => Promise.reject(new Error("fetch_must_not_run"));
+  const inFlightResult = await advance(inFlight, "held-inflight");
+  check("in-flight unknown hold does not fetch", inFlight.fetches, 0);
+  check("in-flight hold stays held", inFlight.reservation?.status, "held");
+  check("in-flight reason", inFlightResult.body.reason, "provider_attempt_in_progress");
+
+  const expired = world();
+  expired.reservation = heldReservation(expired, false);
+  expired.fetchImpl = () => Promise.reject(new Error("fetch_must_not_run"));
+  const expiredResult = await advance(expired, "held-expired");
+  check("expired unknown hold does not fetch", expired.fetches, 0);
+  check("expired hold stays held", expired.reservation?.status, "held");
+  check("expired hold reason", expiredResult.body.reason, "provider_hold_unsettled");
+
+  const released = world();
+  released.reservation = {
+    ...heldReservation(released, false),
+    status: "released_uncontacted",
+    usageKnowledge: "none",
+  };
+  released.fetchImpl = () => Promise.reject(new Error("fetch_must_not_run"));
+  await advance(released, "released");
+  check("released uncontacted does not fetch", released.fetches, 0);
+  check("released uncontacted does not bill", released.settlePayloads.length, 0);
+  check("released uncontacted keeps null actuals", released.reservation?.actualCostUsd, null);
+
+  const beforeContact = world();
+  beforeContact.run.cancel_requested_at = new Date(beforeContact.now).toISOString();
+  beforeContact.fetchImpl = () => Promise.reject(new Error("fetch_must_not_run"));
+  const before = await advance(beforeContact, "cancel-before");
+  check("cancel before contact does not reserve", beforeContact.reserveCalls, 0);
+  check("cancel before contact does not fetch", beforeContact.fetches, 0);
+  check("cancel before contact stops", before.body.state, "stopped");
+  check("cancel before contact is cancelled", beforeContact.run.status, "cancelled");
+
+  const aroundReserve = world();
+  aroundReserve.cancelOnReserve = true;
+  aroundReserve.fetchImpl = () => Promise.reject(new Error("fetch_must_not_run"));
+  const around = await advance(aroundReserve, "cancel-around-reserve");
+  check("cancel after reserve does not fetch", aroundReserve.fetches, 0);
+  check(
+    "cancel after reserve releases uncontacted",
+    aroundReserve.reservation?.status,
+    "released_uncontacted",
+  );
+  check("cancel after reserve stops", around.body.state, "stopped");
+
+  const duringContact = world();
+  duringContact.reservation = heldReservation(duringContact, true);
+  duringContact.run.cancel_requested_at = new Date(duringContact.now).toISOString();
+  duringContact.fetchImpl = () => Promise.reject(new Error("fetch_must_not_run"));
+  const during = await advance(duringContact, "cancel-during-hold");
+  check("cancel around possible contact does not fetch", duringContact.fetches, 0);
+  check("cancel around possible contact keeps the hold", duringContact.reservation?.status, "held");
+  check("cancel around possible contact does not settle", duringContact.settlePayloads.length, 0);
+  check("cancel around possible contact stays unresolved", during.body.state, "held");
+  check(
+    "cancel around possible contact does not claim a clean pre-contact release",
+    JSON.stringify(during).includes("The hold was released"),
+    false,
+  );
+});
+
+function check(name: string, actual: unknown, expected: unknown): void {
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    throw new Error(`${name}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+  }
+}
+
+function advanceOpen(state: World, invocationKey: string, io: CustodianIo) {
+  return advanceCustodianRun({
+    io,
+    ownerId: "owner-1",
+    invocation: { runId: state.run.id, invocationKey },
+    providerExecutionUnsupported: false,
+    validSynthesis,
+  });
+}
+
+function racingIo(state: World): { io: CustodianIo; replays: number } {
+  const base = ioFor(state);
+  const seen = { reads: 0, reserves: 0, replays: 0 };
+  let releaseSecond: () => void = () => undefined;
+  const secondEntered = new Promise<void>((resolve) => {
+    releaseSecond = resolve;
+  });
+  const io: CustodianIo = {
+    ...base,
+    getReservation: () => {
+      seen.reads += 1;
+      if (seen.reads <= 2) return Promise.resolve(null);
+      return base.getReservation(state.run.id, providerAttemptKey(state.run.id));
+    },
+    reserveProviderCall: async (id, key, payload) => {
+      seen.reserves += 1;
+      if (seen.reserves === 1) {
+        const result = await base.reserveProviderCall(id, key, payload);
+        await secondEntered;
+        return result;
+      }
+      releaseSecond();
+      const result = await base.reserveProviderCall(id, key, payload);
+      const replay = result as { replay?: boolean };
+      if (replay.replay === true) seen.replays += 1;
+      return result;
+    },
+  };
+  return {
+    io,
+    get replays() {
+      return seen.replays;
+    },
+  };
+}

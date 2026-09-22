@@ -124,7 +124,7 @@ provider call is available.
 | Bounded Case Reading                                     | **CURRENT** browser-side bundle builder in `src/lib/case-reading.ts`.                                 | **CURRENT** read-only Case Reading presentation.                                                                          | It is provider-free; it is not evidence of a model run.                                                          |
 | Claims, evidence, actions, findings, revisions           | **CURRENT** owner-scoped tables/RPC foundation, including the M2 Finding attribution migration and protected materialization RPC in `20260920090000_custodian_finding_attribution.sql`. | **PARTIAL** existing collections now expose Finding origin, run/step attribution, caveats, and bounded support/contrary descriptors. | Database application and end-to-end workflow are **UNVERIFIED**.                                                 |
 | Durable runs, steps, budgets, approval, proposals, audit | **CURRENT** migration and RPC contracts, including the M3 owner-gate decision RPC.                    | Run Room is **CURRENT** as a read-only owner listing; Approvals is **CURRENT** as an owner decision surface. Approval does not execute unsupported work. | Runtime foundation is not operational proof.                                                                     |
-| Provider-backed analysis                                 | M4A hold storage is merged source. M4B wires one synthesis attempt in `supabase/functions/custodian-run/provider-attempt.ts`: reserve, at most one fetch, truthful settlement, M2 materialization, and boundary verification. That path is unreachable while the Edge gate is closed. | M4C Run Room inspection is **CURRENT** and inert. Invocation is **BLOCKED** by `CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER = false`. Start analysis does not call the Edge Function. | Edge execution is **BLOCKED** by `PROVIDER_EXECUTION_UNSUPPORTED = true`. No paid call is authorized. Deployed behavior is **UNVERIFIED**. |
+| Provider-backed analysis                                 | M4A hold storage is merged source. M4B wires one synthesis attempt in `supabase/functions/custodian-run/provider-attempt.ts`: reserve, at most one fetch, truthful settlement, M2 materialization, and boundary verification. That path is unreachable while the Edge gate is closed. M4D source adds a readonly start contract and bounded driver without opening the gate. | M4C Run Room inspection is **CURRENT**. Invocation is **BLOCKED** by `CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER = false`. While that constant is false, Start analysis does not call policy RPCs or the Edge Function. | Edge execution is **BLOCKED** by `PROVIDER_EXECUTION_UNSUPPORTED = true`. No paid call is authorized. Production activation is not done. Deployed behavior is **UNVERIFIED**. |
 | External or canonical execution                          | Approval and tool-event guard foundations are **CURRENT** source.                                     | No control UI is connected.                                                                                               | **BLOCKED**; current Edge runtime stops approved external execution.                                             |
 | MCP Custodian reads                                      | **CURRENT** bounded reader registrations and safe projections.                                        | `list_cases`, `get_case`, `get_findings`, `get_pending_approvals`, and `get_run` are conditional on deployed foundations; `get_findings` now projects bounded attribution and evidence descriptors. | Fresh authenticated production callability is **UNVERIFIED**.                                                    |
 | MCP run control                                          | Reserved tools exist.                                                                                 | `start_analysis` and `cancel_run` deliberately return unavailable.                                                        | **BLOCKED**, never simulated.                                                                                    |
@@ -344,12 +344,14 @@ owner/case checks, allowed transitions, sequence ordering, request hashes, idemp
 keys, and policy constraints. A run can be paused in `awaiting_approval`; cancellation,
 expiry, provider failure, budget stop, and hard blocks remain durable outcomes.
 
-The current Run Room remains read-only and unable to invoke the provider. It lists at
-most 100 authenticated owner runs. Where the reservation relation is readable, it shows
-recorded provider cost separately from any held budget, unknown usage, pricing version,
-a cancellation request, failure, and the latest step. The Start analysis control is
-disabled and performs no write. A missing reservation relation is shown as unavailable
-rather than as zero spend.
+The current Run Room lists at most 100 authenticated owner runs. Where the reservation
+relation is readable, it shows recorded provider cost separately from any held budget,
+unknown usage, pricing version, a cancellation request, failure, and the latest step.
+M4D source can start one readonly analysis from explicit owner inputs, then drive that
+persisted run. The Start analysis control stays disabled while
+`CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER` is false, and that closed control performs
+no policy RPC, run RPC, or Edge call. A missing reservation relation is shown as
+unavailable rather than as zero spend. Production activation is not done.
 
 Target V1 runtime behavior is retrieve/extract/synthesize/approval/execute/verify with
 durable artifacts at each boundary. Resume must use the persisted state and exact
@@ -384,8 +386,10 @@ synthesizing run records a blocked step and a `provider_execution_unsupported` o
 and does not reserve or fetch. The bounded synthesis path in `provider-attempt.ts` is
 not entered. That path, once a later activation opens the gate, is one synthesis
 attempt per run: reserve first, at most one Responses request, then settle. Extract is
-not a second paid call. No documentation may describe a live provider run until M4D
-removes the hard gate under separate authorization and deployed proof.
+not a second paid call. M4D source prepares the start path. The hard gate remains.
+No documentation may describe a live provider run until a separate activation removes
+that gate and deployed proof exists. Secrets, pricing, the first paid run, deployed
+concurrency proof, and M5 are not done.
 
 ## 13. Budget and cost safety
 
@@ -570,7 +574,7 @@ only for inverse interpretation, refusal, security, code, and execution boundari
 | Findings                     | **PARTIAL** persisted finding display via evidence readers and case collections.                                  | Separate attributable interpretation from source truth and expose support/contrary evidence.                 |
 | Proposal / Gate              | **CURRENT** inspectable exact-action presentation on Approvals.                                                   | Show exact before/diff/after and owner decision, never a vague "approve agent" button.                       |
 | Approvals                    | **CURRENT** owner-scoped inspect-and-decide surface; execution remains **BLOCKED**.                               | Read and decide exact owner-scoped requests with expiry/reject/defer audit.                                  |
-| Run Room                     | **CURRENT** inert owner inspection. Start analysis is disabled and does not invoke the Edge Function.             | Show status, objective, model tier, recorded cost and tokens, held budget, unknown usage, pricing version, cancellation, failure, and step state. A hold is encumbrance, not recorded spend. |
+| Run Room                     | **CURRENT** closed owner inspection. Start analysis stays disabled and does not invoke the Edge Function while the browser gate is false. | Show status, objective, model tier, recorded cost and tokens, held budget, unknown usage, pricing version, cancellation, failure, and step state. A hold is encumbrance, not recorded spend. |
 | Observatory                  | **BLOCKED/PLANNED** scaffold with no runtime source.                                                              | Present truthful resident/rule/cost/verification evidence only after it exists.                              |
 | Quiet state                  | A required product state.                                                                                         | Say no meaningful matter is known; do not create AI theatre.                                                 |
 
@@ -797,12 +801,17 @@ read-only analysis path.
   provider-free. Valid synthesis still materializes only through the M2 contract.
   `PROVIDER_EXECUTION_UNSUPPORTED` remains `true`, so `handleRequest` does not enter
   the fetch path.
-- **M4C BROWSER PREPARATION:** **PRESENT, INERT.**
+- **M4C BROWSER PREPARATION:** **PRESENT, CLOSED.**
   `CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER` remains `false`. The prepared invocation
-  body is only `{ runId, invocationKey }`. The Run Room control has no click handler.
+  body is only `{ runId, invocationKey }`. While the constant is false, Start analysis
+  does not call the Edge Function.
+- **M4D SOURCE:** **IMPLEMENTED, NOT ACTIVATED.** The readonly start contract and
+  bounded driver exist. Both provider constants remain closed. Production activation
+  is not done. Secrets and pricing are not configured. The first paid run is not done.
+  Deployed concurrency proof is pending. M5 is not done.
 - **M4 PROVIDER ACTIVATION:** **BLOCKED.** M4 is not complete.
 - **PRODUCTION / DEPLOYED BEHAVIOR:** **UNVERIFIED** until a separately authorized
-  deploy and proof. M4D, M5, and M6 are not started. The first-run blocker
+  deploy and proof. M5 and M6 are not started. The first-run blocker
   split is recorded in `docs/custodian-first-run-readiness.md`.
 
 ### M5 — finish V1 lifecycle inspection and permitted execution
@@ -946,14 +955,14 @@ into release notes.
 | Area                        | Authoritative/supporting paths                                                                                                                                                                                                       | Role                                                                                  |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
 | Canonical program           | `docs/custodian-program.md`                                                                                                                                                                                                          | This document.                                                                        |
-| First-run readiness         | `docs/custodian-first-run-readiness.md`                                                                                                                                                                                              | Source-complete vs remaining live proof for one bounded read-only run. Not M4D.       |
+| First-run readiness         | `docs/custodian-first-run-readiness.md`                                                                                                                                                                                              | Source-complete vs remaining live proof for one bounded read-only run. M4D source is not activation. |
 | Visual authority            | `docs/design/light-archive-shell.md`                                                                                                                                                                                                 | Current whole-application visual constitution.                                        |
 | Roadmap provenance          | `docs/design/custodian-roadmap.md`                                                                                                                                                                                                   | Supporting delivery history and existing provider gate.                               |
 | Historical visual reference | `docs/design/custodian-design-system.md`, `design-qa.md`                                                                                                                                                                             | Retained dark/inverse language and historical QA, not the default visual authority.   |
 | Release procedure           | `docs/release-verification.md`                                                                                                                                                                                                       | Reusable local/hosted/Supabase/Lovable/connector/production gate.                     |
 | Backend procedure           | `docs/supabase-setup.md`, `docs/supabase-verification.md`                                                                                                                                                                            | Directly managed backend setup and verification distinction.                          |
 | Cases and evidence          | `src/lib/custodian.ts`, `src/lib/custodian-types.ts`, `src/lib/case-reading.ts`, `src/lib/evidence-display.ts`, `src/components/custodian/`                                                                                          | Owner case contracts, bounded reading, display and source tests.                      |
-| Runtime client              | `src/lib/custodian-runtime.ts`, `src/lib/custodian-runtime-types.ts`, `src/lib/custodian-approvals.ts`                                                                                                                                | Browser read boundary, state machine, owner-gate decision client, budget/model/request contracts. |
+| Runtime client              | `src/lib/custodian-runtime.ts`, `src/lib/custodian-readonly-run.ts`, `src/lib/custodian-runtime-types.ts`, `src/lib/custodian-approvals.ts`                                                                                            | Browser read boundary, closed readonly start, state machine, owner-gate decision client, budget/model/request contracts. |
 | Frontend surfaces           | `src/routes/index.tsx`, `src/routes/inbox.tsx`, `src/routes/cases.index.tsx`, `src/routes/cases.$caseId.index.tsx`, `src/routes/run-room.tsx`, `src/routes/approvals.tsx`, `src/routes/observatory.tsx`, `src/components/custodian/approvals-surface.tsx`, `src/components/custodian/run-room-surface.tsx` | Current Desk, Inbox, Cases, inert Run Room, owner-gate Approvals, and scaffold Observatory. |
 | MCP                         | `src/lib/mcp/index.ts`, `src/lib/mcp/capability-handlers.ts`, `src/lib/mcp/tools/`, `src/lib/mcp/security.ts`                                                                                                                        | Bounded archive/Custodian client surface and authentication.                          |
 | Plugin guidance             | `plugins/the-excavatorium/skills/custodian/SKILL.md`, `plugins/the-excavatorium/.mcp.json`                                                                                                                                           | Client retrieval discipline and MCP endpoint metadata.                                |
@@ -971,12 +980,14 @@ into release notes.
   merged and stores the provider budget hold and server-built read-only run bootstrap.
   Settlement stays service-role only. M4B source can reserve, settle, and fetch once,
   but the production handler does not enter that path while
-  `PROVIDER_EXECUTION_UNSUPPORTED` is true. M4C keeps the browser control inert.
-  The owner must still choose the model allowlist and numeric cost/token ceilings
-  before activation; the policy RPC has no product-default tiers or ceilings. M4D is
-  the separate activation sequence, including deployed two-way concurrency proof
-  before any paid owner run. M4 is not complete, and production behavior is
-  **UNVERIFIED**.
+  `PROVIDER_EXECUTION_UNSUPPORTED` is true. M4C keeps the browser control closed.
+  M4D is implemented in source: explicit owner inputs, one readonly policy, one
+  persisted run, and a bounded `{ runId, invocationKey }` driver. The gates remain
+  closed. The owner must still choose the model allowlist and numeric cost/token
+  ceilings before activation; the policy RPC has no product-default tiers or ceilings.
+  Secrets and pricing are not configured. Production activation, deployed concurrency
+  proof, the first paid run, and M5 are not done. M4 is not complete, and production
+  behavior is **UNVERIFIED**.
 - Interactive Approvals exist as an owner decision surface; meaningful verification
   after execution and a selected internal V1 execution class still need implementation.
 - External execution is intentionally unsupported; canonical writes are not implied by
