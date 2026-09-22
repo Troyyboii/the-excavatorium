@@ -7,7 +7,7 @@ import { supabase } from "./supabase";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MODEL_TIERS = ["luna", "terra", "sol", "pro"] as const;
 
-export const CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER = false;
+export const CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER = true;
 export const CUSTODIAN_RUN_READ_LIMIT = 100;
 
 export type ProviderHoldStatus = "held" | "settled_known" | "released_uncontacted";
