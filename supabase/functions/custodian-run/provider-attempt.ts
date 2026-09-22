@@ -878,19 +878,26 @@ function openAiErrorTokens(body: unknown): { type: string | null; code: string |
   return { type: openAiErrorToken(error.type), code: openAiErrorToken(error.code) };
 }
 
+/** Same allowlist the 429 path already uses. Type and code are pre-validated tokens. */
+function isAllowlistedOpenAiQuota(type: string | null, code: string | null): boolean {
+  return type === "insufficient_quota" || (code !== null && OPENAI_QUOTA_ERROR_CODES.has(code));
+}
+
 /**
  * Stable internal code for a non-2xx provider response.
- * Status decides the class. error.type and error.code only separate quota from
- * rate limits, and model-not-found from other 400 rejections.
+ * Status decides the class. Validated error.type and error.code only separate an
+ * allowlisted quota or spend failure from a 403 permission denial or a 429 rate
+ * limit, and model-not-found from other 400 rejections.
  */
 export function classifyOpenAiHttpFailure(status: number, body: unknown): string {
   const { type, code } = openAiErrorTokens(body);
   if (status === 401) return "openai_authentication_failed";
-  if (status === 403) return "openai_permission_denied";
+  if (status === 403) {
+    if (isAllowlistedOpenAiQuota(type, code)) return "openai_quota_exceeded";
+    return "openai_permission_denied";
+  }
   if (status === 429) {
-    if (type === "insufficient_quota" || (code !== null && OPENAI_QUOTA_ERROR_CODES.has(code))) {
-      return "openai_quota_exceeded";
-    }
+    if (isAllowlistedOpenAiQuota(type, code)) return "openai_quota_exceeded";
     return "openai_rate_limited";
   }
   if (status === 404 || (status === 400 && code === "model_not_found")) {

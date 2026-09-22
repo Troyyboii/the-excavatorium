@@ -2005,10 +2005,37 @@ Deno.test("provider HTTP failures keep distinct codes and an unknown hold", asyn
       response: providerErrorResponse(401, LEAKED_PROVIDER_MESSAGE, false),
     },
     {
-      name: "403",
+      name: "403 ordinary permission denial",
       code: "openai_permission_denied",
+      response: providerErrorResponse(403, poisoned),
+    },
+    {
+      name: "403 insufficient_quota",
+      code: "openai_quota_exceeded",
       response: providerErrorResponse(403, {
         error: { ...poisoned.error, type: "insufficient_quota", code: "insufficient_quota" },
+      }),
+    },
+    {
+      name: "403 project spend limit",
+      code: "openai_quota_exceeded",
+      response: providerErrorResponse(403, {
+        error: {
+          ...poisoned.error,
+          type: "invalid_request_error",
+          code: "project_spend_limit_exceeded",
+        },
+      }),
+    },
+    {
+      name: "403 other allowlisted spend code",
+      code: "openai_quota_exceeded",
+      response: providerErrorResponse(403, {
+        error: {
+          ...poisoned.error,
+          type: "invalid_request_error",
+          code: "organization_spend_limit_exceeded",
+        },
       }),
     },
     {
@@ -2205,6 +2232,23 @@ Deno.test("classifier ignores provider messages and keeps status when JSON is ab
   assertEquals(classifyOpenAiHttpFailure(401, body), "openai_authentication_failed");
   assertEquals(classifyOpenAiHttpFailure(401, undefined), "openai_authentication_failed");
   assertEquals(classifyOpenAiHttpFailure(403, body), "openai_permission_denied");
+  assertEquals(classifyOpenAiHttpFailure(403, undefined), "openai_permission_denied");
+  assertEquals(
+    classifyOpenAiHttpFailure(403, {
+      error: {
+        message: "insufficient_quota project_spend_limit_exceeded",
+        type: "permission_error",
+        code: "country_not_supported",
+      },
+    }),
+    "openai_permission_denied",
+  );
+  assertEquals(
+    classifyOpenAiHttpFailure(403, {
+      error: { type: "Insufficient_Quota", code: "PROJECT_SPEND_LIMIT_EXCEEDED" },
+    }),
+    "openai_permission_denied",
+  );
   assertEquals(classifyOpenAiHttpFailure(400, body), "openai_request_rejected");
   assertEquals(
     classifyOpenAiHttpFailure(400, {
@@ -2227,6 +2271,50 @@ Deno.test("classifier ignores provider messages and keeps status when JSON is ab
   assertEquals(classifyOpenAiHttpFailure(500, body), "openai_server_error");
   assertEquals(classifyOpenAiHttpFailure(503, undefined), "openai_unavailable");
   assertEquals(JSON.stringify(classifyOpenAiHttpFailure(400, body)).includes(apiKey), false);
+});
+
+Deno.test("403 allowlisted quota and spend codes classify as quota", () => {
+  const leaked = {
+    message: LEAKED_PROVIDER_MESSAGE,
+    param: "authorization",
+  };
+  assertEquals(
+    classifyOpenAiHttpFailure(403, {
+      error: { ...leaked, type: "insufficient_quota", code: "insufficient_quota" },
+    }),
+    "openai_quota_exceeded",
+  );
+  assertEquals(
+    classifyOpenAiHttpFailure(403, {
+      error: { ...leaked, type: "insufficient_quota" },
+    }),
+    "openai_quota_exceeded",
+  );
+  for (const code of [
+    "insufficient_quota",
+    "project_spend_limit_exceeded",
+    "credit_balance_exhausted",
+    "organization_spend_limit_exceeded",
+    "organization_usage_limit_exceeded",
+  ]) {
+    assertEquals(
+      classifyOpenAiHttpFailure(403, {
+        error: { ...leaked, type: "invalid_request_error", code },
+      }),
+      "openai_quota_exceeded",
+    );
+  }
+  assertEquals(
+    classifyOpenAiHttpFailure(403, {
+      error: { ...leaked, type: "invalid_request_error", code: "invalid_api_key" },
+    }),
+    "openai_permission_denied",
+  );
+  assertEquals(classifyOpenAiHttpFailure(403, undefined), "openai_permission_denied");
+  assertEquals(
+    classifyOpenAiHttpFailure(403, "insufficient_quota project_spend_limit_exceeded"),
+    "openai_permission_denied",
+  );
 });
 
 function racingIo(state: World): { io: CustodianIo; replays: number } {
