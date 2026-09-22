@@ -3,7 +3,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { mapCustodianRunRow, mapProviderHoldRow, mapRunStepRow } from "@/lib/custodian-runtime";
+import {
+  mapCustodianRunRow,
+  mapProviderHoldRow,
+  mapRunStepRow,
+  type CustodianRun,
+} from "@/lib/custodian-runtime";
 import {
   type ReadonlyAnalysisPorts,
   type ReadonlyRunObservation,
@@ -424,6 +429,53 @@ describe("Run Room surface", () => {
     expect(await screen.findByText(/stopped at completed/)).not.toBeNull();
     expect(policies).toBe(1);
   });
+
+  test("a confirmed pre-provider block lets a new start proceed", async () => {
+    const user = userEvent.setup();
+    let creates = 0;
+    const drive = scriptedPorts([
+      observed("queued"),
+      observed("completed", "settled_known", "known"),
+    ]);
+    const ports = {
+      ...drive.ports,
+      createRun: async () => {
+        creates += 1;
+        return { runId: RUN_ID };
+      },
+    };
+    render(enabledRoom(ports, [terminalRun("blocked", null)]));
+    await fillOwnerInput(user);
+    await user.click(screen.getByRole("button", { name: "Start analysis" }));
+    expect(await screen.findByText(/stopped at completed/)).not.toBeNull();
+    expect(creates).toBe(1);
+  });
+
+  test("an unavailable hold projection still blocks a new start", async () => {
+    const user = userEvent.setup();
+    let creates = 0;
+    const ports = countingPorts(() => undefined, true);
+    ports.createRun = async () => {
+      creates += 1;
+      return { runId: RUN_ID };
+    };
+    render(
+      <RunRoomSurface
+        runs={[terminalRun("blocked", null)]}
+        providerHoldProjection="unavailable"
+        online
+        loading={false}
+        error={null}
+        ownerPresent
+        surfaceEnabled
+        ports={ports}
+      />,
+    );
+    await fillOwnerInput(user);
+    await user.click(screen.getByRole("button", { name: "Start analysis" }));
+    expect(await screen.findByText(/A new analysis was not started/)).not.toBeNull();
+    expect(creates).toBe(0);
+  });
 });
 
 const POLICY_ID = "00000000-0000-4000-8000-000000000010";
@@ -502,7 +554,34 @@ function scriptedPorts(script: ReadonlyRunObservation[], invokeOk = true) {
   };
 }
 
-function enabledRoom(ports: ReadonlyAnalysisPorts, runs: ReturnType<typeof run>[] = []) {
+function terminalRun(status: "blocked" | "completed", hold: null) {
+  return {
+    ...mapCustodianRunRow({
+      id: "00000000-0000-4000-8000-000000000001",
+      case_id: "00000000-0000-4000-8000-000000000002",
+      objective: "What does the selected evidence support?",
+      model_tier: "terra",
+      status,
+      budget_tokens: 2_000,
+      budget_cost_usd: 0.1,
+      budget_latency_ms: 30_000,
+      budget_tool_events: 1,
+      tokens_used: 0,
+      cost_usd: 0,
+      latency_ms: 12,
+      tool_events_count: 0,
+      last_step_number: 1,
+      failure_code: status === "blocked" ? "provider_execution_unsupported" : null,
+      failure_message: null,
+      cancel_requested_at: null,
+      created_at: "2026-09-21T19:00:00.000Z",
+      updated_at: "2026-09-21T19:06:00.000Z",
+    }),
+    providerHold: hold,
+  };
+}
+
+function enabledRoom(ports: ReadonlyAnalysisPorts, runs: CustodianRun[] = []) {
   return (
     <RunRoomSurface
       runs={runs}

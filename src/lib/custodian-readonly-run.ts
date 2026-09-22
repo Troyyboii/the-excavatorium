@@ -1,4 +1,9 @@
-import { CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER, fetchCustodianRuns } from "./custodian-runtime";
+import {
+  CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER,
+  fetchCustodianRuns,
+  type CustodianRun,
+  type CustodianRunRead,
+} from "./custodian-runtime";
 import { isRuntimeRunState, MODEL_ALLOWLIST, type ModelTier } from "./custodian-runtime-types";
 import { supabase } from "./supabase";
 
@@ -6,6 +11,8 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const MODEL_TIERS = Object.keys(MODEL_ALLOWLIST) as ModelTier[];
 const SERVER_ATTEMPT_PREFIX = "provider-attempt:";
 const KNOWN_HOLD_STATUSES = new Set(["held", "settled_known", "released_uncontacted"]);
+/** Terminals the server can persist before `reserveProviderCall`. */
+const PRE_PROVIDER_TERMINAL_STATES = new Set(["blocked", "budget_stopped", "cancelled"]);
 const RESPONDED_STATES = new Set([
   "advanced",
   "held",
@@ -111,6 +118,11 @@ export type ReadonlyRunObservation = {
   holdStatus: "held" | "settled_known" | "released_uncontacted" | null;
   failureCode: string | null;
   usageKnowledge?: "known" | "unknown" | "none" | null;
+  /**
+   * `available` means the reservation read succeeded, so a null hold is a
+   * confirmed absence. `unavailable` or omitted means the absence is not confirmed.
+   */
+  holdProjection?: CustodianRunRead["providerHoldProjection"];
 };
 
 export type PersistedReadonlyRun = {
@@ -120,6 +132,7 @@ export type PersistedReadonlyRun = {
   holdStatus: ReadonlyRunObservation["holdStatus"];
   failureCode: string | null;
   usageKnowledge?: ReadonlyRunObservation["usageKnowledge"];
+  holdProjection?: ReadonlyRunObservation["holdProjection"];
 };
 
 export type ReadonlyInvocationResult = {
@@ -168,7 +181,10 @@ export type ReadonlyAnalysisStartResult =
       advances: number;
       failureCode: string | null;
       usageUnclaimed?: boolean;
-      /** True only when the persisted hold proves usage is known or that no contact was recorded. */
+      /**
+       * True when the persisted hold proves known usage or no recorded contact,
+       * or when a pre-provider terminal has a confirmed absent reservation.
+       */
       holdResolved?: boolean;
     }
   | {
@@ -641,17 +657,25 @@ export function productionReadonlyAnalysisPorts(input: {
         const read = await fetchCustodianRuns(input.ownerId);
         const run = read.runs.find((item) => item.id === runId);
         if (!run) return null;
-        return {
-          status: run.status,
-          holdStatus: run.providerHold?.status ?? null,
-          failureCode: run.failureCode,
-          usageKnowledge: run.providerHold?.usageKnowledge ?? null,
-        };
+        return observationForCustodianRun(run, read.providerHoldProjection);
       } catch {
         return null;
       }
     },
     refreshRuns: input.refreshRuns,
+  };
+}
+
+export function observationForCustodianRun(
+  run: Pick<CustodianRun, "status" | "failureCode" | "providerHold">,
+  holdProjection: CustodianRunRead["providerHoldProjection"],
+): ReadonlyRunObservation {
+  return {
+    status: run.status,
+    holdStatus: run.providerHold?.status ?? null,
+    failureCode: run.failureCode,
+    usageKnowledge: run.providerHold?.usageKnowledge ?? null,
+    holdProjection,
   };
 }
 
@@ -707,9 +731,23 @@ function holdIsUnresolved(observation: ReadonlyRunObservation): boolean {
   return Boolean(observation.holdStatus && !KNOWN_HOLD_STATUSES.has(observation.holdStatus));
 }
 
-function holdIsResolved(observation: {
+function reservationConfirmedAbsent(observation: {
   holdStatus: ReadonlyRunObservation["holdStatus"];
   usageKnowledge?: ReadonlyRunObservation["usageKnowledge"];
+  holdProjection?: ReadonlyRunObservation["holdProjection"];
+}): boolean {
+  return (
+    observation.holdProjection === "available" &&
+    observation.holdStatus === null &&
+    (observation.usageKnowledge === null || observation.usageKnowledge === undefined)
+  );
+}
+
+function holdIsResolved(observation: {
+  status?: string;
+  holdStatus: ReadonlyRunObservation["holdStatus"];
+  usageKnowledge?: ReadonlyRunObservation["usageKnowledge"];
+  holdProjection?: ReadonlyRunObservation["holdProjection"];
 }): boolean {
   if (observation.holdStatus === "settled_known" && observation.usageKnowledge === "known") {
     return true;
@@ -717,7 +755,11 @@ function holdIsResolved(observation: {
   if (observation.holdStatus === "released_uncontacted" && observation.usageKnowledge === "none") {
     return true;
   }
-  return false;
+  return (
+    observation.status !== undefined &&
+    PRE_PROVIDER_TERMINAL_STATES.has(observation.status) &&
+    reservationConfirmedAbsent(observation)
+  );
 }
 
 function authorityDetail(alreadyInvoked: boolean): string {

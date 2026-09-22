@@ -11,7 +11,9 @@ import {
   productionReadonlyAnalysisPorts,
   READONLY_ANALYSIS_ADVANCE_STATES,
   READONLY_ANALYSIS_DRIVE_BOUND,
+  observationForCustodianRun,
   startReadonlyAnalysis,
+  type PersistedReadonlyRun,
   type ReadonlyAnalysisPorts,
   type ReadonlyAnalysisStartInput,
   type ReadonlyRunObservation,
@@ -44,12 +46,31 @@ function observation(
   status: string,
   holdStatus: ReadonlyRunObservation["holdStatus"] = null,
   usageKnowledge: ReadonlyRunObservation["usageKnowledge"] = null,
+  holdProjection?: ReadonlyRunObservation["holdProjection"],
 ): ReadonlyRunObservation {
   return {
     status,
     holdStatus,
     failureCode: status === "failed" ? "openai_timeout" : null,
     usageKnowledge,
+    ...(holdProjection ? { holdProjection } : {}),
+  };
+}
+
+function listedRun(
+  status: string,
+  holdProjection?: PersistedReadonlyRun["holdProjection"],
+  holdStatus: PersistedReadonlyRun["holdStatus"] = null,
+  usageKnowledge: PersistedReadonlyRun["usageKnowledge"] = null,
+): PersistedReadonlyRun {
+  return {
+    id: RUN_ID,
+    caseId: CASE_ID,
+    status,
+    holdStatus,
+    usageKnowledge,
+    failureCode: null,
+    ...(holdProjection ? { holdProjection } : {}),
   };
 }
 
@@ -776,6 +797,224 @@ describe("readonly analysis adversarial matrix", () => {
     }
   });
 
+  test("a pre-provider blocked row with a confirmed absent reservation does not block a new start", async () => {
+    const started = await startAfterListed(listedRun("blocked", "available"));
+    expect(started.creates).toBe(1);
+    expect(started.invokes).toBe(1);
+    expect(started.result).toMatchObject({
+      ok: true,
+      stop: "completed",
+      runId: RUN_B,
+      holdResolved: true,
+    });
+  });
+
+  test("a budget_stopped row with a confirmed absent reservation does not block a new start", async () => {
+    const started = await startAfterListed(listedRun("budget_stopped", "available"));
+    expect(started.creates).toBe(1);
+    expect(started.invokes).toBe(1);
+    expect(started.result).toMatchObject({ ok: true, stop: "completed", runId: RUN_B });
+  });
+
+  test("cancellation before a provider reservation does not block a new start", async () => {
+    const started = await startAfterListed(listedRun("cancelled", "available"));
+    expect(started.creates).toBe(1);
+    expect(started.invokes).toBe(1);
+    expect(started.result).toMatchObject({ ok: true, stop: "completed", runId: RUN_B });
+    expect(describeReadonlyAnalysisResult(started.result)).not.toContain("UNKNOWN/INDETERMINATE");
+  });
+
+  test("an unavailable hold projection on a pre-provider terminal stays indeterminate", async () => {
+    for (const status of ["blocked", "budget_stopped", "cancelled"] as const) {
+      const started = await startAfterListed(listedRun(status, "unavailable"));
+      expect(started.creates).toBe(0);
+      expect(started.invokes).toBe(0);
+      expect(started.result).toMatchObject({
+        ok: false,
+        reason: "unresolved_run",
+        runId: RUN_ID,
+        status,
+      });
+      const text = describeReadonlyAnalysisResult(started.result);
+      expect(text).toContain("A new analysis was not started");
+      expect(deniesContactCertainty(text)).toBe(true);
+
+      let invokes = 0;
+      const session = createReadonlyAnalysisSession(() => `unread-${status}`);
+      const ports: ReadonlyAnalysisPorts = {
+        surfaceEnabled: true,
+        ensurePolicy: async () => ({ policyId: POLICY_ID }),
+        createRun: async () => ({ runId: RUN_ID }),
+        invoke: async () => {
+          invokes += 1;
+          return { ok: false, state: null, status: null, disposition: "ambiguous" as const };
+        },
+        readRun: scriptedRead([
+          observation("queued"),
+          observation(status, null, null, "unavailable"),
+        ]),
+        refreshRuns: async () => undefined,
+      };
+      const first = await startReadonlyAnalysis(ownerInput(), ports, session);
+      const second = await startReadonlyAnalysis(ownerInput(), ports, session);
+      expect(first).toMatchObject({ ok: false, reason: "outcome_indeterminate", status });
+      expect(describeReadonlyAnalysisResult(first)).toContain("Recorded usage is unclaimed");
+      expect(second).toMatchObject({ ok: false, reason: "outcome_indeterminate", status });
+      expect(invokes).toBe(1);
+    }
+  });
+
+  test("a completed row with an unexpected missing reservation stays conservative", async () => {
+    const absent = await startAfterListed(listedRun("completed", "available"));
+    expect(absent.creates).toBe(0);
+    expect(absent.invokes).toBe(0);
+    expect(absent.result).toMatchObject({
+      ok: false,
+      reason: "unresolved_run",
+      status: "completed",
+    });
+
+    let invokes = 0;
+    const session = createReadonlyAnalysisSession(() => "completed-absent");
+    const ports: ReadonlyAnalysisPorts = {
+      surfaceEnabled: true,
+      ensurePolicy: async () => ({ policyId: POLICY_ID }),
+      createRun: async () => ({ runId: RUN_ID }),
+      invoke: async () => {
+        invokes += 1;
+        throw new Error("network reset");
+      },
+      readRun: scriptedRead([
+        observation("queued"),
+        observation("completed", null, null, "available"),
+      ]),
+      refreshRuns: async () => undefined,
+    };
+    const first = await startReadonlyAnalysis(ownerInput(), ports, session);
+    const second = await startReadonlyAnalysis(ownerInput(), ports, session);
+    expect(first).toMatchObject({
+      ok: false,
+      reason: "outcome_indeterminate",
+      status: "completed",
+    });
+    expect(describeReadonlyAnalysisResult(first)).toContain("outcome is not established");
+    expect(describeReadonlyAnalysisResult(first)).not.toContain("stopped at completed");
+    expect(second).toMatchObject({ ok: false, reason: "outcome_indeterminate" });
+    expect(invokes).toBe(1);
+
+    const proved = await startAfterListed({
+      ...listedRun("completed", "available"),
+      holdStatus: "released_uncontacted",
+      usageKnowledge: "none",
+    });
+    expect(proved.creates).toBe(1);
+    expect(proved.result).toMatchObject({ ok: true, stop: "completed", holdResolved: true });
+  });
+
+  test("a held or unknown reservation stays unresolved when the projection is available", async () => {
+    for (const row of [
+      listedRun("failed", "available", "held", "unknown"),
+      listedRun("cancelled", "available", "held", "unknown"),
+      listedRun("blocked", "available", "held", "unknown"),
+    ]) {
+      const started = await startAfterListed(row);
+      expect(started.creates).toBe(0);
+      expect(started.invokes).toBe(0);
+      expect(started.result).toMatchObject({ ok: false, reason: "unresolved_run", runId: RUN_ID });
+    }
+
+    let invokes = 0;
+    const session = createReadonlyAnalysisSession(() => "held-available");
+    const ports: ReadonlyAnalysisPorts = {
+      surfaceEnabled: true,
+      ensurePolicy: async () => ({ policyId: POLICY_ID }),
+      createRun: async () => ({ runId: RUN_ID }),
+      invoke: async () => {
+        invokes += 1;
+        return { ok: true, state: "advanced", status: null, disposition: "responded" as const };
+      },
+      readRun: scriptedRead([
+        observation("queued"),
+        observation("cancelled", "held", "unknown", "available"),
+      ]),
+      refreshRuns: async () => undefined,
+    };
+    const first = await startReadonlyAnalysis(ownerInput(), ports, session);
+    const runKey = session.runIdempotencyKey();
+    const invocationKey = session.invocationKey();
+    const second = await startReadonlyAnalysis(ownerInput(), ports, session);
+    expect(first).toMatchObject({
+      ok: true,
+      stop: "held",
+      holdResolved: false,
+      status: "cancelled",
+    });
+    expect(second).toMatchObject({ ok: true, stop: "held", status: "cancelled" });
+    expect(invokes).toBe(1);
+    expect(session.runIdempotencyKey()).toBe(runKey);
+    expect(session.invocationKey()).toBe(invocationKey);
+    expect(describeReadonlyAnalysisResult(first)).toContain("may already have happened");
+  });
+
+  test("a fresh start succeeds after a confirmed pre-provider terminal run", async () => {
+    let creates = 0;
+    let invokes = 0;
+    let keys = 0;
+    const session = createReadonlyAnalysisSession(() => `pre-provider-then-fresh-${++keys}`);
+    const prior = listedRun("blocked", "available");
+    const ports: ReadonlyAnalysisPorts = {
+      surfaceEnabled: true,
+      persistedRuns: () => [prior],
+      ensurePolicy: async () => ({ policyId: POLICY_ID }),
+      createRun: async () => {
+        creates += 1;
+        return { runId: creates === 1 ? RUN_ID : RUN_B };
+      },
+      invoke: async () => {
+        invokes += 1;
+        return { ok: true, state: "advanced", status: null, disposition: "responded" as const };
+      },
+      readRun: scriptedRead([
+        observation("queued"),
+        observation("blocked", null, null, "available"),
+        observation("queued"),
+        observation("completed", "settled_known", "known"),
+      ]),
+      refreshRuns: async () => undefined,
+    };
+    const first = await startReadonlyAnalysis(ownerInput(), ports, session);
+    const firstKey = session.runIdempotencyKey();
+    const second = await startReadonlyAnalysis(
+      { ...ownerInput(), objective: "A later objective after the pre-provider stop." },
+      ports,
+      session,
+    );
+    expect(first).toMatchObject({
+      ok: true,
+      stop: "blocked",
+      runId: RUN_ID,
+      holdResolved: true,
+      advances: 1,
+    });
+    expect(describeReadonlyAnalysisResult(first)).toContain("stopped at blocked");
+    expect(describeReadonlyAnalysisResult(first)).not.toContain("UNKNOWN/INDETERMINATE");
+    expect(second).toMatchObject({
+      ok: true,
+      stop: "completed",
+      runId: RUN_B,
+      holdResolved: true,
+    });
+    expect(creates).toBe(2);
+    expect(invokes).toBe(2);
+    expect(session.runIdempotencyKey()).not.toBe(firstKey);
+    const mapped = observationForCustodianRun(
+      { status: "blocked", failureCode: null, providerHold: null },
+      "available",
+    );
+    expect(mapped.holdProjection).toBe("available");
+    expect(mapped.holdStatus).toBeNull();
+  });
+
   test("the second-start guard only sees the loaded run list for this tab and case", async () => {
     expect(CUSTODIAN_RUN_READ_LIMIT).toBe(100);
     const otherCase = "00000000-0000-4000-8000-000000000099";
@@ -912,6 +1151,36 @@ function deniesContactCertainty(text: string): boolean {
     "nothing happened",
     "did not advance",
   ].every((phrase) => !lower.includes(phrase));
+}
+
+async function startAfterListed(row: PersistedReadonlyRun) {
+  let creates = 0;
+  let invokes = 0;
+  const result = await startReadonlyAnalysis(
+    ownerInput(),
+    {
+      surfaceEnabled: true,
+      persistedRuns: () => [row],
+      ensurePolicy: async () => ({ policyId: POLICY_ID }),
+      createRun: async () => {
+        creates += 1;
+        return { runId: RUN_B };
+      },
+      invoke: async () => {
+        invokes += 1;
+        return { ok: true, state: "advanced", status: null, disposition: "responded" as const };
+      },
+      readRun: scriptedRead([
+        observation("queued"),
+        observation("completed", "settled_known", "known"),
+      ]),
+      refreshRuns: async () => undefined,
+    },
+    createReadonlyAnalysisSession(
+      () => `after-${row.status}-${row.holdProjection ?? "omitted"}-${row.holdStatus ?? "none"}`,
+    ),
+  );
+  return { creates, invokes, result };
 }
 
 function scriptedRead(script: Array<ReadonlyRunObservation | null>) {

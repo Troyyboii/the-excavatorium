@@ -19,9 +19,9 @@ import {
   createReadonlyAnalysisSession,
   describeReadonlyAnalysisResult,
   emptyReadonlyAnalysisDraft,
+  observationForCustodianRun,
   parseReadonlyAnalysisDraft,
   startReadonlyAnalysis,
-  type PersistedReadonlyRun,
   type ReadonlyAnalysisDraft,
   type ReadonlyAnalysisPorts,
   type ReadonlyAnalysisStartResult,
@@ -81,7 +81,11 @@ export function RunRoomSurface({
     >
       <div className="space-y-6">
         {canStart && ports ? (
-          <ReadonlyAnalysisStart ports={ports} runs={runs} />
+          <ReadonlyAnalysisStart
+            ports={ports}
+            runs={runs}
+            providerHoldProjection={providerHoldProjection}
+          />
         ) : (
           <>
             <FoundationState title="Provider invocation disabled">
@@ -141,9 +145,11 @@ export function RunRoomSurface({
 function ReadonlyAnalysisStart({
   ports,
   runs,
+  providerHoldProjection,
 }: {
   ports: ReadonlyAnalysisPorts;
   runs: CustodianRun[];
+  providerHoldProjection: CustodianRunRead["providerHoldProjection"];
 }) {
   const session = useRef(createReadonlyAnalysisSession()).current;
   const busyRef = useRef(false);
@@ -178,7 +184,13 @@ function ReadonlyAnalysisStart({
     busyRef.current = true;
     setBusy(true);
     try {
-      setResult(await startReadonlyAnalysis(parsed.value, portsForRuns(ports, runs), session));
+      setResult(
+        await startReadonlyAnalysis(
+          parsed.value,
+          portsForRuns(ports, runs, providerHoldProjection),
+          session,
+        ),
+      );
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -378,21 +390,19 @@ function readonlyStartReason(block: ReadonlyStartBlock | null): string {
   return "Provider invocation stays off until a later activation milestone. No analysis is being started.";
 }
 
-function portsForRuns(ports: ReadonlyAnalysisPorts, runs: CustodianRun[]): ReadonlyAnalysisPorts {
+function portsForRuns(
+  ports: ReadonlyAnalysisPorts,
+  runs: CustodianRun[],
+  holdProjection: CustodianRunRead["providerHoldProjection"],
+): ReadonlyAnalysisPorts {
   return {
     ...ports,
-    persistedRuns: () => runs.map(persistedRun),
-  };
-}
-
-function persistedRun(run: CustodianRun): PersistedReadonlyRun {
-  return {
-    id: run.id,
-    caseId: run.caseId,
-    status: run.status,
-    holdStatus: run.providerHold?.status ?? null,
-    usageKnowledge: run.providerHold?.usageKnowledge ?? null,
-    failureCode: run.failureCode,
+    persistedRuns: () =>
+      runs.map((run) => ({
+        id: run.id,
+        caseId: run.caseId,
+        ...observationForCustodianRun(run, holdProjection),
+      })),
   };
 }
 

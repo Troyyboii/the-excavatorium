@@ -358,13 +358,20 @@ a start is unresolved and rotate together only after a durable stop, so a later
 objective does not reuse the stopped run's idempotency key. A durable stop is a
 persisted `completed`, `awaiting_approval`, `blocked`, `failed`, `expired`,
 `budget_stopped`, or `cancelled` row whose hold is `settled_known` with usage
-`known`, or `released_uncontacted` with usage `none`. An unresolved hold, including
-`held` or usage `unknown` on a terminal or `awaiting_approval` row, does not rotate
-the keys. A missing hold is not that proof, so the same session does not mint a new
-run beside it. The second-start guard reads only the Run Room list already loaded
+`known`, or `released_uncontacted` with usage `none`. It is also a `blocked`,
+`budget_stopped`, or `cancelled` row when the reservation read succeeded and that
+run has no reservation row. Reserve-before-fetch makes that confirmed absence a
+pre-provider stop, so it does not permanently block the next Start for the case.
+An unresolved hold, including `held` or usage `unknown`, does not rotate the keys.
+An unavailable or omitted reservation projection is not confirmed absence: that
+start stays UNKNOWN/INDETERMINATE and is not retried. A `completed` row with an
+unexpected missing reservation stays indeterminate unless the hold itself proves
+no provider contact (`released_uncontacted` with usage `none`) or known usage.
+The second-start guard reads only the Run Room list already loaded
 in this tab: at most 100 newest owner runs (`CUSTODIAN_RUN_READ_LIMIT`) and the
 matching reservation rows, for the same case. A visible terminal or
-`awaiting_approval` row without a resolved hold blocks another Start. An uncertain
+`awaiting_approval` row whose reservation is unresolved, unreadable, or an
+unexpected absence on `completed` blocks another Start. An uncertain
 run outside those 100 rows, or visible only in another tab, is not seen. No schema
 was added and there is no cross-tab dedup. The Start
 analysis control stays disabled while the surface is offline, loading, unreadable,
