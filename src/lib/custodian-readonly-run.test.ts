@@ -120,8 +120,16 @@ describe("readonly analysis start", () => {
       refreshRuns: async () => undefined,
     });
     expect(ports.surfaceEnabled).toBe(true);
-    const source = Bun.file(new URL("./custodian-readonly-run.ts", import.meta.url));
-    expect(source.size).toBeGreaterThan(0);
+    const source = await Bun.file(new URL("./custodian-readonly-run.ts", import.meta.url)).text();
+    expect(source).not.toMatch(/\.insert\(/);
+    expect(source).not.toMatch(/\.update\(/);
+    expect(source).not.toMatch(/\.delete\(/);
+    expect(source).not.toMatch(/from\(["']agent_/);
+    expect(source).not.toMatch(/import\.meta\.env/);
+    expect(source).not.toMatch(/process\.env/);
+    expect(source).toContain("custodian_ensure_readonly_analysis_policy");
+    expect(source).toContain("custodian_create_readonly_analysis_run");
+    expect(source).not.toContain("provider-attempt:${");
   });
 
   test("rejects omitted owner input before any rpc", async () => {
