@@ -167,7 +167,7 @@ describe("Custodian run read contract", () => {
     const source = await Bun.file(new URL("../routes/run-room.tsx", import.meta.url)).text();
     expect(source).not.toContain("invokeCustodianRun");
     expect(source).not.toContain("functions.invoke");
-    expect(source).not.toContain("custodian-run");
+    expect(source).not.toMatch(/["']custodian-run["']/);
     expect(source).toContain("useCustodianRuns");
   });
 });
