@@ -6,7 +6,6 @@ import {
   custodianRunsKey,
   describeCustodianRunAccounting,
   interpretCustodianFunctionResult,
-  invokeCustodianRun,
   mapCustodianRunRow,
   mapProviderHoldRow,
 } from "./custodian-runtime";
@@ -153,8 +152,8 @@ describe("Custodian run read contract", () => {
     expect(accounting.recordedProviderCost).not.toContain("$");
   });
 
-  test("does not invoke the provider while the browser gate is closed", async () => {
-    expect(CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER).toBe(false);
+  test("keeps the activated browser invocation contract narrow and secret-safe", () => {
+    expect(CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER).toBe(true);
     const invocation = custodianRunInvocation(
       "00000000-0000-4000-8000-000000000001",
       "invocation-1",
@@ -164,10 +163,6 @@ describe("Custodian run read contract", () => {
       invocationKey: "invocation-1",
     });
     expect(Object.keys(invocation)).toEqual(["runId", "invocationKey"]);
-    await expect(invokeCustodianRun(invocation)).resolves.toEqual({
-      invoked: false,
-      reason: "provider_surface_blocked",
-    });
     const failed = interpretCustodianFunctionResult({
       error: { message: "sk-secret Bearer raw-provider-payload" },
     });
@@ -188,14 +183,14 @@ describe("Custodian run read contract", () => {
     );
   });
 
-  test("keeps the first slice read-only, bounded, and user-keyed", () => {
-    expect(CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER).toBe(false);
+  test("keeps the read slice bounded and user-keyed after browser activation", () => {
+    expect(CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER).toBe(true);
     expect(CUSTODIAN_RUN_READ_LIMIT).toBe(100);
     expect(custodianRunsKey("owner-1")).toEqual(["custodian", "runs", "owner-1"]);
     expect(custodianRunsKey(null)).toEqual(["custodian", "runs", "__anonymous__"]);
   });
 
-  test("Run Room route keeps provider invocation behind the closed browser gate", async () => {
+  test("Run Room route keeps provider invocation behind the explicit runtime client boundary", async () => {
     const source = await Bun.file(new URL("../routes/run-room.tsx", import.meta.url)).text();
     expect(source).toContain("CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER");
     expect(source).toContain("useCustodianRuns");

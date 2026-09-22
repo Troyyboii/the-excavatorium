@@ -49,7 +49,7 @@ export const MAX_REQUEST_BYTES = 16_384;
 export const MAX_INVOCATION_KEY_LENGTH = 300;
 export const OPENAI_TIMEOUT_MS = 25_000;
 export const MAX_EVIDENCE_CHARS = 80_000;
-export const PROVIDER_EXECUTION_UNSUPPORTED = true;
+export const PROVIDER_EXECUTION_UNSUPPORTED = false;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const APPROVAL_KINDS = [

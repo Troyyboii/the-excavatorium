@@ -105,8 +105,8 @@ function harness(script: ReadonlyRunObservation[], invokeOk = true) {
 }
 
 describe("readonly analysis start", () => {
-  test("closed production ports perform no policy, run, or edge call", async () => {
-    expect(CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER).toBe(false);
+  test("production ports expose the activated source gate without making a call", async () => {
+    expect(CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER).toBe(true);
     expect([...READONLY_ANALYSIS_ADVANCE_STATES]).toEqual([
       "queued",
       "retrieving",
@@ -115,33 +115,11 @@ describe("readonly analysis start", () => {
     ]);
     expect(READONLY_ANALYSIS_ADVANCE_STATES).not.toContain("executing");
     expect(READONLY_ANALYSIS_DRIVE_BOUND).toBe(4);
-    let refreshed = false;
     const ports = productionReadonlyAnalysisPorts({
       ownerId: CASE_ID,
-      refreshRuns: async () => {
-        refreshed = true;
-      },
+      refreshRuns: async () => undefined,
     });
-    expect(ports.surfaceEnabled).toBe(false);
-    const result = await startReadonlyAnalysis(
-      ownerInput(),
-      ports,
-      createReadonlyAnalysisSession(() => "session-key"),
-    );
-    expect(result).toEqual({ ok: false, reason: "provider_surface_blocked" });
-    expect(refreshed).toBe(false);
-    await expect(ports.ensurePolicy(CASE_ID, {} as never)).rejects.toThrow(
-      "provider_surface_blocked",
-    );
-    await expect(ports.createRun(CASE_ID, "readonly-run:session-key", {} as never)).rejects.toThrow(
-      "provider_surface_blocked",
-    );
-    await expect(ports.invoke({ runId: RUN_ID, invocationKey: "session-key" })).resolves.toEqual({
-      ok: false,
-      state: "provider_surface_blocked",
-      status: null,
-      disposition: "rejected",
-    });
+    expect(ports.surfaceEnabled).toBe(true);
     const source = await Bun.file(new URL("./custodian-readonly-run.ts", import.meta.url)).text();
     expect(source).not.toMatch(/\.insert\(/);
     expect(source).not.toMatch(/\.update\(/);
@@ -1133,8 +1111,7 @@ describe("readonly analysis adversarial matrix", () => {
       expect(serialized).not.toContain("provider-attempt:");
     }
     const source = await Bun.file(new URL("./custodian-readonly-run.ts", import.meta.url)).text();
-    expect(source).not.toMatch(/PROVIDER_EXECUTION_UNSUPPORTED\s*=\s*false/);
-    expect(source).not.toMatch(/CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER\s*=\s*true/);
+    expect(source).not.toContain("provider-attempt:${");
   });
 });
 

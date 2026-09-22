@@ -78,7 +78,7 @@ describe("Run Room surface", () => {
     expect(start.hasAttribute("disabled")).toBe(true);
     expect(
       screen.getByText(
-        "Provider invocation stays off until a later activation milestone. No analysis is being started.",
+        "Start analysis is unavailable because the runtime ports are not available. No policy, run, or Edge call is made.",
       ),
     ).not.toBeNull();
     expect(screen.getAllByText("Not recorded")).toHaveLength(2);

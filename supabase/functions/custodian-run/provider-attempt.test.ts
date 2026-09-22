@@ -471,7 +471,7 @@ async function advance(
     io: ioFor(state),
     ownerId: "owner-1",
     invocation: { runId, invocationKey },
-    providerExecutionUnsupported: gateOpen ? false : PROVIDER_EXECUTION_UNSUPPORTED,
+    providerExecutionUnsupported: gateOpen ? false : true,
     validSynthesis,
     providerAttemptTimeoutMs: timeoutMs,
   });
@@ -615,7 +615,7 @@ function usage(body: { body: Record<string, unknown> }) {
 }
 
 Deno.test("provider gate stays closed and performs no provider fetch", async () => {
-  assertEquals(PROVIDER_EXECUTION_UNSUPPORTED, true);
+  assertEquals(PROVIDER_EXECUTION_UNSUPPORTED, false);
   const state = world();
   state.fetchImpl = () => Promise.reject(new Error("fetch_must_not_run"));
   const blocked = await advance(state, "invocation-1", false);
@@ -629,7 +629,7 @@ Deno.test("provider gate stays closed and performs no provider fetch", async () 
 });
 
 Deno.test("closed-gate first-run sequence never reserves or fetches", async () => {
-  assertEquals(PROVIDER_EXECUTION_UNSUPPORTED, true);
+  assertEquals(PROVIDER_EXECUTION_UNSUPPORTED, false);
   const state = world("queued");
   state.fetchImpl = () => Promise.reject(new Error("fetch_must_not_run"));
   const queued = await advance(state, "first-run", false);
@@ -651,7 +651,7 @@ Deno.test("closed-gate first-run sequence never reserves or fetches", async () =
 });
 
 Deno.test("a closed-gate held reservation does not claim the provider was not called", async () => {
-  assertEquals(PROVIDER_EXECUTION_UNSUPPORTED, true);
+  assertEquals(PROVIDER_EXECUTION_UNSUPPORTED, false);
   const state = world("synthesizing");
   state.reservation = heldReservation(state);
   state.fetchImpl = () => Promise.reject(new Error("fetch_must_not_run"));
@@ -1739,7 +1739,8 @@ Deno.test("unexplained mutation does not record every subtype as false", () => {
 });
 
 Deno.test("mocked readonly races keep one attempt, one fetch, and one outcome", async () => {
-  assertEquals(PROVIDER_EXECUTION_UNSUPPORTED, true);
+  // The source gate is open; all provider effects below remain mocked.
+  assertEquals(PROVIDER_EXECUTION_UNSUPPORTED, false);
   const attemptKey = providerAttemptKey(runId);
 
   const findingRace = world();
