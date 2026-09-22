@@ -10,6 +10,7 @@ import {
   Graph,
   House,
   MagnifyingGlass,
+  Play,
   Plus,
   Scales,
   SignOut,
@@ -31,6 +32,7 @@ const NAV_GROUPS = [
       { to: "/", label: "Custodian Desk", icon: House, end: true },
       { to: "/inbox", label: "Inbox", icon: Tray },
       { to: "/cases", label: "Cases", icon: FolderOpen },
+      { to: "/run-room", label: "Run Room", icon: Play },
     ],
   },
   {
