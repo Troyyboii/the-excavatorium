@@ -33,14 +33,14 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Regenerate decorated MCP manifest
-        run: bun run mcp:manifest
-
       - name: Lint
         run: bun run lint
 
       - name: Typecheck frontend
         run: bun run typecheck
+
+      - name: Regenerate decorated MCP manifest
+        run: bun run mcp:manifest
 
       - name: Test frontend regressions
         run: bun test src
