@@ -21,6 +21,7 @@ import {
   emptyReadonlyAnalysisDraft,
   parseReadonlyAnalysisDraft,
   startReadonlyAnalysis,
+  type PersistedReadonlyRun,
   type ReadonlyAnalysisDraft,
   type ReadonlyAnalysisPorts,
   type ReadonlyAnalysisStartResult,
@@ -35,6 +36,7 @@ export function RunRoomSurface({
   online,
   loading,
   error,
+  ownerPresent = false,
   surfaceEnabled = CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER,
   ports = null,
 }: {
@@ -43,10 +45,19 @@ export function RunRoomSurface({
   online: boolean;
   loading: boolean;
   error: string | null;
+  ownerPresent?: boolean;
   surfaceEnabled?: boolean;
   ports?: ReadonlyAnalysisPorts | null;
 }) {
-  const canStart = surfaceEnabled && ports?.surfaceEnabled === true;
+  const startBlock = readonlyStartBlock({
+    online,
+    loading,
+    error,
+    ownerPresent,
+    surfaceEnabled,
+    ports,
+  });
+  const canStart = startBlock === null && ports !== null;
   return (
     <CustodianPage
       title="Run Room"
@@ -70,13 +81,13 @@ export function RunRoomSurface({
     >
       <div className="space-y-6">
         {canStart && ports ? (
-          <ReadonlyAnalysisStart ports={ports} />
+          <ReadonlyAnalysisStart ports={ports} runs={runs} />
         ) : (
           <>
             <FoundationState title="Provider invocation disabled">
-              Start analysis is unavailable. The browser gate is closed, so this control does not
-              call the Edge Function, reserve budget, or contact a provider. There is no live
-              progress to show.
+              {startBlock === "gate_closed" || startBlock === "ports_unavailable"
+                ? "Start analysis is unavailable. The browser gate is closed, so this control does not call the Edge Function, reserve budget, or contact a provider. There is no live progress to show."
+                : "Start analysis is unavailable. Persisted runs stay on this page. This control does not call policy, create a run, or invoke the Edge function."}
             </FoundationState>
             <button
               type="button"
@@ -90,8 +101,7 @@ export function RunRoomSurface({
               id="custodian-start-analysis-reason"
               className="text-sm leading-6 text-muted-foreground"
             >
-              Provider invocation stays off until a later activation milestone. No analysis is being
-              started.
+              {readonlyStartReason(startBlock)}
             </p>
           </>
         )}
@@ -110,7 +120,7 @@ export function RunRoomSurface({
             hint="No owner-scoped agent run has been stored yet. This surface does not manufacture a placeholder run."
           />
         ) : null}
-        {!error && runs.length > 0 ? (
+        {runs.length > 0 ? (
           <Section
             title="Persisted runs"
             description="Newest first. Recorded provider cost is factual usage. A budget hold is an encumbrance, not money recorded as spent."
@@ -118,7 +128,7 @@ export function RunRoomSurface({
           >
             <div className="divide-y divide-luminous-gold/15">
               {runs.map((run) => (
-                <RunRow key={run.id} run={run} />
+                <RunRow key={run.id} run={run} providerHoldProjection={providerHoldProjection} />
               ))}
             </div>
           </Section>
@@ -128,7 +138,13 @@ export function RunRoomSurface({
   );
 }
 
-function ReadonlyAnalysisStart({ ports }: { ports: ReadonlyAnalysisPorts }) {
+function ReadonlyAnalysisStart({
+  ports,
+  runs,
+}: {
+  ports: ReadonlyAnalysisPorts;
+  runs: CustodianRun[];
+}) {
   const session = useRef(createReadonlyAnalysisSession()).current;
   const busyRef = useRef(false);
   const [draft, setDraft] = useState<ReadonlyAnalysisDraft>(emptyReadonlyAnalysisDraft);
@@ -162,7 +178,7 @@ function ReadonlyAnalysisStart({ ports }: { ports: ReadonlyAnalysisPorts }) {
     busyRef.current = true;
     setBusy(true);
     try {
-      setResult(await startReadonlyAnalysis(parsed.value, ports, session));
+      setResult(await startReadonlyAnalysis(parsed.value, portsForRuns(ports, runs), session));
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -315,6 +331,71 @@ function ReadonlyAnalysisStart({ ports }: { ports: ReadonlyAnalysisPorts }) {
   );
 }
 
+type ReadonlyStartBlock =
+  | "offline"
+  | "loading"
+  | "read_error"
+  | "owner_missing"
+  | "ports_unavailable"
+  | "gate_closed";
+
+function readonlyStartBlock(input: {
+  online: boolean;
+  loading: boolean;
+  error: string | null;
+  ownerPresent: boolean;
+  surfaceEnabled: boolean;
+  ports: ReadonlyAnalysisPorts | null;
+}): ReadonlyStartBlock | null {
+  const gateOpen = input.surfaceEnabled && input.ports?.surfaceEnabled === true;
+  if (!gateOpen) {
+    if (!input.ports && input.surfaceEnabled) return "ports_unavailable";
+    return "gate_closed";
+  }
+  if (!input.online) return "offline";
+  if (input.loading) return "loading";
+  if (input.error) return "read_error";
+  if (!input.ownerPresent) return "owner_missing";
+  return null;
+}
+
+function readonlyStartReason(block: ReadonlyStartBlock | null): string {
+  if (block === "offline") {
+    return "Start analysis is unavailable while the network is offline. Persisted runs stay visible. No policy, run, or Edge call is made.";
+  }
+  if (block === "loading") {
+    return "Start analysis is unavailable while persisted runs are loading. No policy, run, or Edge call is made.";
+  }
+  if (block === "read_error") {
+    return "Start analysis is unavailable because the runtime read failed. No policy, run, or Edge call is made.";
+  }
+  if (block === "owner_missing") {
+    return "Start analysis is unavailable because the owner is not signed in. No policy, run, or Edge call is made.";
+  }
+  if (block === "ports_unavailable") {
+    return "Start analysis is unavailable because the runtime ports are not available. No policy, run, or Edge call is made.";
+  }
+  return "Provider invocation stays off until a later activation milestone. No analysis is being started.";
+}
+
+function portsForRuns(ports: ReadonlyAnalysisPorts, runs: CustodianRun[]): ReadonlyAnalysisPorts {
+  return {
+    ...ports,
+    persistedRuns: () => runs.map(persistedRun),
+  };
+}
+
+function persistedRun(run: CustodianRun): PersistedReadonlyRun {
+  return {
+    id: run.id,
+    caseId: run.caseId,
+    status: run.status,
+    holdStatus: run.providerHold?.status ?? null,
+    usageKnowledge: run.providerHold?.usageKnowledge ?? null,
+    failureCode: run.failureCode,
+  };
+}
+
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="grid gap-2 text-sm text-foreground [&_input]:min-h-11 [&_input]:border [&_input]:border-luminous-gold/30 [&_input]:bg-background [&_input]:px-3 [&_select]:min-h-11 [&_select]:border [&_select]:border-luminous-gold/30 [&_select]:bg-background [&_select]:px-3 [&_textarea]:border [&_textarea]:border-luminous-gold/30 [&_textarea]:bg-background [&_textarea]:px-3 [&_textarea]:py-2">
@@ -324,8 +405,14 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function RunRow({ run }: { run: CustodianRun }) {
-  const accounting = describeCustodianRunAccounting(run);
+function RunRow({
+  run,
+  providerHoldProjection,
+}: {
+  run: CustodianRun;
+  providerHoldProjection: CustodianRunRead["providerHoldProjection"];
+}) {
+  const accounting = describeCustodianRunAccounting(run, providerHoldProjection);
   return (
     <article className="grid gap-4 px-4 py-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(220px,1fr)]">
       <div className="min-w-0">

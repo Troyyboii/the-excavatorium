@@ -1542,6 +1542,17 @@ function reserveDenial(reason: string): {
   };
 }
 
+function unsupportedReservationDetail(reservation: ReservationView): string {
+  const base = "Provider execution is unsupported. The existing reservation was left unchanged.";
+  if (reservation.status === "released_uncontacted" && reservation.usageKnowledge === "none") {
+    return `${base} No provider call was made.`;
+  }
+  if (reservation.status === "held" || reservation.usageKnowledge === "unknown") {
+    return `${base} This response does not establish whether a provider was contacted.`;
+  }
+  return base;
+}
+
 export async function advanceCustodianRun(input: {
   io: CustodianIo;
   ownerId: string;
@@ -1613,8 +1624,7 @@ export async function advanceCustodianRun(input: {
               : "stopped";
         return outcome(200, state, run, accountingFromReservation(run, reservation), {
           reason: "provider_execution_unsupported",
-          detail:
-            "Provider execution is unsupported. The existing reservation was left unchanged and no provider call was made.",
+          detail: unsupportedReservationDetail(reservation),
         });
       }
       if (!budget.allowed) return stopForBudget(io, run, invocation.invocationKey, budget);

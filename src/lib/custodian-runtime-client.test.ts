@@ -121,6 +121,38 @@ describe("Custodian run read contract", () => {
     expect(accounting.usageKnowledge).toContain("Known");
   });
 
+  test("does not present a missing hold as recorded zero spend when the projection is unavailable", () => {
+    const run = mapCustodianRunRow({
+      ...{
+        id: "00000000-0000-4000-8000-000000000001",
+        case_id: "00000000-0000-4000-8000-000000000002",
+        objective: "What does the selected evidence support?",
+        model_tier: "terra",
+        status: "completed",
+        budget_tokens: 2_000,
+        budget_cost_usd: 0.1,
+        budget_latency_ms: 30_000,
+        budget_tool_events: 1,
+        tokens_used: 0,
+        cost_usd: 0,
+        latency_ms: 12,
+        tool_events_count: 0,
+        last_step_number: 2,
+        failure_code: null,
+        failure_message: null,
+        cancel_requested_at: null,
+        created_at: "2026-09-21T19:00:00.000Z",
+        updated_at: "2026-09-21T19:06:00.000Z",
+      },
+    });
+    const accounting = describeCustodianRunAccounting(run, "unavailable");
+    expect(accounting.recordedProviderCost).toBe("Not recorded");
+    expect(accounting.recordedProviderTokens).toBe("Not recorded");
+    expect(accounting.usageKnowledge).toContain("unclaimed");
+    expect(accounting.usageKnowledge).not.toContain("No provider usage recorded");
+    expect(accounting.recordedProviderCost).not.toContain("$");
+  });
+
   test("does not invoke the provider while the browser gate is closed", async () => {
     expect(CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER).toBe(false);
     const invocation = custodianRunInvocation(

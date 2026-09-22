@@ -348,9 +348,30 @@ The current Run Room lists at most 100 authenticated owner runs. Where the reser
 relation is readable, it shows recorded provider cost separately from any held budget,
 unknown usage, pricing version, a cancellation request, failure, and the latest step.
 M4D source can start one readonly analysis from explicit owner inputs, then drive that
-persisted run. The Start analysis control stays disabled while
+persisted run only through `queued`, `retrieving`, `synthesizing`, and `verifying`.
+`verifying` is included because the Edge verification step completes the read-only
+path. `executing` is an authority-boundary stop: the browser does not invoke.
+An ambiguous Edge or network result is reconciled from the persisted run and
+provider hold before any outcome is described, and that invocation is not retried.
+Run and invocation keys stay in memory for one Run Room tab. They stay stable while
+a start is unresolved and rotate together only after a durable stop, so a later
+objective does not reuse the stopped run's idempotency key. A durable stop is a
+persisted `completed`, `awaiting_approval`, `blocked`, `failed`, `expired`,
+`budget_stopped`, or `cancelled` row whose hold is `settled_known` with usage
+`known`, or `released_uncontacted` with usage `none`. An unresolved hold, including
+`held` or usage `unknown` on a terminal or `awaiting_approval` row, does not rotate
+the keys. A missing hold is not that proof, so the same session does not mint a new
+run beside it. The second-start guard reads only the Run Room list already loaded
+in this tab: at most 100 newest owner runs (`CUSTODIAN_RUN_READ_LIMIT`) and the
+matching reservation rows, for the same case. A visible terminal or
+`awaiting_approval` row without a resolved hold blocks another Start. An uncertain
+run outside those 100 rows, or visible only in another tab, is not seen. No schema
+was added and there is no cross-tab dedup. The Start
+analysis control stays disabled while the surface is offline, loading, unreadable,
+missing its owner, missing ports, or
 `CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER` is false, and that closed control performs
-no policy RPC, run RPC, or Edge call. A missing reservation relation is shown as
+no policy RPC, run RPC, or Edge call. Persisted runs stay visible when Start is
+disabled. A missing reservation relation is shown as
 unavailable rather than as zero spend. Production activation is not done.
 
 Target V1 runtime behavior is retrieve/extract/synthesize/approval/execute/verify with
@@ -806,9 +827,14 @@ read-only analysis path.
   body is only `{ runId, invocationKey }`. While the constant is false, Start analysis
   does not call the Edge Function.
 - **M4D SOURCE:** **IMPLEMENTED, NOT ACTIVATED.** The readonly start contract and
-  bounded driver exist. Both provider constants remain closed. Production activation
-  is not done. Secrets and pricing are not configured. The first paid run is not done.
-  Deployed concurrency proof is pending. M5 is not done.
+  bounded driver exist. The driver allowlist is `queued`, `retrieving`,
+  `synthesizing`, and `verifying`. It does not advance `executing`. Ambiguous
+  invocations are reconciled from the persisted run and are not retried. Idempotency
+  keys rotate only after a durable stop. A browser reload cannot resume the same
+  invocation key; an uncertain persisted run blocks a second start. Both provider
+  constants remain closed. Production activation is not done. Secrets and pricing
+  are not configured. The first paid run is not done. Deployed concurrency proof is
+  pending. M5 is not done.
 - **M4 PROVIDER ACTIVATION:** **BLOCKED.** M4 is not complete.
 - **PRODUCTION / DEPLOYED BEHAVIOR:** **UNVERIFIED** until a separately authorized
   deploy and proof. M5 and M6 are not started. The first-run blocker

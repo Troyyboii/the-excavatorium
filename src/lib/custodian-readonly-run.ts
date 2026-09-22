@@ -1,19 +1,39 @@
 import { CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER, fetchCustodianRuns } from "./custodian-runtime";
-import { MODEL_ALLOWLIST, type ModelTier } from "./custodian-runtime-types";
+import { isRuntimeRunState, MODEL_ALLOWLIST, type ModelTier } from "./custodian-runtime-types";
 import { supabase } from "./supabase";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MODEL_TIERS = Object.keys(MODEL_ALLOWLIST) as ModelTier[];
 const SERVER_ATTEMPT_PREFIX = "provider-attempt:";
+const KNOWN_HOLD_STATUSES = new Set(["held", "settled_known", "released_uncontacted"]);
+const RESPONDED_STATES = new Set([
+  "advanced",
+  "held",
+  "paused",
+  "terminal",
+  "blocked",
+  "failed",
+  "replay",
+  "stopped",
+  "completed",
+  "unavailable",
+]);
 
-/** Advanceable lifecycle states. The driver stops on awaiting_approval instead of entering execution. */
+/**
+ * Readonly driver allowlist. `verifying` stays because the Edge function's
+ * verification step completes the read-only path (`verifying` → `completed`)
+ * and does not enter `executing`. `executing` is the approved write path and
+ * is never driven.
+ */
 export const READONLY_ANALYSIS_ADVANCE_STATES = [
   "queued",
   "retrieving",
   "synthesizing",
-  "executing",
   "verifying",
 ] as const;
+
+const INDETERMINATE_DETAIL =
+  "UNKNOWN/INDETERMINATE. The persisted run does not establish the invocation outcome. Provider contact and recorded usage are not claimed. No further call was made.";
 
 export const READONLY_ANALYSIS_DRIVE_BOUND = READONLY_ANALYSIS_ADVANCE_STATES.length;
 
@@ -27,7 +47,10 @@ export const READONLY_ANALYSIS_STOP_STATES = [
   "cancelled",
 ] as const;
 
-export type ReadonlyAnalysisStop = (typeof READONLY_ANALYSIS_STOP_STATES)[number] | "held";
+export type ReadonlyAnalysisStop =
+  | (typeof READONLY_ANALYSIS_STOP_STATES)[number]
+  | "held"
+  | "durable";
 
 export type ReadonlyAnalysisDraft = {
   caseId: string;
@@ -87,6 +110,24 @@ export type ReadonlyRunObservation = {
   status: string;
   holdStatus: "held" | "settled_known" | "released_uncontacted" | null;
   failureCode: string | null;
+  usageKnowledge?: "known" | "unknown" | "none" | null;
+};
+
+export type PersistedReadonlyRun = {
+  id: string;
+  caseId: string;
+  status: string;
+  holdStatus: ReadonlyRunObservation["holdStatus"];
+  failureCode: string | null;
+  usageKnowledge?: ReadonlyRunObservation["usageKnowledge"];
+};
+
+export type ReadonlyInvocationResult = {
+  ok: boolean;
+  state: string | null;
+  status: string | null;
+  /** `ambiguous` means the server may already have run. `rejected` means the call was not sent. */
+  disposition?: "responded" | "ambiguous" | "rejected";
 };
 
 export type ReadonlyAnalysisPorts = {
@@ -100,19 +141,20 @@ export type ReadonlyAnalysisPorts = {
     idempotencyKey: string,
     payload: ReadonlyAnalysisRunPayload,
   ) => Promise<{ runId: string }>;
-  invoke: (body: { runId: string; invocationKey: string }) => Promise<{
-    ok: boolean;
-    state: string | null;
-    status: string | null;
-  }>;
+  invoke: (body: { runId: string; invocationKey: string }) => Promise<ReadonlyInvocationResult>;
   readRun: (runId: string) => Promise<ReadonlyRunObservation | null>;
   refreshRuns: () => Promise<void>;
+  /** Already-loaded Run Room rows. Used to refuse a second run while one is uncertain. */
+  persistedRuns?: () => readonly PersistedReadonlyRun[];
 };
 
 export type ReadonlyAnalysisSession = {
   tryBegin: () => boolean;
-  finish: () => void;
+  finish: (durableStop: boolean) => void;
+  bindRun: (runId: string) => void;
+  resumeRunId: () => string | null;
   invocationKey: () => string;
+  invocationKeyIfSet: () => string | null;
   runIdempotencyKey: () => string;
 };
 
@@ -125,6 +167,9 @@ export type ReadonlyAnalysisStartResult =
       invocationKey: string;
       advances: number;
       failureCode: string | null;
+      usageUnclaimed?: boolean;
+      /** True only when the persisted hold proves usage is known or that no contact was recorded. */
+      holdResolved?: boolean;
     }
   | {
       ok: false;
@@ -134,7 +179,9 @@ export type ReadonlyAnalysisStartResult =
         | "start_already_in_progress"
         | "policy_failed"
         | "run_failed"
-        | "invocation_failed"
+        | "outcome_indeterminate"
+        | "authority_boundary"
+        | "unresolved_run"
         | "run_unreadable"
         | "run_did_not_advance"
         | "drive_bound_exhausted";
@@ -166,20 +213,41 @@ export function emptyReadonlyAnalysisDraft(): ReadonlyAnalysisDraft {
 export function createReadonlyAnalysisSession(
   createKey: () => string = () => crypto.randomUUID(),
 ): ReadonlyAnalysisSession {
-  let active = false;
+  let phase: "idle" | "active" | "unresolved" | "stopped" = "idle";
   let invocationKey: string | null = null;
   let runIdempotencyKey: string | null = null;
+  let boundRunId: string | null = null;
+  let pendingResumeId: string | null = null;
   return {
     tryBegin() {
-      if (active) return false;
-      active = true;
+      if (phase === "active") return false;
+      if (phase === "stopped") {
+        invocationKey = null;
+        runIdempotencyKey = null;
+        boundRunId = null;
+        pendingResumeId = null;
+      } else if (phase === "unresolved") {
+        pendingResumeId = boundRunId;
+      } else {
+        pendingResumeId = null;
+      }
+      phase = "active";
       return true;
     },
-    finish() {
-      active = false;
+    finish(durableStop: boolean) {
+      phase = durableStop ? "stopped" : "unresolved";
+    },
+    bindRun(runId: string) {
+      if (UUID_PATTERN.test(runId)) boundRunId = runId.toLowerCase();
+    },
+    resumeRunId() {
+      return pendingResumeId;
     },
     invocationKey() {
       if (!invocationKey) invocationKey = requireSessionKey(createKey());
+      return invocationKey;
+    },
+    invocationKeyIfSet() {
       return invocationKey;
     },
     runIdempotencyKey() {
@@ -312,11 +380,20 @@ export function describeReadonlyAnalysisResult(result: ReadonlyAnalysisStartResu
     if (result.reason === "start_already_in_progress") {
       return "A readonly analysis start is already in progress.";
     }
-    if (result.reason === "invocation_failed") {
-      return "The Edge invocation failed. The persisted run was not advanced further.";
+    if (result.reason === "outcome_indeterminate" || result.reason === "run_unreadable") {
+      return result.detail ?? INDETERMINATE_DETAIL;
+    }
+    if (result.reason === "authority_boundary") {
+      return result.detail ?? authorityDetail(false);
+    }
+    if (result.reason === "unresolved_run") {
+      return (
+        result.detail ??
+        `Persisted run ${result.runId ?? ""} is ${result.status ?? "unresolved"}. A new analysis was not started. Provider contact and recorded usage are not claimed from this attempt.`
+      );
     }
     if (result.reason === "run_did_not_advance") {
-      return "The persisted run did not advance. No further call was made.";
+      return `The persisted run is still at ${result.status ?? "its previous state"}. This start will not invoke the Edge function again.`;
     }
     if (result.reason === "drive_bound_exhausted") {
       return "The readonly analysis driver reached its lifecycle bound before a persisted stop.";
@@ -324,10 +401,17 @@ export function describeReadonlyAnalysisResult(result: ReadonlyAnalysisStartResu
     return result.detail ?? "The readonly analysis request failed.";
   }
   if (result.stop === "held") {
-    return `Persisted run ${result.runId} has an unresolved provider hold. Recorded usage is not claimed.`;
+    return `Persisted run ${result.runId} has an unresolved provider hold. Recorded usage is not claimed. Provider contact may already have happened.`;
+  }
+  if (result.stop === "durable") {
+    return `Persisted run ${result.runId} is at ${result.status}. The driver stopped on that durable state. No further call was made.`;
+  }
+  if (result.holdResolved !== true) {
+    return `UNKNOWN/INDETERMINATE. Persisted run ${result.runId} is at ${result.status}. Recorded usage is unclaimed. The invocation outcome is not established.`;
   }
   const failure = result.failureCode ? ` Failure ${result.failureCode}.` : "";
-  return `Persisted run ${result.runId} stopped at ${result.status}.${failure}`;
+  const usage = result.usageUnclaimed ? " Recorded usage is not claimed." : "";
+  return `Persisted run ${result.runId} stopped at ${result.status}.${failure}${usage}`;
 }
 
 export async function startReadonlyAnalysis(
@@ -355,103 +439,147 @@ export async function startReadonlyAnalysis(
   if (!parsed.ok) return { ok: false, reason: "invalid_input", errors: parsed.errors };
   const ownerInput = parsed.value;
   if (!session.tryBegin()) return { ok: false, reason: "start_already_in_progress" };
+  let durableStop = false;
   try {
-    let invocationKey: string;
-    let runKey: string;
-    try {
-      invocationKey = session.invocationKey();
-      runKey = session.runIdempotencyKey();
-    } catch (error) {
-      return { ok: false, reason: "invalid_input", errors: [publicDetail(error)] };
-    }
-    const policyPayload = policyPayloadFrom(ownerInput);
-    let policyId: string;
-    try {
-      policyId = (await ports.ensurePolicy(ownerInput.caseId, policyPayload)).policyId;
-    } catch (error) {
-      return {
-        ok: false,
-        reason: failureReason(error, "policy_failed"),
-        detail: publicDetail(error),
-      };
-    }
-    if (!UUID_PATTERN.test(policyId)) {
-      return {
-        ok: false,
-        reason: "policy_failed",
-        detail: "The policy RPC did not return a persisted id.",
-      };
-    }
-    let runId: string;
-    try {
-      runId = (
-        await ports.createRun(ownerInput.caseId, runKey, {
-          model_tier: ownerInput.modelTier,
-          prompt_version: ownerInput.promptVersion,
-          objective: ownerInput.objective,
-          tool_policy_id: policyId,
-        })
-      ).runId;
-    } catch (error) {
-      return { ok: false, reason: failureReason(error, "run_failed"), detail: publicDetail(error) };
-    }
-    if (!UUID_PATTERN.test(runId)) {
-      return {
-        ok: false,
-        reason: "run_failed",
-        detail: "The run RPC did not return a persisted id.",
-      };
-    }
-    try {
-      await ports.refreshRuns();
-    } catch (error) {
-      return { ok: false, reason: "run_unreadable", runId, detail: publicDetail(error) };
-    }
-    let observation = await ports.readRun(runId);
-    if (!observation) return { ok: false, reason: "run_unreadable", runId };
-    const initialStop = classifyStop(observation, null);
-    if (initialStop) return stopped(runId, observation, initialStop, invocationKey, 0);
-
-    let advances = 0;
-    while (advances < READONLY_ANALYSIS_DRIVE_BOUND) {
-      const before = observation;
-      const body = exactInvocation(runId, invocationKey);
-      let invoked: { ok: boolean; state: string | null; status: string | null };
-      try {
-        invoked = await ports.invoke(body);
-      } catch (error) {
-        await safeRefresh(ports);
-        return {
-          ok: false,
-          reason: "invocation_failed",
-          runId,
-          status: before.status,
-          detail: publicDetail(error),
-        };
-      }
-      advances += 1;
-      await safeRefresh(ports);
-      if (!invoked.ok) {
-        return {
-          ok: false,
-          reason: "invocation_failed",
-          runId,
-          status: before.status,
-          detail: "The Edge invocation failed. The persisted run was not advanced further.",
-        };
-      }
-      observation = (await ports.readRun(runId)) ?? null;
-      if (!observation) return { ok: false, reason: "run_unreadable", runId };
-      const stop = classifyStop(observation, invoked.state);
-      if (stop) return stopped(runId, observation, stop, invocationKey, advances);
-      if (observation.status === before.status) {
-        return { ok: false, reason: "run_did_not_advance", runId, status: observation.status };
-      }
-    }
-    return { ok: false, reason: "drive_bound_exhausted", runId, status: observation.status };
+    const result = await performReadonlyAnalysis(ownerInput, ports, session);
+    durableStop = isDurableStop(result);
+    if (result.runId) session.bindRun(result.runId);
+    return result;
   } finally {
-    session.finish();
+    session.finish(durableStop);
   }
+}
+
+async function performReadonlyAnalysis(
+  ownerInput: ReadonlyAnalysisStartInput,
+  ports: ReadonlyAnalysisPorts,
+  session: ReadonlyAnalysisSession,
+): Promise<ReadonlyAnalysisStartResult> {
+  const resumeId = session.resumeRunId();
+  if (resumeId) {
+    await safeRefresh(ports);
+    return reportPersisted(resumeId, await readObservation(ports, resumeId), session, 0);
+  }
+
+  const blocking = blockingPersistedRun(ports, ownerInput.caseId);
+  if (blocking === "unreadable") {
+    return { ok: false, reason: "outcome_indeterminate", detail: INDETERMINATE_DETAIL };
+  }
+  if (blocking) {
+    if (blocking.status === "executing") return authorityResult(blocking.id);
+    if (!isRuntimeRunState(blocking.status)) {
+      return indeterminateResult(blocking.id, blocking.status);
+    }
+    return {
+      ok: false,
+      reason: "unresolved_run",
+      runId: blocking.id,
+      status: blocking.status,
+      detail: `Persisted run ${blocking.id} is ${blocking.status}. A new analysis was not started. Provider contact and recorded usage are not claimed from this attempt.`,
+    };
+  }
+
+  let invocationKey: string;
+  let runKey: string;
+  try {
+    invocationKey = session.invocationKey();
+    runKey = session.runIdempotencyKey();
+  } catch (error) {
+    return { ok: false, reason: "invalid_input", errors: [publicDetail(error)] };
+  }
+  const policyPayload = policyPayloadFrom(ownerInput);
+  let policyId: string;
+  try {
+    policyId = (await ports.ensurePolicy(ownerInput.caseId, policyPayload)).policyId;
+  } catch (error) {
+    return {
+      ok: false,
+      reason: failureReason(error, "policy_failed"),
+      detail: publicDetail(error),
+    };
+  }
+  if (!UUID_PATTERN.test(policyId)) {
+    return {
+      ok: false,
+      reason: "policy_failed",
+      detail: "The policy RPC did not return a persisted id.",
+    };
+  }
+  let runId: string;
+  try {
+    runId = (
+      await ports.createRun(ownerInput.caseId, runKey, {
+        model_tier: ownerInput.modelTier,
+        prompt_version: ownerInput.promptVersion,
+        objective: ownerInput.objective,
+        tool_policy_id: policyId,
+      })
+    ).runId;
+  } catch (error) {
+    return { ok: false, reason: failureReason(error, "run_failed"), detail: publicDetail(error) };
+  }
+  if (!UUID_PATTERN.test(runId)) {
+    return {
+      ok: false,
+      reason: "run_failed",
+      detail: "The run RPC did not return a persisted id.",
+    };
+  }
+  try {
+    await ports.refreshRuns();
+  } catch (error) {
+    return { ok: false, reason: "outcome_indeterminate", runId, detail: INDETERMINATE_DETAIL };
+  }
+  let observation = await readObservation(ports, runId);
+  if (!observation) return indeterminateResult(runId, null);
+  const initial = stopBeforeInvoke(observation);
+  if (initial) return initialResult(runId, observation, initial, invocationKey, 0);
+
+  let advances = 0;
+  while (advances < READONLY_ANALYSIS_DRIVE_BOUND) {
+    if (!isDriveState(observation.status)) {
+      const blocked = stopBeforeInvoke(observation);
+      if (blocked) return initialResult(runId, observation, blocked, invocationKey, advances);
+      return indeterminateResult(runId, observation.status);
+    }
+    const before = observation;
+    let invoked: ReadonlyInvocationResult;
+    try {
+      invoked = await ports.invoke(exactInvocation(runId, invocationKey));
+    } catch {
+      invoked = { ok: false, state: null, status: null, disposition: "ambiguous" };
+    }
+    advances += 1;
+    if (isAmbiguousInvocation(invoked)) {
+      await safeRefresh(ports);
+      return reconcileAmbiguous(
+        runId,
+        before,
+        await readObservation(ports, runId),
+        invocationKey,
+        advances,
+      );
+    }
+    if (invoked.disposition === "rejected" || invoked.state === "provider_surface_blocked") {
+      return { ok: false, reason: "provider_surface_blocked", runId, status: before.status };
+    }
+    await safeRefresh(ports);
+    observation = await readObservation(ports, runId);
+    if (!observation) return indeterminateResult(runId, null);
+    if (observation.status === "executing") return authorityResult(runId, true);
+    const stop = classifyStop(observation, invoked.state);
+    if (stop) return initialResult(runId, observation, stop, invocationKey, advances);
+    if (isStopStatus(observation.status) && !holdIsResolved(observation)) {
+      return unsettledStopResult(runId, observation);
+    }
+    if (!isDriveState(observation.status)) {
+      return indeterminateResult(runId, observation.status);
+    }
+    if (observation.status === before.status) {
+      return { ok: false, reason: "run_did_not_advance", runId, status: observation.status };
+    }
+  }
+  return { ok: false, reason: "drive_bound_exhausted", runId, status: observation.status };
 }
 
 export function productionReadonlyAnalysisPorts(input: {
@@ -485,14 +613,26 @@ export function productionReadonlyAnalysisPorts(input: {
       return { runId };
     },
     async invoke(body) {
-      if (!surfaceEnabled) return { ok: false, state: "provider_surface_blocked", status: null };
+      if (!surfaceEnabled) {
+        return {
+          ok: false,
+          state: "provider_surface_blocked",
+          status: null,
+          disposition: "rejected",
+        };
+      }
+      if (!input.ownerId || !UUID_PATTERN.test(input.ownerId)) {
+        return { ok: false, state: "owner_missing", status: null, disposition: "rejected" };
+      }
       assertExactInvocation(body);
       try {
         const result = await supabase.functions.invoke("custodian-run", { body });
-        if (result.error) return { ok: false, state: null, status: null };
-        return { ok: true, ...advanceView(result.data) };
+        if (result.error) return { ok: false, state: null, status: null, disposition: "ambiguous" };
+        const view = advanceView(result.data);
+        if (!view.state) return { ok: false, state: null, status: null, disposition: "ambiguous" };
+        return { ok: true, ...view, disposition: "responded" };
       } catch {
-        return { ok: false, state: null, status: null };
+        return { ok: false, state: null, status: null, disposition: "ambiguous" };
       }
     },
     async readRun(runId) {
@@ -505,6 +645,7 @@ export function productionReadonlyAnalysisPorts(input: {
           status: run.status,
           holdStatus: run.providerHold?.status ?? null,
           failureCode: run.failureCode,
+          usageKnowledge: run.providerHold?.usageKnowledge ?? null,
         };
       } catch {
         return null;
@@ -537,21 +678,228 @@ function stopped(
     invocationKey,
     advances,
     failureCode: observation.failureCode,
+    usageUnclaimed: usageUnclaimed(observation),
+    holdResolved: holdIsResolved(observation),
   };
+}
+
+function isDurableStop(result: ReadonlyAnalysisStartResult): boolean {
+  return (
+    result.ok &&
+    result.stop !== "held" &&
+    result.stop !== "durable" &&
+    result.holdResolved === true &&
+    isStopStatus(result.status) &&
+    !result.usageUnclaimed
+  );
+}
+
+function isDriveState(status: string): status is (typeof READONLY_ANALYSIS_ADVANCE_STATES)[number] {
+  return (READONLY_ANALYSIS_ADVANCE_STATES as readonly string[]).includes(status);
+}
+
+function usageUnclaimed(observation: ReadonlyRunObservation): boolean {
+  return observation.holdStatus === "held" || observation.usageKnowledge === "unknown";
+}
+
+function holdIsUnresolved(observation: ReadonlyRunObservation): boolean {
+  if (usageUnclaimed(observation)) return true;
+  return Boolean(observation.holdStatus && !KNOWN_HOLD_STATUSES.has(observation.holdStatus));
+}
+
+function holdIsResolved(observation: {
+  holdStatus: ReadonlyRunObservation["holdStatus"];
+  usageKnowledge?: ReadonlyRunObservation["usageKnowledge"];
+}): boolean {
+  if (observation.holdStatus === "settled_known" && observation.usageKnowledge === "known") {
+    return true;
+  }
+  if (observation.holdStatus === "released_uncontacted" && observation.usageKnowledge === "none") {
+    return true;
+  }
+  return false;
+}
+
+function authorityDetail(alreadyInvoked: boolean): string {
+  const next = alreadyInvoked
+    ? "will not invoke the Edge function again"
+    : "does not invoke the Edge function";
+  return `Persisted run is executing. Readonly analysis stops at the authority boundary and ${next}.`;
+}
+
+function authorityResult(runId: string, alreadyInvoked = false): ReadonlyAnalysisStartResult {
+  return {
+    ok: false,
+    reason: "authority_boundary",
+    runId,
+    status: "executing",
+    detail: authorityDetail(alreadyInvoked),
+  };
+}
+
+function unsettledStopResult(
+  runId: string,
+  observation: ReadonlyRunObservation,
+): ReadonlyAnalysisStartResult {
+  return {
+    ok: false,
+    reason: "outcome_indeterminate",
+    runId,
+    status: observation.status,
+    detail: `UNKNOWN/INDETERMINATE. Persisted run ${runId} is at ${observation.status}. Recorded usage is unclaimed. The invocation outcome is not established.`,
+  };
+}
+
+function indeterminateResult(
+  runId: string | undefined,
+  status: string | null,
+): ReadonlyAnalysisStartResult {
+  return {
+    ok: false,
+    reason: "outcome_indeterminate",
+    runId,
+    status,
+    detail: INDETERMINATE_DETAIL,
+  };
+}
+
+function knownInvocationKey(session: ReadonlyAnalysisSession): string {
+  return session.invocationKeyIfSet() ?? "";
+}
+
+async function readObservation(
+  ports: ReadonlyAnalysisPorts,
+  runId: string,
+): Promise<ReadonlyRunObservation | null> {
+  try {
+    return await ports.readRun(runId);
+  } catch {
+    return null;
+  }
+}
+
+function blockingPersistedRun(
+  ports: ReadonlyAnalysisPorts,
+  caseId: string,
+): PersistedReadonlyRun | "unreadable" | null {
+  if (!ports.persistedRuns) return null;
+  let runs: readonly PersistedReadonlyRun[];
+  try {
+    runs = ports.persistedRuns();
+  } catch {
+    return "unreadable";
+  }
+  for (const run of runs) {
+    if (run.caseId.toLowerCase() !== caseId) continue;
+    if (!isCertainPersistedStop(run)) return run;
+  }
+  return null;
+}
+
+function isCertainPersistedStop(run: PersistedReadonlyRun): boolean {
+  if (!isRuntimeRunState(run.status) || !isStopStatus(run.status)) return false;
+  return holdIsResolved(run);
+}
+
+function stopBeforeInvoke(
+  observation: ReadonlyRunObservation,
+): "authority" | "indeterminate" | ReadonlyAnalysisStop | null {
+  if (observation.status === "executing") return "authority";
+  if (!isRuntimeRunState(observation.status)) return "indeterminate";
+  const stop = classifyStop(observation, null);
+  if (stop) return stop;
+  if (isStopStatus(observation.status)) return "indeterminate";
+  return null;
+}
+
+function initialResult(
+  runId: string,
+  observation: ReadonlyRunObservation,
+  stop: "authority" | "indeterminate" | ReadonlyAnalysisStop,
+  invocationKey: string,
+  advances: number,
+): ReadonlyAnalysisStartResult {
+  if (stop === "authority") return authorityResult(runId);
+  if (stop === "indeterminate") {
+    if (isStopStatus(observation.status) && !holdIsResolved(observation)) {
+      return unsettledStopResult(runId, observation);
+    }
+    return indeterminateResult(runId, observation.status);
+  }
+  return stopped(runId, observation, stop, invocationKey, advances);
+}
+
+function reportPersisted(
+  runId: string,
+  observation: ReadonlyRunObservation | null,
+  session: ReadonlyAnalysisSession,
+  advances: number,
+): ReadonlyAnalysisStartResult {
+  if (!observation || !isRuntimeRunState(observation.status)) {
+    return indeterminateResult(runId, observation?.status ?? null);
+  }
+  if (observation.status === "executing") return authorityResult(runId);
+  if (holdIsUnresolved(observation)) {
+    return stopped(runId, observation, "held", knownInvocationKey(session), advances);
+  }
+  if (isStopStatus(observation.status)) {
+    if (!holdIsResolved(observation)) return unsettledStopResult(runId, observation);
+    const stop =
+      observation.status === "awaiting_approval" ? "awaiting_approval" : observation.status;
+    return stopped(runId, observation, stop, knownInvocationKey(session), advances);
+  }
+  if (isDriveState(observation.status)) {
+    return {
+      ok: false,
+      reason: "outcome_indeterminate",
+      runId,
+      status: observation.status,
+      detail: `UNKNOWN/INDETERMINATE. Persisted run ${runId} is at ${observation.status}. Provider contact and recorded usage are not claimed. No further call was made.`,
+    };
+  }
+  return indeterminateResult(runId, observation.status);
+}
+
+function reconcileAmbiguous(
+  runId: string,
+  before: ReadonlyRunObservation,
+  after: ReadonlyRunObservation | null,
+  invocationKey: string,
+  advances: number,
+): ReadonlyAnalysisStartResult {
+  if (!after || !isRuntimeRunState(after.status)) {
+    return indeterminateResult(runId, after?.status ?? null);
+  }
+  if (after.status === "executing") return authorityResult(runId, true);
+  if (holdIsUnresolved(after)) {
+    return stopped(runId, after, "held", invocationKey, advances);
+  }
+  if (isStopStatus(after.status)) {
+    if (!holdIsResolved(after)) return unsettledStopResult(runId, after);
+    const stop = after.status === "awaiting_approval" ? "awaiting_approval" : after.status;
+    return stopped(runId, after, stop, invocationKey, advances);
+  }
+  if (after.status !== before.status && isDriveState(after.status)) {
+    return stopped(runId, after, "durable", invocationKey, advances);
+  }
+  return indeterminateResult(runId, after.status);
+}
+
+function isAmbiguousInvocation(result: ReadonlyInvocationResult): boolean {
+  if (result.disposition === "rejected") return false;
+  if (result.disposition === "ambiguous") return true;
+  if (!result.ok) return true;
+  if (!result.state || !RESPONDED_STATES.has(result.state)) return true;
+  return false;
 }
 
 function classifyStop(
   observation: ReadonlyRunObservation,
   advanceState: string | null,
 ): ReadonlyAnalysisStop | null {
-  if (observation.holdStatus === "held" || advanceState === "held") return "held";
-  if (observation.status === "awaiting_approval" || advanceState === "paused") {
-    return "awaiting_approval";
-  }
-  if (isStopStatus(observation.status)) return observation.status;
-  if (advanceState === "blocked") return "blocked";
-  if (advanceState === "failed") return "failed";
-  return null;
+  if (holdIsUnresolved(observation) || advanceState === "held") return "held";
+  if (!isStopStatus(observation.status) || !holdIsResolved(observation)) return null;
+  return observation.status === "awaiting_approval" ? "awaiting_approval" : observation.status;
 }
 
 function isStopStatus(status: string): status is (typeof READONLY_ANALYSIS_STOP_STATES)[number] {

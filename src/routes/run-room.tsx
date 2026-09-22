@@ -34,6 +34,7 @@ function RunRoomPage() {
       online={online}
       loading={Boolean(!error && runs.isLoading)}
       error={error}
+      ownerPresent={Boolean(userId)}
       surfaceEnabled={CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER}
       ports={productionReadonlyAnalysisPorts({
         ownerId: userId,

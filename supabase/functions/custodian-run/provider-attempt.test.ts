@@ -650,6 +650,39 @@ Deno.test("closed-gate first-run sequence never reserves or fetches", async () =
   assertEquals(usage(synthesizing).costAccounting, "none");
 });
 
+Deno.test("a closed-gate held reservation does not claim the provider was not called", async () => {
+  assertEquals(PROVIDER_EXECUTION_UNSUPPORTED, true);
+  const state = world("synthesizing");
+  state.reservation = heldReservation(state);
+  state.fetchImpl = () => Promise.reject(new Error("fetch_must_not_run"));
+  const held = await advance(state, "held-reservation", false);
+  assertEquals(state.fetches, 0);
+  assertEquals(held.body.state, "held");
+  assertEquals(held.body.reason, "provider_execution_unsupported");
+  assertEquals(claimsNoPriorProviderContact(held), false);
+  assertEquals(JSON.stringify(held).includes("no provider call was made"), false);
+  assertEquals(
+    String(held.body.detail).includes("does not establish whether a provider was contacted"),
+    true,
+  );
+
+  const released = world("synthesizing");
+  released.reservation = {
+    ...heldReservation(released),
+    status: "released_uncontacted",
+    usageKnowledge: "none",
+  };
+  const stopped = await advance(released, "released-reservation", false);
+  assertEquals(stopped.body.state, "stopped");
+  assertEquals(String(stopped.body.detail).includes("No provider call was made."), true);
+
+  const settled = world("synthesizing");
+  settled.reservation = settledReservation(settled);
+  const replay = await advance(settled, "settled-reservation", false);
+  assertEquals(replay.body.state, "replay");
+  assertEquals(claimsNoPriorProviderContact(replay), false);
+});
+
 Deno.test("retrieval is provider-free and does not create evidence", async () => {
   const state = world("retrieving");
   state.fetchImpl = () => Promise.reject(new Error("fetch_must_not_run"));

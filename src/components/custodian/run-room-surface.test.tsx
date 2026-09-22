@@ -100,6 +100,51 @@ describe("Run Room surface", () => {
     );
     expect(screen.getByText("Provider hold records unavailable")).not.toBeNull();
     expect(screen.getByText("No persisted runs.")).not.toBeNull();
+    expect(screen.queryByText("No provider usage recorded.")).toBeNull();
+    expect(screen.queryByText("$0.0000")).toBeNull();
+  });
+
+  test("an unavailable hold projection does not label a listed run as zero spend", () => {
+    const persisted = {
+      ...mapCustodianRunRow({
+        id: "00000000-0000-4000-8000-000000000001",
+        case_id: "00000000-0000-4000-8000-000000000002",
+        objective: "What does the selected evidence support?",
+        model_tier: "terra",
+        status: "completed",
+        budget_tokens: 2_000,
+        budget_cost_usd: 0.1,
+        budget_latency_ms: 30_000,
+        budget_tool_events: 1,
+        tokens_used: 0,
+        cost_usd: 0,
+        latency_ms: 12,
+        tool_events_count: 0,
+        last_step_number: 2,
+        failure_code: null,
+        failure_message: null,
+        cancel_requested_at: null,
+        created_at: "2026-09-21T19:00:00.000Z",
+        updated_at: "2026-09-21T19:06:00.000Z",
+      }),
+      providerHold: null,
+    };
+    render(
+      <RunRoomSurface
+        runs={[persisted]}
+        providerHoldProjection="unavailable"
+        online
+        loading={false}
+        error={null}
+      />,
+    );
+    expect(screen.getByText("Provider hold records unavailable")).not.toBeNull();
+    expect(screen.getByText(persisted.objective)).not.toBeNull();
+    expect(
+      screen.getByText("Recorded usage is unclaimed. The invocation outcome is not established."),
+    ).not.toBeNull();
+    expect(screen.queryByText("No provider usage recorded.")).toBeNull();
+    expect(screen.queryByText("$0.0000")).toBeNull();
   });
 
   test("shows an empty failure state without a placeholder run", () => {
@@ -149,7 +194,7 @@ describe("Run Room surface", () => {
       observed("retrieving"),
       observed("synthesizing"),
       observed("verifying"),
-      observed("completed"),
+      observed("completed", "settled_known", "known"),
     ]);
     render(enabledRoom(drive.ports));
     await user.click(screen.getByRole("button", { name: "Start analysis" }));
@@ -179,7 +224,7 @@ describe("Run Room surface", () => {
     const approval = scriptedPorts([
       observed("queued"),
       observed("retrieving"),
-      observed("awaiting_approval"),
+      observed("awaiting_approval", "released_uncontacted", "none"),
     ]);
     const { rerender } = render(enabledRoom(approval.ports));
     await fillOwnerInput(user);
@@ -199,8 +244,155 @@ describe("Run Room surface", () => {
     const failed = scriptedPorts([observed("queued")], false);
     rerender(enabledRoom(failed.ports));
     await user.click(screen.getByRole("button", { name: "Start analysis" }));
-    expect(screen.getByText(/Edge invocation failed/)).not.toBeNull();
+    expect(screen.getByText(/UNKNOWN\/INDETERMINATE/)).not.toBeNull();
+    expect(screen.queryByText(/was not advanced|not contacted|zero spend/i)).toBeNull();
+    expect(failed.bodies).toHaveLength(0);
+  });
+
+  test("an ambiguous edge result is reconciled and not retried", async () => {
+    const user = userEvent.setup();
+    const failed = scriptedPorts([observed("queued"), observed("completed")], false);
+    render(enabledRoom(failed.ports));
+    await fillOwnerInput(user);
+    await user.click(screen.getByRole("button", { name: "Start analysis" }));
+    expect(screen.getByText(/Recorded usage is unclaimed/)).not.toBeNull();
+    expect(screen.getByText(/outcome is not established/)).not.toBeNull();
+    expect(screen.queryByText(/stopped at completed/)).toBeNull();
+    expect(screen.queryByText(/was not advanced|not contacted|zero spend/i)).toBeNull();
     expect(failed.bodies).toHaveLength(1);
+  });
+
+  test("start stays closed for an unhealthy surface and still shows persisted runs", async () => {
+    const user = userEvent.setup();
+    const calls = { count: 0 };
+    const ports = countingPorts(() => {
+      calls.count += 1;
+    }, true);
+    const persisted = run();
+    const { rerender } = render(
+      <RunRoomSurface
+        runs={[persisted]}
+        providerHoldProjection="available"
+        online={false}
+        loading={false}
+        error="Network unavailable. Persisted runs cannot be retrieved."
+        ownerPresent
+        surfaceEnabled
+        ports={ports}
+      />,
+    );
+    expect(screen.getByText(persisted.objective)).not.toBeNull();
+    expect(screen.getByText(/unavailable while the network is offline/)).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: "Start analysis" }));
+    expect(calls.count).toBe(0);
+
+    rerender(
+      <RunRoomSurface
+        runs={[persisted]}
+        providerHoldProjection="available"
+        online
+        loading
+        error={null}
+        ownerPresent
+        surfaceEnabled
+        ports={ports}
+      />,
+    );
+    expect(screen.getByText(persisted.objective)).not.toBeNull();
+    expect(screen.getByText(/unavailable while persisted runs are loading/)).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: "Start analysis" }));
+    expect(calls.count).toBe(0);
+
+    rerender(
+      <RunRoomSurface
+        runs={[persisted]}
+        providerHoldProjection="available"
+        online
+        loading={false}
+        error="Custodian runtime storage is unavailable in the connected Supabase project."
+        ownerPresent
+        surfaceEnabled
+        ports={ports}
+      />,
+    );
+    expect(screen.getByText(persisted.objective)).not.toBeNull();
+    expect(screen.getByText(/runtime read failed/)).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: "Start analysis" }));
+    expect(calls.count).toBe(0);
+
+    rerender(
+      <RunRoomSurface
+        runs={[persisted]}
+        providerHoldProjection="available"
+        online
+        loading={false}
+        error={null}
+        ownerPresent={false}
+        surfaceEnabled
+        ports={ports}
+      />,
+    );
+    expect(screen.getByText(persisted.objective)).not.toBeNull();
+    expect(screen.getByText(/owner is not signed in/)).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: "Start analysis" }));
+    expect(calls.count).toBe(0);
+
+    rerender(
+      <RunRoomSurface
+        runs={[persisted]}
+        providerHoldProjection="available"
+        online
+        loading={false}
+        error={null}
+        ownerPresent
+        surfaceEnabled
+        ports={null}
+      />,
+    );
+    expect(screen.getByText(persisted.objective)).not.toBeNull();
+    expect(screen.getByText(/runtime ports are not available/)).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: "Start analysis" }));
+    expect(calls.count).toBe(0);
+
+    rerender(
+      <RunRoomSurface
+        runs={[persisted]}
+        providerHoldProjection="available"
+        online
+        loading={false}
+        error={null}
+        ownerPresent
+        surfaceEnabled={false}
+        ports={ports}
+      />,
+    );
+    expect(screen.getByText(persisted.objective)).not.toBeNull();
+    expect(
+      screen.getByText(
+        "Provider invocation stays off until a later activation milestone. No analysis is being started.",
+      ),
+    ).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: "Start analysis" }));
+    expect(calls.count).toBe(0);
+  });
+
+  test("an uncertain persisted run blocks a blind retry and stays visible", async () => {
+    const user = userEvent.setup();
+    const drive = scriptedPorts([observed("completed")]);
+    const persisted = {
+      ...run(),
+      caseId: "00000000-0000-4000-8000-000000000002",
+      status: "synthesizing" as const,
+    };
+    render(enabledRoom(drive.ports, [persisted]));
+    await fillOwnerInput(user);
+    await user.click(screen.getByRole("button", { name: "Start analysis" }));
+    expect(screen.getByText(/A new analysis was not started/)).not.toBeNull();
+    expect(screen.getByText(persisted.objective)).not.toBeNull();
+    expect(screen.queryByText(/was not advanced|zero spend|not contacted/i)).toBeNull();
+    expect(drive.policies).toBe(0);
+    expect(drive.runs).toBe(0);
+    expect(drive.bodies).toHaveLength(0);
   });
 
   test("a second click during a start does not repeat policy or run creation", async () => {
@@ -211,7 +403,7 @@ describe("Run Room surface", () => {
     });
     let policies = 0;
     const ports: ReadonlyAnalysisPorts = {
-      ...scriptedPorts([observed("completed")]).ports,
+      ...scriptedPorts([observed("completed", "settled_known", "known")]).ports,
       ensurePolicy: async () => {
         policies += 1;
         await gate;
@@ -240,13 +432,14 @@ const RUN_ID = "00000000-0000-4000-8000-000000000011";
 function observed(
   status: string,
   holdStatus: ReadonlyRunObservation["holdStatus"] = null,
+  usageKnowledge: ReadonlyRunObservation["usageKnowledge"] = null,
 ): ReadonlyRunObservation {
-  return { status, holdStatus, failureCode: null };
+  return { status, holdStatus, failureCode: null, usageKnowledge };
 }
 
-function countingPorts(onCall: () => void): ReadonlyAnalysisPorts {
+function countingPorts(onCall: () => void, surfaceEnabled = false): ReadonlyAnalysisPorts {
   return {
-    surfaceEnabled: false,
+    surfaceEnabled,
     ensurePolicy: async () => {
       onCall();
       return { policyId: POLICY_ID };
@@ -309,14 +502,15 @@ function scriptedPorts(script: ReadonlyRunObservation[], invokeOk = true) {
   };
 }
 
-function enabledRoom(ports: ReadonlyAnalysisPorts) {
+function enabledRoom(ports: ReadonlyAnalysisPorts, runs: ReturnType<typeof run>[] = []) {
   return (
     <RunRoomSurface
-      runs={[]}
+      runs={runs}
       providerHoldProjection="available"
       online
       loading={false}
       error={null}
+      ownerPresent
       surfaceEnabled
       ports={ports}
     />
