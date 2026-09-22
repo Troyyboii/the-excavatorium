@@ -3,6 +3,7 @@ import {
   advanceCustodianRun,
   approvalIdempotencyKey,
   boundedProviderTimeoutMs,
+  classifyOpenAiHttpFailure,
   countDisallowedToolEvents,
   evaluateReadonlyVerification,
   OPENAI_RESPONSES_URL,
@@ -1292,6 +1293,53 @@ Deno.test("remaining latency blocks contact and caps the provider timeout", asyn
   assertEquals(boundedProviderTimeoutMs(tight.budget.run_latency_remaining) <= 20, true);
 });
 
+Deno.test("a remaining output budget below 16 stops before reserve", async () => {
+  for (const remaining of [1, 15]) {
+    const state = world();
+    state.budget.run_tokens_remaining = remaining;
+    state.fetchImpl = () => Promise.reject(new Error("fetch_must_not_run"));
+    const stopped = await advance(state);
+    assertEquals(state.reserveCalls, 0);
+    assertEquals(state.fetches, 0);
+    assertEquals(state.reservation, null);
+    assertEquals(state.run.status, "budget_stopped");
+    assertEquals(state.run.failure_code, "per_run_tokens");
+    assertEquals(stopped.body.state, "stopped");
+  }
+});
+
+Deno.test("a legal remaining output budget is sent unchanged", async () => {
+  for (const remaining of [16, 4074, 4096]) {
+    const state = world();
+    state.budget.run_tokens_remaining = remaining;
+    let sent: number | undefined;
+    state.fetchImpl = (_url, init) => {
+      const request = JSON.parse((init as { body?: string }).body ?? "{}") as {
+        max_output_tokens?: number;
+      };
+      sent = request.max_output_tokens;
+      return Promise.resolve(Response.json(providerResponse(synthesis([finding()]))));
+    };
+    await advance(state);
+    assertEquals(sent, remaining);
+    assertEquals(state.fetches, 1);
+  }
+
+  const capped = world();
+  capped.budget.run_tokens_remaining = 4097;
+  let cappedSent: number | undefined;
+  capped.fetchImpl = (_url, init) => {
+    const request = JSON.parse((init as { body?: string }).body ?? "{}") as {
+      max_output_tokens?: number;
+    };
+    cappedSent = request.max_output_tokens;
+    return Promise.resolve(Response.json(providerResponse(synthesis([finding()]))));
+  };
+  await advance(capped);
+  assertEquals(cappedSent, 4096);
+  assertEquals(capped.fetches, 1);
+});
+
 Deno.test("a successful reserve must identify the expected hold before fetch", async () => {
   const cases: Array<{
     response: unknown | ((key: string, payload: Record<string, unknown>) => unknown);
@@ -1881,6 +1929,393 @@ function advanceOpen(state: World, invocationKey: string, io: CustodianIo) {
     validSynthesis,
   });
 }
+
+const CONTACT_HOLD_MESSAGE =
+  "Provider contact occurred, but reliable usage was not available. The hold remains.";
+const LEAKED_PROVIDER_MESSAGE = `Authorization: Bearer ${apiKey} prompt ${baseRun().objective} evidence admitted_records`;
+
+function providerErrorResponse(status: number, body: unknown, json = true): Response {
+  return new Response(json ? JSON.stringify(body) : String(body), {
+    status,
+    headers: { "content-type": json ? "application/json" : "text/plain" },
+  });
+}
+
+function assertNoProviderLeak(value: unknown): void {
+  const text = JSON.stringify(value);
+  if (text.includes(apiKey)) throw new Error("provider metadata leaked the API key");
+  if (text.includes("Authorization")) throw new Error("provider metadata leaked Authorization");
+  if (text.includes("Bearer")) throw new Error("provider metadata leaked Bearer");
+  if (text.includes(baseRun().objective)) throw new Error("provider metadata leaked the prompt");
+  if (text.includes("admitted_records")) throw new Error("provider metadata leaked evidence");
+  if (text.includes(LEAKED_PROVIDER_MESSAGE)) throw new Error("provider metadata leaked the body");
+}
+
+function assertUnknownContactHold(state: World, code: string): void {
+  const attemptKey = providerAttemptKey(runId);
+  assertEquals(state.fetches, 1);
+  assertEquals(state.reservation?.status, "held");
+  assertEquals(state.reservation?.usageKnowledge, "unknown");
+  assertEquals(state.reservation?.actualTokens, null);
+  assertEquals(state.reservation?.actualCostUsd, null);
+  assertEquals(state.reservation?.idempotencyKey, attemptKey);
+  assertEquals(state.settlePayloads.length, 1);
+  const settlement = state.settlePayloads[0] ?? {};
+  assertEquals(settlement.usage_knowledge, "unknown");
+  assertEquals(settlement.failure_code, code);
+  assertEquals(Object.hasOwn(settlement, "actual_tokens"), false);
+  assertEquals(Object.hasOwn(settlement, "actual_cost_usd"), false);
+  assertEquals(
+    state.settlePayloads.some((item) => item.usage_knowledge === "none"),
+    false,
+  );
+  assertEquals(state.run.failure_code, code);
+  assertEquals(state.run.status, "failed");
+  assertEquals(state.steps.at(-1)?.idempotencyKey, attemptKey);
+  assertEquals(state.steps.at(-1)?.output?.errorCode, code);
+  assertNoProviderLeak(settlement);
+  assertNoProviderLeak(state.steps.at(-1)?.output);
+  assertNoProviderLeak(state.run.failure_message);
+}
+
+Deno.test("provider HTTP failures keep distinct codes and an unknown hold", async () => {
+  const poisoned = {
+    error: {
+      message: LEAKED_PROVIDER_MESSAGE,
+      type: "invalid_request_error",
+      code: "invalid_api_key",
+      param: "text.format.schema",
+    },
+  };
+  const cases: Array<{
+    name: string;
+    code: string;
+    response?: Response;
+    reject?: () => Promise<Response>;
+    message?: string;
+  }> = [
+    {
+      name: "401 JSON",
+      code: "openai_authentication_failed",
+      response: providerErrorResponse(401, poisoned),
+    },
+    {
+      name: "401 non-JSON",
+      code: "openai_authentication_failed",
+      response: providerErrorResponse(401, LEAKED_PROVIDER_MESSAGE, false),
+    },
+    {
+      name: "403 ordinary permission denial",
+      code: "openai_permission_denied",
+      response: providerErrorResponse(403, poisoned),
+    },
+    {
+      name: "403 insufficient_quota",
+      code: "openai_quota_exceeded",
+      response: providerErrorResponse(403, {
+        error: { ...poisoned.error, type: "insufficient_quota", code: "insufficient_quota" },
+      }),
+    },
+    {
+      name: "403 project spend limit",
+      code: "openai_quota_exceeded",
+      response: providerErrorResponse(403, {
+        error: {
+          ...poisoned.error,
+          type: "invalid_request_error",
+          code: "project_spend_limit_exceeded",
+        },
+      }),
+    },
+    {
+      name: "403 other allowlisted spend code",
+      code: "openai_quota_exceeded",
+      response: providerErrorResponse(403, {
+        error: {
+          ...poisoned.error,
+          type: "invalid_request_error",
+          code: "organization_spend_limit_exceeded",
+        },
+      }),
+    },
+    {
+      name: "400 structured invalid request",
+      code: "openai_request_rejected",
+      response: providerErrorResponse(400, {
+        error: { ...poisoned.error, type: "invalid_request_error", code: "invalid_json_schema" },
+      }),
+    },
+    {
+      name: "404 model not found",
+      code: "openai_model_unavailable",
+      response: providerErrorResponse(404, {
+        error: { ...poisoned.error, code: "model_not_found" },
+      }),
+    },
+    {
+      name: "400 model not found",
+      code: "openai_model_unavailable",
+      response: providerErrorResponse(400, {
+        error: { ...poisoned.error, code: "model_not_found" },
+      }),
+    },
+    {
+      name: "429 rate limit",
+      code: "openai_rate_limited",
+      response: providerErrorResponse(429, {
+        error: { ...poisoned.error, type: "rate_limit_error", code: "rate_limit_exceeded" },
+      }),
+    },
+    {
+      name: "429 slow down",
+      code: "openai_rate_limited",
+      response: providerErrorResponse(429, {
+        error: { ...poisoned.error, type: "rate_limit_error", code: "slow_down" },
+      }),
+    },
+    {
+      name: "429 quota type",
+      code: "openai_quota_exceeded",
+      response: providerErrorResponse(429, {
+        error: { ...poisoned.error, type: "insufficient_quota", code: "insufficient_quota" },
+      }),
+    },
+    {
+      name: "429 billing code",
+      code: "openai_quota_exceeded",
+      response: providerErrorResponse(429, {
+        error: {
+          ...poisoned.error,
+          type: "insufficient_quota",
+          code: "credit_balance_exhausted",
+        },
+      }),
+    },
+    {
+      name: "429 non-JSON",
+      code: "openai_rate_limited",
+      response: providerErrorResponse(429, LEAKED_PROVIDER_MESSAGE, false),
+    },
+    {
+      name: "500",
+      code: "openai_server_error",
+      response: providerErrorResponse(500, {
+        error: { ...poisoned.error, type: "server_error", code: "server_error" },
+      }),
+    },
+    {
+      name: "503",
+      code: "openai_unavailable",
+      response: providerErrorResponse(503, {
+        error: {
+          ...poisoned.error,
+          type: "service_unavailable_error",
+          code: "server_is_overloaded",
+        },
+      }),
+    },
+    {
+      name: "fetch throws before a response",
+      code: "openai_unavailable",
+      reject: () => Promise.reject(new TypeError(LEAKED_PROVIDER_MESSAGE)),
+      message: "Custodian model contact is uncertain. Usage is unknown and the hold remains.",
+    },
+    {
+      name: "timeout",
+      code: "openai_timeout",
+      reject: () =>
+        Promise.reject(Object.assign(new Error(LEAKED_PROVIDER_MESSAGE), { name: "AbortError" })),
+      message: "Custodian model service timed out. Usage is unknown and the hold remains.",
+    },
+    {
+      name: "2xx malformed JSON",
+      code: "openai_invalid_response",
+      response: providerErrorResponse(200, LEAKED_PROVIDER_MESSAGE, false),
+    },
+    {
+      name: "2xx missing usage",
+      code: "openai_usage_missing",
+      response: Response.json(providerResponse(synthesis([finding()]), null)),
+    },
+  ];
+
+  const seen = new Set<string>();
+  for (const item of cases) {
+    const state = world();
+    state.fetchImpl = () => {
+      if (item.reject) return item.reject();
+      return Promise.resolve(item.response ?? providerErrorResponse(500, poisoned));
+    };
+    const result = await advance(state);
+    assertUnknownContactHold(state, item.code);
+    assertEquals(state.run.failure_message, item.message ?? CONTACT_HOLD_MESSAGE);
+    assertEquals(usage(result).usageKnowledge, "unknown");
+    assertEquals(usage(result).costAccounting, "unknown");
+    assertEquals(usage(result).costUsd, null);
+    assertEquals((usage(result).hold as { status: string }).status, "held");
+    assertNoProviderLeak(result);
+    await advance(state, "invocation-2");
+    assertEquals(state.fetches, 1);
+    assertEquals(state.settlePayloads.length, 1);
+    assertEquals(state.reservation?.status, "held");
+    assertEquals(state.reservation?.usageKnowledge, "unknown");
+    assertEquals(state.reservation?.actualCostUsd, null);
+    seen.add(item.code);
+  }
+  for (const code of [
+    "openai_authentication_failed",
+    "openai_permission_denied",
+    "openai_model_unavailable",
+    "openai_rate_limited",
+    "openai_quota_exceeded",
+    "openai_request_rejected",
+    "openai_server_error",
+    "openai_timeout",
+    "openai_invalid_response",
+    "openai_usage_missing",
+    "openai_unavailable",
+  ]) {
+    if (!seen.has(code)) throw new Error(`missing provider error class ${code}`);
+  }
+
+  const malformed = world();
+  malformed.fetchImpl = () => Promise.resolve(providerErrorResponse(200, "{", false));
+  await advance(malformed);
+  assertUnknownContactHold(malformed, "openai_invalid_response");
+
+  const invalidOutput = world();
+  invalidOutput.fetchImpl = () =>
+    Promise.resolve(
+      Response.json(
+        providerResponse({
+          summary: LEAKED_PROVIDER_MESSAGE,
+        }),
+      ),
+    );
+  const invalid = await advance(invalidOutput);
+  assertEquals(invalidOutput.fetches, 1);
+  assertEquals(invalidOutput.reservation?.status, "settled_known");
+  assertEquals(invalidOutput.reservation?.usageKnowledge, "known");
+  assertEquals(invalidOutput.reservation?.actualTokens, 1_250);
+  assertEquals(typeof invalidOutput.reservation?.actualCostUsd, "number");
+  assertEquals(invalidOutput.steps.at(-1)?.output?.errorCode, "openai_invalid_output");
+  assertEquals(invalid.body.reason, "openai_invalid_output");
+  assertNoProviderLeak(invalidOutput.settlePayloads[0]);
+  assertNoProviderLeak(invalidOutput.steps.at(-1)?.output);
+  assertNoProviderLeak(invalid);
+  await advance(invalidOutput, "invocation-2");
+  assertEquals(invalidOutput.fetches, 1);
+
+  const success = world();
+  const advanced = await advance(success);
+  assertEquals(success.fetches, 1);
+  assertEquals(success.reservation?.status, "settled_known");
+  assertEquals(success.reservation?.usageKnowledge, "known");
+  assertEquals(typeof success.reservation?.actualCostUsd, "number");
+  assertEquals(success.run.status, "verifying");
+  assertEquals(success.run.failure_code, null);
+  assertEquals(advanced.body.state, "advanced");
+  assertEquals(usage(advanced).costAccounting, "recorded");
+  assertNoProviderLeak(advanced);
+  await advance(success, "invocation-2");
+  assertEquals(success.fetches, 1);
+});
+
+Deno.test("classifier ignores provider messages and keeps status when JSON is absent", () => {
+  const body = {
+    error: {
+      message: LEAKED_PROVIDER_MESSAGE,
+      type: "invalid_request_error",
+      code: "invalid_json_schema",
+    },
+  };
+  assertEquals(classifyOpenAiHttpFailure(401, body), "openai_authentication_failed");
+  assertEquals(classifyOpenAiHttpFailure(401, undefined), "openai_authentication_failed");
+  assertEquals(classifyOpenAiHttpFailure(403, body), "openai_permission_denied");
+  assertEquals(classifyOpenAiHttpFailure(403, undefined), "openai_permission_denied");
+  assertEquals(
+    classifyOpenAiHttpFailure(403, {
+      error: {
+        message: "insufficient_quota project_spend_limit_exceeded",
+        type: "permission_error",
+        code: "country_not_supported",
+      },
+    }),
+    "openai_permission_denied",
+  );
+  assertEquals(
+    classifyOpenAiHttpFailure(403, {
+      error: { type: "Insufficient_Quota", code: "PROJECT_SPEND_LIMIT_EXCEEDED" },
+    }),
+    "openai_permission_denied",
+  );
+  assertEquals(classifyOpenAiHttpFailure(400, body), "openai_request_rejected");
+  assertEquals(
+    classifyOpenAiHttpFailure(400, {
+      error: { code: "model_not_found", message: LEAKED_PROVIDER_MESSAGE },
+    }),
+    "openai_model_unavailable",
+  );
+  assertEquals(classifyOpenAiHttpFailure(404, undefined), "openai_model_unavailable");
+  assertEquals(
+    classifyOpenAiHttpFailure(429, { error: { type: "rate_limit_error", code: "slow_down" } }),
+    "openai_rate_limited",
+  );
+  assertEquals(
+    classifyOpenAiHttpFailure(429, {
+      error: { type: "insufficient_quota", code: "project_spend_limit_exceeded" },
+    }),
+    "openai_quota_exceeded",
+  );
+  assertEquals(classifyOpenAiHttpFailure(429, undefined), "openai_rate_limited");
+  assertEquals(classifyOpenAiHttpFailure(500, body), "openai_server_error");
+  assertEquals(classifyOpenAiHttpFailure(503, undefined), "openai_unavailable");
+  assertEquals(JSON.stringify(classifyOpenAiHttpFailure(400, body)).includes(apiKey), false);
+});
+
+Deno.test("403 allowlisted quota and spend codes classify as quota", () => {
+  const leaked = {
+    message: LEAKED_PROVIDER_MESSAGE,
+    param: "authorization",
+  };
+  assertEquals(
+    classifyOpenAiHttpFailure(403, {
+      error: { ...leaked, type: "insufficient_quota", code: "insufficient_quota" },
+    }),
+    "openai_quota_exceeded",
+  );
+  assertEquals(
+    classifyOpenAiHttpFailure(403, {
+      error: { ...leaked, type: "insufficient_quota" },
+    }),
+    "openai_quota_exceeded",
+  );
+  for (const code of [
+    "insufficient_quota",
+    "project_spend_limit_exceeded",
+    "credit_balance_exhausted",
+    "organization_spend_limit_exceeded",
+    "organization_usage_limit_exceeded",
+  ]) {
+    assertEquals(
+      classifyOpenAiHttpFailure(403, {
+        error: { ...leaked, type: "invalid_request_error", code },
+      }),
+      "openai_quota_exceeded",
+    );
+  }
+  assertEquals(
+    classifyOpenAiHttpFailure(403, {
+      error: { ...leaked, type: "invalid_request_error", code: "invalid_api_key" },
+    }),
+    "openai_permission_denied",
+  );
+  assertEquals(classifyOpenAiHttpFailure(403, undefined), "openai_permission_denied");
+  assertEquals(
+    classifyOpenAiHttpFailure(403, "insufficient_quota project_spend_limit_exceeded"),
+    "openai_permission_denied",
+  );
+});
 
 function racingIo(state: World): { io: CustodianIo; replays: number } {
   const base = ioFor(state);

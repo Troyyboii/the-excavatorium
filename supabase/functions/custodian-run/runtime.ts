@@ -221,7 +221,7 @@ export function buildResponsesRequest(input: {
   if (input.systemPrompt.length > MAX_SYSTEM_PROMPT_CHARS) {
     throw new Error("systemPrompt exceeds the runtime bound");
   }
-  if (input.maxOutputTokens < 1) throw new Error("maxOutputTokens must be positive");
+  if (input.maxOutputTokens < 16) throw new Error("maxOutputTokens must be at least 16");
   const stageInstruction =
     input.stage === "extract"
       ? "Extract bounded facts and uncertainties. Do not execute actions."
@@ -522,5 +522,9 @@ export function isApprovalOutput(value: Record<string, unknown>): boolean {
 
 export function boundedOutputBudget(remainingTokens: unknown): number {
   if (typeof remainingTokens !== "number" || !Number.isFinite(remainingTokens)) return 0;
-  return Math.max(0, Math.min(Math.floor(remainingTokens), 4096));
+  const bounded = Math.min(Math.floor(remainingTokens), 4096);
+  // Responses create rejects max_output_tokens below 16. A remainder of 1–15
+  // cannot form a legal request, and raising it to 16 would exceed the budget.
+  if (bounded < 16) return 0;
+  return bounded;
 }

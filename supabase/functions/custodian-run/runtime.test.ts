@@ -10,6 +10,7 @@ import {
 import {
   boundedOutputBudget,
   buildResponsesRequest,
+  SYNTHESIS_SCHEMA,
   CANONICAL_SYSTEM_PROMPT,
   calculateUsageCost,
   ceilCostForDatabase,
@@ -171,8 +172,12 @@ Deno.test("uses a bounded persisted system policy with a safe fallback", () => {
 });
 
 Deno.test("never requests more output tokens than remain", () => {
-  assertEquals(boundedOutputBudget(1), 1);
+  assertEquals(boundedOutputBudget(1), 0);
+  assertEquals(boundedOutputBudget(15), 0);
+  assertEquals(boundedOutputBudget(16), 16);
   assertEquals(boundedOutputBudget(63), 63);
+  assertEquals(boundedOutputBudget(4074), 4074);
+  assertEquals(boundedOutputBudget(4096), 4096);
   assertEquals(boundedOutputBudget(4097), 4096);
   assertEquals(boundedOutputBudget(0), 0);
 });
@@ -377,6 +382,31 @@ Deno.test("retains priced usage when a provider result has invalid structured ou
   });
 });
 
+Deno.test("synthesis request uses the Responses structured-output contract", () => {
+  const request = buildResponsesRequest({
+    stage: "synthesize",
+    model: "gpt-5.6-luna",
+    systemPrompt: "Apply the owner-approved Custodian policy.",
+    untrustedEvidence: { objective: "bounded", evidence: { kind: "readonly" } },
+    schemaName: "custodian_synthesis",
+    schema: SYNTHESIS_SCHEMA,
+    maxOutputTokens: 4096,
+  });
+  assertEquals(request.model, "gpt-5.6-luna");
+  assertEquals(request.store, false);
+  assertEquals(request.max_output_tokens, 4096);
+  assertEquals(request.input[0].role, "system");
+  assertEquals(request.input[0].content[0].type, "input_text");
+  assertEquals(request.input[1].role, "user");
+  assertEquals(request.input[1].content[0].type, "input_text");
+  assertEquals(request.text.format.type, "json_schema");
+  assertEquals(request.text.format.name, "custodian_synthesis");
+  assertEquals(request.text.format.strict, true);
+  assertEquals(request.text.format.schema, SYNTHESIS_SCHEMA);
+  assertEquals("reasoning" in request, false);
+  assertEquals("background" in request, false);
+});
+
 Deno.test("builds a non-background, stored-off strict schema request", () => {
   const systemPrompt = "Apply the owner-approved Custodian policy.";
   const request = buildResponsesRequest({
@@ -427,25 +457,43 @@ Deno.test("rejects a blank system policy", () => {
   if (!rejected) throw new Error("Expected a blank system policy to be rejected");
 });
 
-Deno.test("rejects a non-positive output budget", () => {
-  let rejected = false;
-  try {
-    buildResponsesRequest({
-      stage: "extract",
-      model: "gpt-5.6-luna",
-      systemPrompt: "system",
-      untrustedEvidence: {},
-      schemaName: "schema",
-      schema: {
-        type: "object",
-        additionalProperties: false,
-        required: [],
-        properties: {},
-      },
-      maxOutputTokens: 0,
-    });
-  } catch {
-    rejected = true;
+Deno.test("rejects an output budget below the Responses minimum", () => {
+  for (const maxOutputTokens of [0, 1, 15]) {
+    let rejected = false;
+    try {
+      buildResponsesRequest({
+        stage: "extract",
+        model: "gpt-5.6-luna",
+        systemPrompt: "system",
+        untrustedEvidence: {},
+        schemaName: "schema",
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          required: [],
+          properties: {},
+        },
+        maxOutputTokens,
+      });
+    } catch {
+      rejected = true;
+    }
+    if (!rejected) throw new Error("Expected an output budget below 16 to be rejected");
   }
-  if (!rejected) throw new Error("Expected a non-positive output budget to be rejected");
+
+  const accepted = buildResponsesRequest({
+    stage: "extract",
+    model: "gpt-5.6-luna",
+    systemPrompt: "system",
+    untrustedEvidence: {},
+    schemaName: "schema",
+    schema: {
+      type: "object",
+      additionalProperties: false,
+      required: [],
+      properties: {},
+    },
+    maxOutputTokens: 16,
+  });
+  assertEquals(accepted.max_output_tokens, 16);
 });
