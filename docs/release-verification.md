@@ -13,6 +13,7 @@ Related references:
 - [Supabase verification checklist](./supabase-verification.md)
 - [Light archive shell](./design/light-archive-shell.md)
 - [Custodian roadmap](./design/custodian-roadmap.md)
+- [First-run readiness](./custodian-first-run-readiness.md)
 
 ## Evidence rules
 
@@ -104,10 +105,12 @@ secrets. Follow the one-time reconciliation rules in
 [Supabase setup](./supabase-setup.md); `migration repair` changes history
 bookkeeping and must never hide a missing schema change.
 
-The guarded [`Deploy Supabase`](../.github/workflows/deploy-supabase.yml)
-workflow may run only after its reconciliation variable is enabled. Verify that
-it checked out the exact validated SHA, applied only expected migrations, and
-deployed the intended authenticated Edge Functions. Use the detailed
+There is no GitHub Actions workflow that deploys this project's schema or Edge
+Functions. After hosted CI is green for the exact commit, an authorized
+operator applies pending migrations and deploys authenticated Edge Functions
+explicitly with the Supabase CLI, following [Supabase setup](./supabase-setup.md).
+Verify that the operator checked out the exact validated SHA, applied only
+expected migrations, and deployed the intended functions. Use the detailed
 [Supabase verification checklist](./supabase-verification.md) for RLS, grants,
 safe function paths, RPC ownership checks, and second-user isolation.
 

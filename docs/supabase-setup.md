@@ -18,10 +18,10 @@ Migration `20260802150000_tables.sql` creates the original four application tabl
 
 The filenames in `supabase/migrations/` are the deployment ledger and run in
 timestamp order. Do not replay the eight manually applied baseline migrations
-against production. Before enabling automated deployment for the first time,
-reconcile those filenames with the remote
+against production. Before the first operator `supabase db push` against the
+directly managed project, reconcile those filenames with the remote
 `supabase_migrations.schema_migrations` history using a reviewed
-`supabase migration repair` operation.
+`supabase migration repair` operation. Hosted CI does not apply migrations.
 
 ### One-time migration-history reconciliation
 
@@ -64,19 +64,30 @@ contains the manually applied changes:
 
 3. Run `supabase migration list` again and retain the output showing the
    canonical timestamped versions in the remote history and no legacy rows.
-4. Set the GitHub Actions repository variable
-   `SUPABASE_MIGRATION_RECONCILIATION_COMPLETE` to `true` only after retaining
-   the reviewed before/after evidence. Until then, the deploy job is skipped
-   before linking or running `supabase db push`; its first step also verifies
-   the variable defensively.
+4. Only then may an authorized operator run `supabase db push` for later
+   timestamped migrations. `supabase migration repair` is not a substitute for
+   applying missing SQL.
 
-After that one-time reconciliation, a successful `main` CI run may trigger
-`.github/workflows/deploy-supabase.yml`. It checks out the exact SHA validated
-by CI, links the existing project, runs `supabase db push`, and deploys the
-repository's authenticated Edge Functions. It requires the
-`SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, and `SUPABASE_PROJECT_ID`
-GitHub secrets. Adding the workflow does not configure secrets or mutate the
-remote project.
+There is no GitHub Actions workflow that deploys this project's schema or Edge
+Functions. `.github/workflows/deploy-supabase.yml` was removed. Hosted
+[`Validate application`](../.github/workflows/ci.yml) runs frontend, Edge, and
+local pgTAP checks only. After CI is green for the intended commit, an
+authorized operator links the existing project and applies changes explicitly:
+
+```text
+supabase db push --dry-run
+supabase db push
+supabase functions deploy conversation-extract
+supabase functions deploy document-extract
+supabase functions deploy document-save
+supabase functions deploy document-fetch
+supabase functions deploy custodian-run
+```
+
+Require aligned local and remote migration history, an empty reviewed dry run
+when no schema change is expected, JWT verification left enabled, and retained
+output that contains no secrets. Adding or editing a migration file does not
+mutate the remote project.
 
 Migration `20260802150700_restore_hardening.sql` enforces the approved canonical
 seed-key-to-record-type mapping, validates record data strictly by type,

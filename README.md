@@ -149,8 +149,12 @@ cannot spend the same remaining budget.
 - [Custodian program](./docs/custodian-program.md) — the canonical long-lived
   product, architecture, authority, and implementation program for The Custodian;
   it distinguishes verified current behavior from blocked and future capabilities.
+- [First-run readiness](./docs/custodian-first-run-readiness.md) — source map
+  and remaining live-proof blockers for the first bounded read-only Custodian
+  run. It does not authorize provider activation.
 - [Supabase setup](./docs/supabase-setup.md) — migrations, owner-account
-  bootstrap, secrets, and Edge Function deployment.
+  bootstrap, secrets, and explicit Edge Function deployment. Hosted CI does not
+  deploy Supabase.
 - [Supabase verification checklist](./docs/supabase-verification.md) —
   database, authentication, production, and Conversation Excavation checks.
 

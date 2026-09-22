@@ -157,11 +157,11 @@ Expected: no matches.
 ## 11. Migration ledger reconciliation gate
 
 The repository's timestamped migration filenames are the deployment ledger.
-Before the first automated deployment, an authorized operator must verify the
-remote `supabase_migrations.schema_migrations` rows and perform the documented
-one-time legacy-to-timestamp history repair. `supabase migration repair` only
-changes migration bookkeeping; it must not be used to hide a missing schema
-change.
+Before the first operator `supabase db push`, an authorized operator must
+verify the remote `supabase_migrations.schema_migrations` rows and perform the
+documented one-time legacy-to-timestamp history repair. `supabase migration
+repair` only changes migration bookkeeping; it must not be used to hide a
+missing schema change.
 
 Record the before and after output from:
 
@@ -177,10 +177,9 @@ supabase migration repair <legacy-version> --status reverted
 supabase migration repair <canonical-version> --status applied
 ```
 
-The deploy workflow remains fail-closed until an authorized operator sets the
-GitHub Actions repository variable `SUPABASE_MIGRATION_RECONCILIATION_COMPLETE`
-to `true`. Until then the deploy job is skipped. The variable is not a
-substitute for the retained `migration list` evidence.
+There is no GitHub Actions deploy job and no repository variable that applies
+migrations. Hosted CI is not a remote ledger. The retained `migration list`
+evidence is the only bookkeeping proof.
 
 ## Gate record
 
@@ -249,36 +248,41 @@ Migration `20260802153559_rls_and_fk_advisor_cleanup.sql` should remove the four
 The existing write-RPC `SECURITY DEFINER` warnings remain intentional and
 must be treated as documented exceptions, not silently removed.
 
-The production acceptance baseline is exactly 32 signed-in
-`SECURITY DEFINER` advisories: the 25 authenticated Custodian APIs classified
-below plus seven archive lifecycle/write RPCs (`delete_record_safely`,
-`initialize_user_archive`, `remove_example_data`, `reset_user_archive`,
-`restore_missing_examples`, `restore_user_archive`, and
-`save_record_with_links`). Accept that set only after release-time catalog
-checks reconfirm function ownership, empty `search_path`, authenticated-only
-grants, and caller-owner predicates. `export_user_archive_snapshot` is a
-`SECURITY INVOKER` function and must not increase this advisory count.
+Do not reuse the historical “exactly 32 signed-in `SECURITY DEFINER`
+advisories” figure as current production proof. That count classified archive
+write RPCs plus the original 25 authenticated Custodian APIs from migrations
+`20260811190000` through `20260811191200`. Later source added further
+`SECURITY DEFINER` functions. Re-count the live catalog after M2, M3, and M4A
+are applied. Accept the observed set only after release-time checks reconfirm
+function ownership, empty `search_path`, intended role grants, and
+caller-owner or service-role predicates. `export_user_archive_snapshot` is a
+`SECURITY INVOKER` function and must not increase the advisory count.
 
 ### Custodian `SECURITY DEFINER` classification
 
-Source review of migrations `20260811190000` through `20260811191200` classifies
-29 Custodian `SECURITY DEFINER` functions. Every one sets an empty
-`search_path`. This classification explains the database-linter warnings; it
-does not replace live privilege inspection or cross-owner tests.
+Source review of migrations `20260811190000` through
+`20260921180000` classifies the following Custodian `SECURITY DEFINER`
+functions. Every listed function sets an empty `search_path`. This
+classification explains database-linter warnings; it does not replace live
+privilege inspection, a production advisory recount, or cross-owner tests.
 
-| Class                              | Functions                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Required execute state                                               |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| Internal trigger and audit helpers | `capture_record_revision`, `custodian_disable_automations_for_account_schema`, `custodian_disable_automations_for_tool_schema`, `custodian_runtime_write_audit`                                                                                                                                                                                                                                                                                                                                                     | Denied to `public`, `anon`, and `authenticated`                      |
-| Release 1 owner APIs               | `custodian_create_case`, `custodian_update_case`, `custodian_create_inbox_item`, `custodian_triage_inbox_item`, `custodian_upsert_claim`, `custodian_upsert_evidence`, `custodian_upsert_action`, `custodian_upsert_finding`, `custodian_link_claim_evidence`, `custodian_promote_inbox_item`                                                                                                                                                                                                                       | Denied to `public` and `anon`; explicitly granted to `authenticated` |
-| Runtime owner APIs                 | `custodian_create_agent_run`, `custodian_get_agent_run`, `custodian_run_budget_status`, `custodian_transition_agent_run`, `custodian_record_agent_step`, `custodian_create_approval_request`, `custodian_respond_approval`, `custodian_create_change_proposal`, `custodian_append_tool_event`, `custodian_request_cancel_agent_run`, `custodian_append_audit_event`, `custodian_upsert_record_embedding`, `custodian_start_automation_run`, `custodian_complete_automation_run`, `custodian_automation_emit_output` | Denied to `public` and `anon`; explicitly granted to `authenticated` |
+| Class | Functions | Required execute state |
+| ----- | --------- | ---------------------- |
+| Internal trigger and audit helpers | `capture_record_revision`, `custodian_disable_automations_for_account_schema`, `custodian_disable_automations_for_tool_schema`, `custodian_runtime_write_audit` | Denied to `public`, `anon`, and `authenticated` |
+| Release 1 owner APIs | `custodian_create_case`, `custodian_update_case`, `custodian_create_inbox_item`, `custodian_triage_inbox_item`, `custodian_upsert_claim`, `custodian_upsert_evidence`, `custodian_upsert_action`, `custodian_upsert_finding`, `custodian_link_claim_evidence`, `custodian_promote_inbox_item` | Denied to `public` and `anon`; granted to `authenticated` |
+| Runtime owner APIs | `custodian_create_agent_run`, `custodian_get_agent_run`, `custodian_run_budget_status`, `custodian_transition_agent_run`, `custodian_record_agent_step`, `custodian_create_approval_request`, `custodian_respond_approval`, `custodian_create_change_proposal`, `custodian_append_tool_event`, `custodian_request_cancel_agent_run`, `custodian_append_audit_event`, `custodian_upsert_record_embedding`, `custodian_start_automation_run`, `custodian_complete_automation_run`, `custodian_automation_emit_output` | Denied to `public` and `anon`; granted to `authenticated` |
+| M2 Finding boundary | `custodian_materialize_finding` | Denied to `public` and `anon`; granted to `authenticated` |
+| M2 trusted runtime producers | `custodian_record_runtime_agent_step`, `custodian_materialize_runtime_findings` | Denied to `public`, `anon`, and `authenticated`; granted to `service_role` |
+| M4A owner bootstrap and reserve | `custodian_ensure_readonly_analysis_policy`, `custodian_create_readonly_analysis_run`, `custodian_reserve_provider_call` | Denied to `public` and `anon`; granted to `authenticated` |
+| M4A trusted settlement | `custodian_settle_provider_reservation` | Denied to `public`, `anon`, and `authenticated`; granted to `service_role` |
+| M4A internal snapshot helper | `custodian_build_readonly_analysis_snapshot` | Denied to `public`, `anon`, and `authenticated` |
 
-The 25 authenticated APIs derive the caller from `auth.uid()` through
+The authenticated owner APIs derive the caller from `auth.uid()` through
 `custodian_current_owner()` and repeat owner-qualified checks inside the
-privileged function. The four internal helpers have explicit authenticated
-revokes. No source-level overexposure was demonstrated, so Phase 2A adds no
-grant-changing migration. Reclassify before changing any signature, role grant,
-caller derivation, owner predicate, or `search_path`. Current Supabase guidance
-also requires explicit function privileges and careful review of every
+privileged function. Trusted runtime producers additionally require
+`auth.role() = 'service_role'`. Reclassify before changing any signature, role
+grant, caller derivation, owner predicate, or `search_path`. Current Supabase
+guidance also requires explicit function privileges and careful review of every
 `SECURITY DEFINER` function:
 <https://supabase.com/docs/guides/database/functions>.
 
