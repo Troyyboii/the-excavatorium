@@ -1,5 +1,31 @@
-import { describe, expect, test } from "bun:test";
-import { APPROVAL_SELECT, projectFindings } from "./capability-handlers";
+import { afterEach, describe, expect, test } from "bun:test";
+import type { ToolContext } from "@lovable.dev/mcp-js";
+import {
+  APPROVAL_SELECT,
+  handleCancelRun,
+  handleStartAnalysis,
+  projectFindings,
+} from "./capability-handlers";
+
+const allowedClientId = "11111111-1111-4111-8111-111111111111";
+const caseId = "00000000-0000-4000-8000-000000000001";
+
+function context(authenticated: boolean, clientId?: string): ToolContext {
+  return {
+    isAuthenticated: () => authenticated,
+    getClientId: () => clientId,
+    getToken: () => (authenticated ? "verified-token" : undefined),
+    getUserId: () => (authenticated ? "33333333-3333-4333-8333-333333333333" : undefined),
+    getUserEmail: () => undefined,
+    getScopes: () => undefined,
+    getIssuer: () => undefined,
+    getClaims: () => undefined,
+  } as unknown as ToolContext;
+}
+
+afterEach(() => {
+  delete process.env.MCP_ALLOWED_CLIENT_IDS;
+});
 
 describe("get_pending_approvals projection", () => {
   test("exposes the exact action without owner identifiers", () => {
@@ -67,5 +93,28 @@ describe("get_findings projection", () => {
       title: "Supporting evidence",
     });
     expect(findings[0]).not.toHaveProperty("output_payload");
+  });
+});
+
+describe("Custodian MCP run controls", () => {
+  test("start_analysis and cancel_run stay unavailable after authentication", async () => {
+    process.env.MCP_ALLOWED_CLIENT_IDS = allowedClientId;
+    const authenticated = context(true, allowedClientId);
+    const started = await handleStartAnalysis({ caseId, recordIds: [caseId] }, authenticated);
+    const cancelled = await handleCancelRun({ id: caseId }, authenticated);
+    expect(started.isError).toBe(true);
+    expect(cancelled.isError).toBe(true);
+    expect(JSON.stringify(started.structuredContent)).toContain("RUNTIME_UNAVAILABLE");
+    expect(JSON.stringify(cancelled.structuredContent)).toContain("RUNTIME_UNAVAILABLE");
+    expect(JSON.stringify(started)).not.toContain("invoked");
+    expect(JSON.stringify(cancelled)).not.toContain("cancelled");
+  });
+
+  test("start_analysis and cancel_run do not skip authentication", async () => {
+    const signedOut = context(false);
+    const started = await handleStartAnalysis({ caseId }, signedOut);
+    const cancelled = await handleCancelRun({ id: caseId }, signedOut);
+    expect(JSON.stringify(started.structuredContent)).toContain("AUTH_REQUIRED");
+    expect(JSON.stringify(cancelled.structuredContent)).toContain("AUTH_REQUIRED");
   });
 });

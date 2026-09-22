@@ -627,6 +627,28 @@ Deno.test("provider gate stays closed and performs no provider fetch", async () 
   assertEquals(JSON.stringify(blocked).includes(apiKey), false);
 });
 
+Deno.test("closed-gate first-run sequence never reserves or fetches", async () => {
+  assertEquals(PROVIDER_EXECUTION_UNSUPPORTED, true);
+  const state = world("queued");
+  state.fetchImpl = () => Promise.reject(new Error("fetch_must_not_run"));
+  const queued = await advance(state, "first-run", false);
+  assertEquals(queued.body.state, "advanced");
+  assertEquals(state.run.status, "retrieving");
+  const retrieving = await advance(state, "first-run", false);
+  assertEquals(retrieving.body.state, "advanced");
+  assertEquals(state.run.status, "synthesizing");
+  assertEquals(state.steps[0]?.output?.providerContact, false);
+  assertEquals(state.steps[0]?.output?.evidenceCreated, false);
+  const synthesizing = await advance(state, "first-run", false);
+  assertEquals(synthesizing.body.state, "blocked");
+  assertEquals(synthesizing.body.reason, "provider_execution_unsupported");
+  assertEquals(state.fetches, 0);
+  assertEquals(state.reserveCalls, 0);
+  assertEquals(state.reservation, null);
+  assertEquals(state.materializeCalls, 0);
+  assertEquals(usage(synthesizing).costAccounting, "none");
+});
+
 Deno.test("retrieval is provider-free and does not create evidence", async () => {
   const state = world("retrieving");
   state.fetchImpl = () => Promise.reject(new Error("fetch_must_not_run"));

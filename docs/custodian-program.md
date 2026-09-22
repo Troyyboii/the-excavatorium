@@ -29,6 +29,7 @@ The intended hierarchy is:
 | `docs/design/light-archive-shell.md`                                     | Current whole-application visual constitution.                               |
 | `docs/design/custodian-roadmap.md`                                       | Supporting roadmap and implementation provenance.                            |
 | `docs/design/custodian-design-system.md`                                 | Historical dark-shell and retained inverse-panel reference.                  |
+| `docs/custodian-first-run-readiness.md`                                  | Repository-local first-run map: source-complete vs live-proof blockers.      |
 | `docs/release-verification.md`                                           | Reusable release procedure.                                                  |
 | `docs/supabase-setup.md`, `docs/supabase-verification.md`                | Backend setup, security, and verification procedures.                        |
 | `src/`, `supabase/migrations/`, `supabase/tests/`, and deployed services | Evidence of actual implementation; source is authoritative over stale prose. |
@@ -801,7 +802,8 @@ read-only analysis path.
   body is only `{ runId, invocationKey }`. The Run Room control has no click handler.
 - **M4 PROVIDER ACTIVATION:** **BLOCKED.** M4 is not complete.
 - **PRODUCTION / DEPLOYED BEHAVIOR:** **UNVERIFIED** until a separately authorized
-  deploy and proof. M4D, M5, and M6 are not started.
+  deploy and proof. M4D, M5, and M6 are not started. The first-run blocker
+  split is recorded in `docs/custodian-first-run-readiness.md`.
 
 ### M5 — finish V1 lifecycle inspection and permitted execution
 
@@ -944,6 +946,7 @@ into release notes.
 | Area                        | Authoritative/supporting paths                                                                                                                                                                                                       | Role                                                                                  |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
 | Canonical program           | `docs/custodian-program.md`                                                                                                                                                                                                          | This document.                                                                        |
+| First-run readiness         | `docs/custodian-first-run-readiness.md`                                                                                                                                                                                              | Source-complete vs remaining live proof for one bounded read-only run. Not M4D.       |
 | Visual authority            | `docs/design/light-archive-shell.md`                                                                                                                                                                                                 | Current whole-application visual constitution.                                        |
 | Roadmap provenance          | `docs/design/custodian-roadmap.md`                                                                                                                                                                                                   | Supporting delivery history and existing provider gate.                               |
 | Historical visual reference | `docs/design/custodian-design-system.md`, `design-qa.md`                                                                                                                                                                             | Retained dark/inverse language and historical QA, not the default visual authority.   |

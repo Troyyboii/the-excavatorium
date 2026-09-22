@@ -162,4 +162,12 @@ describe("Custodian run read contract", () => {
     expect(custodianRunsKey("owner-1")).toEqual(["custodian", "runs", "owner-1"]);
     expect(custodianRunsKey(null)).toEqual(["custodian", "runs", "__anonymous__"]);
   });
+
+  test("Run Room route does not wire a provider invocation", async () => {
+    const source = await Bun.file(new URL("../routes/run-room.tsx", import.meta.url)).text();
+    expect(source).not.toContain("invokeCustodianRun");
+    expect(source).not.toContain("functions.invoke");
+    expect(source).not.toMatch(/["']custodian-run["']/);
+    expect(source).toContain("useCustodianRuns");
+  });
 });
