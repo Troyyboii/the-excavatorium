@@ -1,20 +1,31 @@
 import {
   boundedOutputBudget,
-  buildResponsesRequest,
   calculateUsageCost,
   classifyModelPricing,
-  classifyResponsesOutput,
   CUSTODIAN_MODEL_PRICING_ENV,
   maximumPotentialUsageCost,
   MODEL_ALLOWLIST,
-  readUsage,
   resolveSystemPrompt,
-  SYNTHESIS_SCHEMA,
   type ModelPricing,
   type ModelTier,
 } from "./runtime.ts";
+import {
+  providerDiagnostic,
+  type ProviderClassification,
+  type ProviderDiagnostic,
+} from "./openai-diagnostics.ts";
+import {
+  buildSynthesisParams,
+  interpretSynthesisResponse,
+  sendSynthesisRequest,
+  serializedRequestBytes,
+  type ProviderExchange,
+  type ProviderFetch,
+  type SynthesisRequestParams,
+} from "./openai-provider.ts";
 
-export const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
+export { classifyOpenAiHttpFailure } from "./openai-diagnostics.ts";
+export { OPENAI_RESPONSES_URL } from "./openai-provider.ts";
 export const PROVIDER_ATTEMPT_TIMEOUT_MS = 25_000;
 
 export function boundedProviderTimeoutMs(
@@ -184,13 +195,6 @@ export type ApprovalIdentity = {
   exactActionHash: string;
 };
 
-export type ProviderFetchInit = {
-  method: "POST";
-  headers: Record<string, string>;
-  body: string;
-  signal: AbortSignal;
-};
-
 export type CustodianIo = {
   getRun(runId: string): Promise<SynthesisRun>;
   getBudget(runId: string): Promise<BudgetSnapshot>;
@@ -230,8 +234,16 @@ export type CustodianIo = {
     output: Record<string, unknown>,
   ): Promise<{ run: SynthesisRun | null; approval: ApprovalIdentity }>;
   readVerificationArtifacts(runId: string): Promise<VerificationArtifacts | null>;
+  /** Server-only safe metadata. A failed write never changes accounting. */
+  recordProviderDiagnostic(
+    ownerId: string,
+    runId: string,
+    idempotencyKey: string,
+    diagnostic: ProviderDiagnostic,
+  ): Promise<void>;
   getEnv(name: string): string | undefined;
-  fetchProvider(url: string, init: ProviderFetchInit): Promise<Response>;
+  /** The only provider transport. The OpenAI SDK sends its one request through it. */
+  fetchProvider: ProviderFetch;
   trustedRuntimeAvailable(): boolean;
   now(): number;
 };
@@ -847,18 +859,6 @@ function reservationInFlight(reservation: ReservationView, now: number): boolean
   return Number.isFinite(until) && until > now;
 }
 
-function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === "AbortError";
-}
-
-const OPENAI_ERROR_TOKEN = /^[a-z0-9_]{1,80}$/;
-const OPENAI_QUOTA_ERROR_CODES = new Set([
-  "insufficient_quota",
-  "credit_balance_exhausted",
-  "organization_spend_limit_exceeded",
-  "project_spend_limit_exceeded",
-  "organization_usage_limit_exceeded",
-]);
 const PROVIDER_CONTACT_USAGE_UNKNOWN =
   "Provider contact occurred, but reliable usage was not available. The hold remains.";
 const PROVIDER_TIMEOUT_USAGE_UNKNOWN =
@@ -866,58 +866,53 @@ const PROVIDER_TIMEOUT_USAGE_UNKNOWN =
 const PROVIDER_CONTACT_UNCERTAIN =
   "Custodian model contact is uncertain. Usage is unknown and the hold remains.";
 
-function openAiErrorToken(value: unknown): string | null {
-  return typeof value === "string" && OPENAI_ERROR_TOKEN.test(value) ? value : null;
+function exchangeFailureMessage(exchange: Extract<ProviderExchange, { kind: "failure" }>): string {
+  if (exchange.code === "openai_timeout") return PROVIDER_TIMEOUT_USAGE_UNKNOWN;
+  if (exchange.diagnostic.contact_state === "contact_uncertain") return PROVIDER_CONTACT_UNCERTAIN;
+  return PROVIDER_CONTACT_USAGE_UNKNOWN;
 }
 
-/** Reads only error.type and error.code. Messages, params, and raw bodies are ignored. */
-function openAiErrorTokens(body: unknown): { type: string | null; code: string | null } {
-  if (!isObject(body)) return { type: null, code: null };
-  const error = body.error;
-  if (!isObject(error)) return { type: null, code: null };
-  return { type: openAiErrorToken(error.type), code: openAiErrorToken(error.code) };
-}
-
-/** Same allowlist the 429 path already uses. Type and code are pre-validated tokens. */
-function isAllowlistedOpenAiQuota(type: string | null, code: string | null): boolean {
-  return type === "insufficient_quota" || (code !== null && OPENAI_QUOTA_ERROR_CODES.has(code));
-}
+export const PROVIDER_DIAGNOSTIC_TIMEOUT_MS = 3_000;
 
 /**
- * Stable internal code for a non-2xx provider response.
- * Status decides the class. Validated error.type and error.code only separate an
- * allowlisted quota or spend failure from a 403 permission denial or a 429 rate
- * limit, and model-not-found from other 400 rejections.
+ * Best effort, after settlement. Diagnostics are evidence about the attempt,
+ * never accounting: a failed, missing, or slow diagnostic write cannot delay
+ * or change the settled outcome.
  */
-export function classifyOpenAiHttpFailure(status: number, body: unknown): string {
-  const { type, code } = openAiErrorTokens(body);
-  if (status === 401) return "openai_authentication_failed";
-  if (status === 403) {
-    if (isAllowlistedOpenAiQuota(type, code)) return "openai_quota_exceeded";
-    return "openai_permission_denied";
+async function recordDiagnostic(
+  io: CustodianIo,
+  ownerId: string,
+  runId: string,
+  attemptKey: string,
+  diagnostic: ProviderDiagnostic,
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      io.recordProviderDiagnostic(ownerId, runId, attemptKey, diagnostic),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, PROVIDER_DIAGNOSTIC_TIMEOUT_MS);
+      }),
+    ]);
+  } catch {
+    // A missing diagnostic surface must not alter the provider outcome.
+  } finally {
+    clearTimeout(timer);
   }
-  if (status === 429) {
-    if (isAllowlistedOpenAiQuota(type, code)) return "openai_quota_exceeded";
-    return "openai_rate_limited";
-  }
-  if (status === 404 || (status === 400 && code === "model_not_found")) {
-    return "openai_model_unavailable";
-  }
-  if (status >= 400 && status < 500) return "openai_request_rejected";
-  if (status === 500) return "openai_server_error";
-  return "openai_unavailable";
 }
 
-/** One body read. Parse failure keeps the caller on HTTP status alone. */
-async function readProviderResponseBody(
-  response: Response,
-): Promise<{ parsed: boolean; value: unknown }> {
-  const text = await response.text();
-  if (text.length === 0) return { parsed: false, value: undefined };
+async function settledThenDiagnosed(
+  io: CustodianIo,
+  ownerId: string,
+  runId: string,
+  attemptKey: string,
+  diagnostic: ProviderDiagnostic,
+  settle: () => Promise<AdvanceResult>,
+): Promise<AdvanceResult> {
   try {
-    return { parsed: true, value: JSON.parse(text) };
-  } catch {
-    return { parsed: false, value: undefined };
+    return await settle();
+  } finally {
+    await recordDiagnostic(io, ownerId, runId, attemptKey, diagnostic);
   }
 }
 
@@ -1321,22 +1316,19 @@ async function executeBoundedSynthesisAttempt(input: {
       emptyAccounting(run),
     );
   }
-  let requestBody: string;
+  let params: SynthesisRequestParams;
+  let inputBytes: number;
   try {
-    const evidence = {
-      objective: run.objective,
-      evidence: run.input_snapshot,
-    };
-    const request = buildResponsesRequest({
-      stage: "synthesize",
+    params = buildSynthesisParams({
       model,
       systemPrompt,
-      untrustedEvidence: evidence,
-      schemaName: "custodian_synthesis",
-      schema: SYNTHESIS_SCHEMA,
+      untrustedEvidence: {
+        objective: run.objective,
+        evidence: run.input_snapshot,
+      },
       maxOutputTokens,
     });
-    requestBody = JSON.stringify(request);
+    inputBytes = serializedRequestBytes(params);
   } catch {
     return transitionFailure(
       io,
@@ -1349,7 +1341,6 @@ async function executeBoundedSynthesisAttempt(input: {
       502,
     );
   }
-  const inputBytes = new TextEncoder().encode(requestBody).byteLength;
   const holdTokens = inputBytes + maxOutputTokens;
   const holdCost = maximumPotentialUsageCost(inputBytes, maxOutputTokens, pricing);
   if (
@@ -1453,146 +1444,155 @@ async function executeBoundedSynthesisAttempt(input: {
     );
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), providerTimeoutMs);
   const startedAt = io.now();
-  let response: Response | undefined;
-  let upstream: unknown;
-  let parsedBody = false;
-  try {
-    response = await io.fetchProvider(OPENAI_RESPONSES_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: requestBody,
-      signal: controller.signal,
-    });
-    const read = await readProviderResponseBody(response);
-    parsedBody = read.parsed;
-    upstream = read.value;
-  } catch (error) {
-    const received = response;
-    if (isAbortError(error)) {
-      return settleUnknown(
-        io,
-        ownerId,
-        run,
-        input.invocationKey,
-        attemptKey,
-        "openai_timeout",
-        PROVIDER_TIMEOUT_USAGE_UNKNOWN,
-      );
-    }
-    if (received) {
-      return settleUnknown(
-        io,
-        ownerId,
-        run,
-        input.invocationKey,
-        attemptKey,
-        received.ok
-          ? "openai_invalid_response"
-          : classifyOpenAiHttpFailure(received.status, undefined),
-        PROVIDER_CONTACT_USAGE_UNKNOWN,
-      );
-    }
-    return settleUnknown(
-      io,
-      ownerId,
-      run,
-      input.invocationKey,
-      attemptKey,
-      "openai_unavailable",
-      PROVIDER_CONTACT_UNCERTAIN,
-    );
-  } finally {
-    clearTimeout(timeout);
-  }
+  const exchange = await sendSynthesisRequest({
+    apiKey,
+    fetch: io.fetchProvider,
+    timeoutMs: providerTimeoutMs,
+    params,
+  });
   const latencyMs = Math.max(0, Math.round(io.now() - startedAt));
-  if (!response.ok || !parsedBody) {
-    return settleUnknown(
+  if (exchange.kind === "not_sent") {
+    return releaseUncontacted(
       io,
       ownerId,
       run,
       input.invocationKey,
       attemptKey,
-      response.ok
-        ? "openai_invalid_response"
-        : classifyOpenAiHttpFailure(response.status, parsedBody ? upstream : undefined),
-      PROVIDER_CONTACT_USAGE_UNKNOWN,
+      "provider_request_not_sent",
+      "The provider request was not sent. The hold was released.",
+      "blocked",
     );
   }
-  const usage = readUsage(upstream);
+  if (exchange.kind === "failure") {
+    return settledThenDiagnosed(io, ownerId, run.id, attemptKey, exchange.diagnostic, () =>
+      settleUnknown(
+        io,
+        ownerId,
+        run,
+        input.invocationKey,
+        attemptKey,
+        exchange.code,
+        exchangeFailureMessage(exchange),
+      ),
+    );
+  }
+  const responded = (classification: ProviderClassification, incompleteReason?: string | null) =>
+    providerDiagnostic({
+      classification,
+      httpStatus: exchange.diagnostic.httpStatus,
+      requestId: exchange.diagnostic.requestId,
+      incompleteReason,
+    });
+  const interpreted = interpretSynthesisResponse(exchange.body);
+  if (interpreted.kind === "unreadable") {
+    return settledThenDiagnosed(
+      io,
+      ownerId,
+      run.id,
+      attemptKey,
+      responded("openai_invalid_response"),
+      () =>
+        settleUnknown(
+          io,
+          ownerId,
+          run,
+          input.invocationKey,
+          attemptKey,
+          "openai_invalid_response",
+          PROVIDER_CONTACT_USAGE_UNKNOWN,
+        ),
+    );
+  }
+  const synthesisOutput = interpreted.output;
+  const incompleteReason = synthesisOutput.kind === "incomplete" ? synthesisOutput.reason : null;
+  const usage = interpreted.usage;
   if (!usage) {
-    return settleUnknown(
+    return settledThenDiagnosed(
       io,
       ownerId,
-      run,
-      input.invocationKey,
+      run.id,
       attemptKey,
-      "openai_usage_missing",
-      PROVIDER_CONTACT_USAGE_UNKNOWN,
+      responded("openai_usage_missing", incompleteReason),
+      () =>
+        settleUnknown(
+          io,
+          ownerId,
+          run,
+          input.invocationKey,
+          attemptKey,
+          "openai_usage_missing",
+          PROVIDER_CONTACT_USAGE_UNKNOWN,
+        ),
     );
   }
-  const costUsd = calculateUsageCost(usage, pricing);
-  if (costUsd === null) {
-    return settleUnknown(
-      io,
-      ownerId,
-      run,
-      input.invocationKey,
-      attemptKey,
-      "model_pricing_invalid",
-      "Provider usage could not be priced from the persisted version. The hold remains.",
-    );
-  }
-  const classified = classifyResponsesOutput(upstream);
-  const structured = classified.kind === "json" ? classified.value : null;
+  const structured = synthesisOutput.kind === "json" ? synthesisOutput.value : null;
   const accepted = structured !== null && input.validSynthesis(structured);
   const errorCode =
-    classified.kind === "refusal" ? "openai_refusal" : accepted ? null : "openai_invalid_output";
-  let settled: { run: SynthesisRun; reservation: ReservationView };
-  try {
-    settled = await io.settleProviderReservation(ownerId, run.id, attemptKey, {
-      usage_knowledge: "known",
-      actual_tokens: usage.tokens,
-      actual_cost_usd: costUsd,
-      step_status: accepted ? "completed" : "failed",
-      input_payload: { stage: "synthesize", providerContact: true },
-      output_payload: accepted ? structured : { errorCode, usage_knowledge: "known" },
-      latency_ms: latencyMs,
-    });
-  } catch {
-    const current = await io.getRun(run.id);
-    const reservation = await io.getReservation(run.id, attemptKey);
-    return outcome(503, "held", current, accountingFromReservation(current, reservation), {
-      reason: "provider_settlement_uncertain",
-      detail:
-        "Provider contact may already have happened. The runtime will not make another provider call.",
-    });
-  }
-  if (!accepted || !structured) {
-    return transitionFailure(
+    synthesisOutput.kind === "refusal"
+      ? "openai_refusal"
+      : synthesisOutput.kind === "incomplete"
+        ? "openai_incomplete"
+        : accepted
+          ? null
+          : "openai_invalid_output";
+  // The classification describes the provider outcome. Pricing and settlement
+  // failures after it are recorded on the run and reservation, not here.
+  const diagnostic = responded(errorCode ?? "openai_completed", incompleteReason);
+  return settledThenDiagnosed(io, ownerId, run.id, attemptKey, diagnostic, async () => {
+    const costUsd = calculateUsageCost(usage, pricing);
+    if (costUsd === null) {
+      return settleUnknown(
+        io,
+        ownerId,
+        run,
+        input.invocationKey,
+        attemptKey,
+        "model_pricing_invalid",
+        "Provider usage could not be priced from the persisted version. The hold remains.",
+      );
+    }
+    let settled: { run: SynthesisRun; reservation: ReservationView };
+    try {
+      settled = await io.settleProviderReservation(ownerId, run.id, attemptKey, {
+        usage_knowledge: "known",
+        actual_tokens: usage.tokens,
+        actual_cost_usd: costUsd,
+        step_status: accepted ? "completed" : "failed",
+        input_payload: { stage: "synthesize", providerContact: true },
+        output_payload: accepted ? structured : { errorCode, usage_knowledge: "known" },
+        latency_ms: latencyMs,
+      });
+    } catch {
+      const current = await io.getRun(run.id);
+      const reservation = await io.getReservation(run.id, attemptKey);
+      return outcome(503, "held", current, accountingFromReservation(current, reservation), {
+        reason: "provider_settlement_uncertain",
+        detail:
+          "Provider contact may already have happened. The runtime will not make another provider call.",
+      });
+    }
+    if (!accepted || !structured) {
+      return transitionFailure(
+        io,
+        settled.run,
+        input.invocationKey,
+        "failed",
+        errorCode ?? "openai_invalid_output",
+        "Provider usage was recorded, but the synthesis output was not a valid Finding result.",
+        accountingFromReservation(settled.run, settled.reservation),
+        502,
+      );
+    }
+    return continueFromRecordedStep(
       io,
+      ownerId,
       settled.run,
       input.invocationKey,
-      "failed",
-      errorCode ?? "openai_invalid_output",
-      "Provider usage was recorded, but the synthesis output was not a valid Finding result.",
-      accountingFromReservation(settled.run, settled.reservation),
-      502,
+      attemptKey,
+      settled.reservation,
     );
-  }
-  return continueFromRecordedStep(
-    io,
-    ownerId,
-    settled.run,
-    input.invocationKey,
-    attemptKey,
-    settled.reservation,
-  );
+  });
 }
 
 function reserveDenial(reason: string): {

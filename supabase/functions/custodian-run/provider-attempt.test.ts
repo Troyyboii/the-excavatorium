@@ -20,7 +20,9 @@ import {
   type SynthesisRun,
   type VerificationArtifacts,
 } from "./provider-attempt.ts";
-import { classifyModelPricing, classifyResponsesOutput } from "./runtime.ts";
+import type { ProviderDiagnostic } from "./openai-diagnostics.ts";
+import { classifySynthesisOutput } from "./openai-provider.ts";
+import { classifyModelPricing } from "./runtime.ts";
 
 const runId = "123e4567-e89b-12d3-a456-426614174000";
 const evidenceId = "123e4567-e89b-12d3-a456-426614174111";
@@ -68,8 +70,6 @@ function synthesis(
     findings,
     requiresApproval,
     approvalKind: "tool_action",
-    proposedDiff: {},
-    toolAction: {},
   };
 }
 
@@ -161,10 +161,10 @@ type World = {
   reserveResponse?:
     | unknown
     | ((idempotencyKey: string, payload: Record<string, unknown>) => unknown);
-  fetchImpl: (
-    url: string,
-    init: { headers: Record<string, string>; signal?: AbortSignal },
-  ) => Promise<Response>;
+  fetchImpl: (url: string, init: RequestInit) => Promise<Response>;
+  fetchBodies: string[];
+  diagnostics: Array<{ key: string; diagnostic: ProviderDiagnostic }>;
+  diagnosticError: boolean;
 };
 
 function world(status = "synthesizing"): World {
@@ -205,6 +205,9 @@ function world(status = "synthesizing"): World {
     reservationReadError: false,
     verificationUnavailable: false,
     fetchImpl: () => Promise.resolve(Response.json(providerResponse(synthesis([finding()])))),
+    fetchBodies: [],
+    diagnostics: [],
+    diagnosticError: false,
   };
 }
 
@@ -444,17 +447,27 @@ function ioFor(state: World): CustodianIo {
         disallowedToolEventCount: 0,
       });
     },
+    recordProviderDiagnostic: (_ownerId, _runId, key, diagnostic) => {
+      if (state.diagnosticError) return Promise.reject(new Error("diagnostic_unavailable"));
+      if (!state.diagnostics.some((item) => item.key === key)) {
+        state.diagnostics.push({ key, diagnostic });
+      }
+      return Promise.resolve();
+    },
     getEnv: (name) => {
       if (name === "OPENAI_API_KEY") return state.apiKey;
       if (name === "CUSTODIAN_MODEL_PRICING_JSON") return state.pricing;
       return undefined;
     },
-    fetchProvider: (url, init) => {
+    fetchProvider: (input, init = {}) => {
       state.fetches += 1;
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       if (url !== OPENAI_RESPONSES_URL) return Promise.reject(new Error("unexpected_url"));
-      if (!init.headers.Authorization?.startsWith("Bearer ")) {
+      if (init.method !== "POST") return Promise.reject(new Error("unexpected_method"));
+      if (!new Headers(init.headers).get("authorization")?.startsWith("Bearer ")) {
         return Promise.reject(new Error("missing_authorization"));
       }
+      if (typeof init.body === "string") state.fetchBodies.push(init.body);
       return state.fetchImpl(url, init);
     },
     trustedRuntimeAvailable: () => state.trusted,
@@ -1074,7 +1087,7 @@ Deno.test("public projection never labels recorded cost as unpriced", () => {
   assertEquals(classifyModelPricing(undefined, "gpt-5.6-terra").status, "missing");
   assertEquals(classifyModelPricing("{", "gpt-5.6-terra").status, "malformed");
   assertEquals(
-    classifyResponsesOutput({
+    classifySynthesisOutput({
       status: "completed",
       output: [{ type: "message", role: "assistant", content: [{ type: "refusal" }] }],
     }).kind,
@@ -2352,3 +2365,288 @@ function racingIo(state: World): { io: CustodianIo; replays: number } {
     },
   };
 }
+
+function diagnosticFor(state: World): ProviderDiagnostic | undefined {
+  check("at most one diagnostic per attempt", state.diagnostics.length <= 1, true);
+  const recorded = state.diagnostics[0];
+  if (recorded) check("diagnostic attempt key", recorded.key, providerAttemptKey(runId));
+  return recorded?.diagnostic;
+}
+
+function requestIdResponse(body: unknown, status = 200, requestId = "req_attempt0001"): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json", "x-request-id": requestId },
+  });
+}
+
+Deno.test(
+  "each provider outcome records one safe diagnostic without changing accounting",
+  async () => {
+    const rejected = world();
+    rejected.fetchImpl = () =>
+      Promise.resolve(
+        requestIdResponse(
+          {
+            error: {
+              message: LEAKED_PROVIDER_MESSAGE,
+              type: "invalid_request_error",
+              code: "invalid_json_schema",
+              param: "text.format.schema.properties.findings",
+            },
+          },
+          400,
+        ),
+      );
+    await advance(rejected);
+    assertUnknownContactHold(rejected, "openai_request_rejected");
+    check("rejected diagnostic", diagnosticFor(rejected), {
+      provider: "openai",
+      contact_state: "contacted",
+      classification: "openai_request_rejected",
+      http_status: 400,
+      request_id: "req_attempt0001",
+      error_type: "invalid_request_error",
+      error_code: "invalid_json_schema",
+      error_param: "text.format.schema.properties.findings",
+      incomplete_reason: null,
+    });
+    assertNoProviderLeak(rejected.diagnostics);
+    await advance(rejected, "invocation-2");
+    check("replay does not fetch", rejected.fetches, 1);
+    check("replay records no second diagnostic", rejected.diagnostics.length, 1);
+
+    const success = world();
+    success.fetchImpl = () =>
+      Promise.resolve(requestIdResponse(providerResponse(synthesis([finding()]))));
+    await advance(success);
+    check("success settles known", success.reservation?.status, "settled_known");
+    check("success diagnostic", diagnosticFor(success), {
+      provider: "openai",
+      contact_state: "contacted",
+      classification: "openai_completed",
+      http_status: 200,
+      request_id: "req_attempt0001",
+      error_type: null,
+      error_code: null,
+      error_param: null,
+      incomplete_reason: null,
+    });
+    assertNoProviderLeak(success.diagnostics);
+
+    const incomplete = world();
+    incomplete.fetchImpl = () =>
+      Promise.resolve(
+        requestIdResponse({
+          status: "incomplete",
+          incomplete_details: { reason: "max_output_tokens" },
+          output: [
+            {
+              type: "message",
+              role: "assistant",
+              content: [{ type: "output_text", text: '{"summary":"trunc' }],
+            },
+          ],
+          usage: { input_tokens: 900, output_tokens: 512, total_tokens: 1_412 },
+        }),
+      );
+    const truncated = await advance(incomplete);
+    check("incomplete fetches once", incomplete.fetches, 1);
+    check("incomplete usage is known", incomplete.reservation?.status, "settled_known");
+    check("incomplete usage tokens", incomplete.reservation?.actualTokens, 1_412);
+    check("incomplete step", incomplete.steps.at(-1)?.output?.errorCode, "openai_incomplete");
+    check("incomplete run code", incomplete.run.failure_code, "openai_incomplete");
+    check("incomplete materializes nothing", incomplete.materializeCalls, 0);
+    check("incomplete reason", diagnosticFor(incomplete)?.incomplete_reason, "max_output_tokens");
+    check(
+      "incomplete classification",
+      diagnosticFor(incomplete)?.classification,
+      "openai_incomplete",
+    );
+    check("incomplete response", truncated.body.reason, "openai_incomplete");
+
+    const cases: Array<
+      [string, () => Promise<Response>, string, "contacted" | "contact_uncertain"]
+    > = [
+      [
+        "refusal",
+        () =>
+          Promise.resolve(
+            Response.json({
+              status: "completed",
+              output: [
+                {
+                  type: "message",
+                  role: "assistant",
+                  content: [{ type: "refusal", refusal: LEAKED_PROVIDER_MESSAGE }],
+                },
+              ],
+              usage: { input_tokens: 10, output_tokens: 1, total_tokens: 11 },
+            }),
+          ),
+        "openai_refusal",
+        "contacted",
+      ],
+      [
+        "invalid output",
+        () =>
+          Promise.resolve(Response.json(providerResponse({ summary: LEAKED_PROVIDER_MESSAGE }))),
+        "openai_invalid_output",
+        "contacted",
+      ],
+      [
+        "usage missing",
+        () => Promise.resolve(Response.json(providerResponse(synthesis([finding()]), null))),
+        "openai_usage_missing",
+        "contacted",
+      ],
+      [
+        "malformed body",
+        () => Promise.resolve(providerErrorResponse(200, LEAKED_PROVIDER_MESSAGE, false)),
+        "openai_invalid_response",
+        "contacted",
+      ],
+      [
+        "network",
+        () => Promise.reject(new TypeError(LEAKED_PROVIDER_MESSAGE)),
+        "openai_unavailable",
+        "contact_uncertain",
+      ],
+      [
+        "timeout",
+        () =>
+          Promise.reject(Object.assign(new Error(LEAKED_PROVIDER_MESSAGE), { name: "AbortError" })),
+        "openai_timeout",
+        "contact_uncertain",
+      ],
+    ];
+    for (const [name, respond, classification, contact] of cases) {
+      const state = world();
+      state.fetchImpl = respond;
+      await advance(state);
+      check(`${name} fetches once`, state.fetches, 1);
+      check(`${name} classification`, diagnosticFor(state)?.classification, classification);
+      check(`${name} contact`, diagnosticFor(state)?.contact_state, contact);
+      assertNoProviderLeak(state.diagnostics);
+    }
+  },
+);
+
+Deno.test("a failing diagnostic write never changes provider accounting", async () => {
+  const unknown = world();
+  unknown.diagnosticError = true;
+  unknown.fetchImpl = () =>
+    Promise.resolve(
+      providerErrorResponse(400, { error: { type: "invalid_request_error", code: "bad" } }),
+    );
+  const held = await advance(unknown);
+  assertUnknownContactHold(unknown, "openai_request_rejected");
+  check("held usage stays unknown", usage(held).usageKnowledge, "unknown");
+
+  const known = world();
+  known.diagnosticError = true;
+  const advanced = await advance(known);
+  check("known usage still settles", known.reservation?.status, "settled_known");
+  check("known run still advances", known.run.status, "verifying");
+  check("known result", advanced.body.state, "advanced");
+  check("known fetches once", known.fetches, 1);
+  check("known settles once", known.settlePayloads.length, 1);
+});
+
+Deno.test("the reserved hold covers the exact request bytes the SDK sends", async () => {
+  for (const remaining of [16, 512, 4096]) {
+    const state = world();
+    state.budget.run_tokens_remaining = remaining;
+    await advance(state);
+    check("one request body", state.fetchBodies.length, 1);
+    const sentBytes = new TextEncoder().encode(state.fetchBodies[0]).byteLength;
+    const sent = JSON.parse(state.fetchBodies[0]) as {
+      max_output_tokens: number;
+      store: boolean;
+    };
+    check("store stays off", sent.store, false);
+    check("max output tokens", sent.max_output_tokens, remaining);
+    check("hold covers bytes plus output", state.reservation?.holdTokens, sentBytes + remaining);
+  }
+});
+
+Deno.test("racing invocations record one diagnostic for the single attempt", async () => {
+  const state = world();
+  state.fetchImpl = () =>
+    Promise.resolve(
+      providerErrorResponse(503, { error: { type: "server_error", code: "server_is_overloaded" } }),
+    );
+  const racing = racingIo(state);
+  await Promise.all([
+    advanceOpen(state, "race-a", racing.io),
+    advanceOpen(state, "race-b", racing.io),
+  ]);
+  check("race fetches once", state.fetches, 1);
+  check("race settles once", state.settlePayloads.length, 1);
+  check("race diagnostics", state.diagnostics.length, 1);
+  check("race hold stays held", state.reservation?.status, "held");
+  check("race usage unknown", state.reservation?.usageKnowledge, "unknown");
+  await advanceOpen(state, "race-c", ioFor(state));
+  check("later replay does not fetch", state.fetches, 1);
+});
+
+Deno.test("a hung diagnostic write cannot delay or change settlement", async () => {
+  const known = world();
+  const order: string[] = [];
+  const base = ioFor(known);
+  const io: CustodianIo = {
+    ...base,
+    settleProviderReservation: (...args) => {
+      order.push("settle");
+      return base.settleProviderReservation(...args);
+    },
+    recordProviderDiagnostic: () => {
+      order.push("diagnostic");
+      return new Promise<void>(() => undefined);
+    },
+  };
+  const started = Date.now();
+  const result = await advanceOpen(known, "hung-diagnostic", io);
+  check("settles before the diagnostic", order, ["settle", "diagnostic"]);
+  check("known usage settled", known.reservation?.status, "settled_known");
+  check("run advanced", result.body.state, "advanced");
+  check("diagnostic wait is bounded", Date.now() - started < 10_000, true);
+
+  const unknown = world();
+  unknown.fetchImpl = () =>
+    Promise.resolve(providerErrorResponse(500, { error: { type: "server_error", code: null } }));
+  const unknownOrder: string[] = [];
+  const unknownBase = ioFor(unknown);
+  await advanceOpen(unknown, "hung-diagnostic-unknown", {
+    ...unknownBase,
+    settleProviderReservation: (...args) => {
+      unknownOrder.push("settle");
+      return unknownBase.settleProviderReservation(...args);
+    },
+    recordProviderDiagnostic: () => {
+      unknownOrder.push("diagnostic");
+      return new Promise<void>(() => undefined);
+    },
+  });
+  check("unknown settles first", unknownOrder, ["settle", "diagnostic"]);
+  assertUnknownContactHold(unknown, "openai_server_error");
+});
+
+Deno.test("malformed output with known usage settles the usage as known", async () => {
+  const state = world();
+  state.fetchImpl = () =>
+    Promise.resolve(
+      Response.json({
+        object: "response",
+        status: "completed",
+        output: null,
+        usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+      }),
+    );
+  await advance(state);
+  check("fetches once", state.fetches, 1);
+  check("usage known", state.reservation?.status, "settled_known");
+  check("actual tokens", state.reservation?.actualTokens, 15);
+  check("step code", state.steps.at(-1)?.output?.errorCode, "openai_invalid_output");
+  check("no materialization", state.materializeCalls, 0);
+});

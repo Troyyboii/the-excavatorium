@@ -12,6 +12,8 @@ import { formatRecordDate } from "@/components/custodian/custodian-format";
 import {
   CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER,
   describeCustodianRunAccounting,
+  describeProviderDiagnostic,
+  type CustodianProviderDiagnostic,
   type CustodianRun,
   type CustodianRunRead,
 } from "@/lib/custodian-runtime";
@@ -449,6 +451,9 @@ function RunRow({
             {run.failureMessage ? `: ${run.failureMessage}` : null}
           </p>
         ) : null}
+        {run.providerDiagnostic ? (
+          <ProviderDiagnosticDetails diagnostic={run.providerDiagnostic} />
+        ) : null}
       </div>
       <dl className="grid content-start gap-2 text-xs">
         <RunValue label="Recorded provider cost" value={accounting.recordedProviderCost} />
@@ -464,6 +469,25 @@ function RunRow({
         </p>
       </dl>
     </article>
+  );
+}
+
+function ProviderDiagnosticDetails({ diagnostic }: { diagnostic: CustodianProviderDiagnostic }) {
+  return (
+    <details className="mt-3 text-xs">
+      <summary className="inline-flex min-h-11 cursor-pointer items-center text-muted-foreground">
+        Technical details
+      </summary>
+      <p className="mb-2 leading-5 text-muted-foreground">
+        Safe provider metadata for this attempt. Prompts, evidence, and provider messages are not
+        stored.
+      </p>
+      <dl className="grid gap-2">
+        {describeProviderDiagnostic(diagnostic).map((entry) => (
+          <RunValue key={entry.label} label={entry.label} value={entry.value} />
+        ))}
+      </dl>
+    </details>
   );
 }
 

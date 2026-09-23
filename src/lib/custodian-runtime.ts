@@ -28,6 +28,30 @@ export type CustodianProviderHold = {
   updatedAt: string;
 };
 
+export type ProviderDiagnosticContactState = "contacted" | "contact_uncertain";
+
+/**
+ * Safe provider metadata for one provider attempt. The Edge runtime records
+ * only validated tokens; prompts, evidence, bodies, and provider messages are
+ * never stored, so none can be shown here.
+ */
+export type CustodianProviderDiagnostic = {
+  id: string;
+  runId: string;
+  reservationId: string;
+  attemptKey: string;
+  provider: "openai";
+  contactState: ProviderDiagnosticContactState;
+  classification: string;
+  httpStatus: number | null;
+  requestId: string | null;
+  errorType: string | null;
+  errorCode: string | null;
+  errorParam: string | null;
+  incompleteReason: string | null;
+  createdAt: string;
+};
+
 export type CustodianRunStep = {
   runId: string;
   stepKind: string;
@@ -56,6 +80,7 @@ export type CustodianRun = {
   createdAt: string;
   updatedAt: string;
   providerHold: CustodianProviderHold | null;
+  providerDiagnostic: CustodianProviderDiagnostic | null;
   latestStep: CustodianRunStep | null;
 };
 
@@ -148,6 +173,7 @@ export function mapCustodianRunRow(value: unknown): CustodianRun {
     createdAt: timestamp(row, "created_at"),
     updatedAt: timestamp(row, "updated_at"),
     providerHold: null,
+    providerDiagnostic: null,
     latestStep: null,
   };
 }
@@ -187,6 +213,131 @@ export function mapProviderHoldRow(value: unknown): CustodianProviderHold {
     inFlightUntil: timestamp(row, "in_flight_until"),
     updatedAt: timestamp(row, "updated_at"),
   };
+}
+
+const DIAGNOSTIC_TOKEN = /^[a-z0-9_]{1,80}$/;
+const DIAGNOSTIC_PARAM = /^[A-Za-z0-9_.[\]-]{1,200}$/;
+const DIAGNOSTIC_REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+const DIAGNOSTIC_CONTACT_STATES = ["contacted", "contact_uncertain"] as const;
+
+function safeDiagnosticValue(row: UnknownRecord, key: string, pattern: RegExp): string | null {
+  const value = row[key];
+  return typeof value === "string" && pattern.test(value) ? value : null;
+}
+
+/**
+ * Re-validates every provider-derived value before display. A value outside
+ * the allowlisted shape is shown as absent, never sanitized into a new string.
+ */
+export function mapProviderDiagnosticRow(value: unknown): CustodianProviderDiagnostic | null {
+  let row: UnknownRecord;
+  try {
+    row = record(value);
+  } catch {
+    return null;
+  }
+  const contactState = row.contact_state;
+  const classification = safeDiagnosticValue(row, "classification", DIAGNOSTIC_TOKEN);
+  const status = row.http_status;
+  const createdAt = typeof row.created_at === "string" ? new Date(row.created_at) : null;
+  if (
+    typeof row.id !== "string" ||
+    typeof row.run_id !== "string" ||
+    typeof row.reservation_id !== "string" ||
+    typeof row.attempt_key !== "string" ||
+    row.provider !== "openai" ||
+    !DIAGNOSTIC_CONTACT_STATES.includes(contactState as ProviderDiagnosticContactState) ||
+    classification === null ||
+    !createdAt ||
+    Number.isNaN(createdAt.getTime())
+  ) {
+    return null;
+  }
+  const httpStatus =
+    typeof status === "number" && Number.isInteger(status) && status >= 100 && status <= 599
+      ? status
+      : null;
+  return {
+    id: row.id,
+    runId: row.run_id,
+    reservationId: row.reservation_id,
+    attemptKey: row.attempt_key,
+    provider: "openai",
+    contactState: contactState as ProviderDiagnosticContactState,
+    classification,
+    httpStatus,
+    requestId: safeDiagnosticValue(row, "request_id", DIAGNOSTIC_REQUEST_ID),
+    errorType: safeDiagnosticValue(row, "error_type", DIAGNOSTIC_TOKEN),
+    errorCode: safeDiagnosticValue(row, "error_code", DIAGNOSTIC_TOKEN),
+    errorParam: safeDiagnosticValue(row, "error_param", DIAGNOSTIC_PARAM),
+    incompleteReason: safeDiagnosticValue(row, "incomplete_reason", DIAGNOSTIC_TOKEN),
+    createdAt: createdAt.toISOString(),
+  };
+}
+
+const DIAGNOSTIC_CLASSIFICATION_LABELS: Record<string, string> = {
+  openai_completed: "Completed",
+  openai_refusal: "Model refused",
+  openai_incomplete: "Incomplete response",
+  openai_invalid_output: "Output did not match the result contract",
+  openai_invalid_response: "Unreadable response",
+  openai_usage_missing: "Usage missing",
+  openai_authentication_failed: "Authentication failed",
+  openai_permission_denied: "Permission denied",
+  openai_quota_exceeded: "Quota or spend limit reached",
+  openai_rate_limited: "Rate limited",
+  openai_model_unavailable: "Model unavailable",
+  openai_request_rejected: "Request rejected",
+  openai_server_error: "Provider server error",
+  openai_timeout: "Timed out",
+  openai_unavailable: "Provider unavailable",
+};
+
+export function describeProviderDiagnostic(
+  diagnostic: CustodianProviderDiagnostic,
+): Array<{ label: string; value: string }> {
+  const entries: Array<{ label: string; value: string }> = [
+    { label: "Provider", value: "OpenAI" },
+    {
+      label: "Status",
+      value:
+        diagnostic.httpStatus !== null
+          ? String(diagnostic.httpStatus)
+          : "No HTTP response. Contact is uncertain.",
+    },
+    {
+      label: "Classification",
+      value: DIAGNOSTIC_CLASSIFICATION_LABELS[diagnostic.classification] ?? "Unrecognized",
+    },
+  ];
+  const optional: Array<[string, string | null]> = [
+    ["Error type", diagnostic.errorType],
+    ["Error code", diagnostic.errorCode],
+    ["Parameter", diagnostic.errorParam],
+    ["Incomplete reason", diagnostic.incompleteReason],
+    ["Request ID", diagnostic.requestId],
+  ];
+  for (const [label, value] of optional) {
+    if (value !== null) entries.push({ label, value });
+  }
+  entries.push({ label: "Attempt", value: diagnostic.attemptKey });
+  entries.push({ label: "Time", value: diagnostic.createdAt });
+  return entries;
+}
+
+export function diagnosticsByRun(
+  rows: readonly unknown[],
+): Map<string, CustodianProviderDiagnostic> {
+  const byRun = new Map<string, CustodianProviderDiagnostic>();
+  for (const row of rows) {
+    const diagnostic = mapProviderDiagnosticRow(row);
+    if (!diagnostic) continue;
+    const current = byRun.get(diagnostic.runId);
+    if (!current || diagnostic.createdAt > current.createdAt) {
+      byRun.set(diagnostic.runId, diagnostic);
+    }
+  }
+  return byRun;
 }
 
 export function mapRunStepRow(value: unknown): CustodianRunStep {
@@ -300,6 +451,8 @@ const RUN_SELECT =
 const HOLD_SELECT =
   "id,run_id,status,usage_knowledge,hold_tokens,hold_cost_usd,actual_tokens,actual_cost_usd,pricing_version,failure_code,in_flight_until,updated_at";
 const STEP_SELECT = "run_id,step_kind,status,sequence_no";
+const DIAGNOSTIC_SELECT =
+  "id,run_id,reservation_id,attempt_key,provider,contact_state,classification,http_status,request_id,error_type,error_code,error_param,incomplete_reason,created_at";
 
 function relationUnavailable(error: { code?: string; message?: string }): boolean {
   const code = error.code ?? "";
@@ -333,7 +486,7 @@ export async function fetchCustodianRuns(ownerId: string): Promise<CustodianRunR
   const runIds = runs.map((run) => run.id);
   if (runIds.length === 0) return { runs, providerHoldProjection: "available" };
 
-  const [holds, steps] = await Promise.all([
+  const [holds, steps, diagnostics] = await Promise.all([
     supabase
       .from("agent_provider_reservations")
       .select(HOLD_SELECT)
@@ -348,6 +501,13 @@ export async function fetchCustodianRuns(ownerId: string): Promise<CustodianRunR
       .in("run_id", runIds)
       .order("sequence_no", { ascending: false })
       .limit(1_000),
+    supabase
+      .from("agent_provider_diagnostics")
+      .select(DIAGNOSTIC_SELECT)
+      .eq("owner_id", ownerId)
+      .in("run_id", runIds)
+      .order("created_at", { ascending: false })
+      .limit(CUSTODIAN_RUN_READ_LIMIT),
   ]);
   if (steps.error) {
     if (isCustodianFoundationMissing(steps.error)) throw new CustodianFoundationMissingError();
@@ -373,11 +533,17 @@ export async function fetchCustodianRuns(ownerId: string): Promise<CustodianRunR
       holdByRun.set(hold.runId, hold);
     }
   }
+  // Diagnostics are supplementary technical detail. A missing relation or a
+  // failed read never blocks the run or accounting projection.
+  const diagnosticByRun = diagnostics.error
+    ? new Map<string, CustodianProviderDiagnostic>()
+    : diagnosticsByRun(diagnostics.data ?? []);
   return {
     providerHoldProjection,
     runs: runs.map((run) => ({
       ...run,
       providerHold: holdByRun.get(run.id) ?? null,
+      providerDiagnostic: diagnosticByRun.get(run.id) ?? null,
       latestStep: latestStepByRun.get(run.id) ?? null,
     })),
   };
