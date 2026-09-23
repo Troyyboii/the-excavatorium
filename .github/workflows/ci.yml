@@ -68,7 +68,16 @@ jobs:
           version: 2.84.2
 
       - name: Start local Supabase services
-        run: supabase start
+        env:
+          SUPABASE_INTERNAL_IMAGE_REGISTRY: public.ecr.aws
+        run: |
+          for attempt in 1 2 3; do
+            supabase start && exit 0
+            echo "supabase start failed (attempt $attempt), retrying..."
+            supabase stop --no-backup || true
+            sleep $((attempt * 20))
+          done
+          exit 1
 
       - name: Test database migrations and boundaries
         run: supabase test db supabase/tests/database
