@@ -121,7 +121,7 @@ export function AppShell({ email, children }: { email: string | null; children: 
         <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-sidebar-border bg-sidebar/95 px-4 text-sidebar-foreground backdrop-blur md:hidden">
           <span className="flex min-w-0 flex-1 items-center gap-2">
             <img
-              src="/icon-192.png"
+              src="/lantern-icon-192.png"
               alt=""
               aria-hidden="true"
               className="h-9 w-9 shrink-0 object-contain"
@@ -335,7 +335,7 @@ function SidebarInner({
       <div className="flex min-h-16 items-center justify-between border-b border-sidebar-border px-4">
         <span className="flex min-w-0 items-center gap-2">
           <img
-            src="/icon-192.png"
+            src="/lantern-icon-192.png"
             alt=""
             aria-hidden="true"
             className="h-9 w-9 shrink-0 object-contain"

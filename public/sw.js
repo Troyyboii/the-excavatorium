@@ -1,14 +1,14 @@
-const SHELL_CACHE = "excavatorium-static-v1";
+const SHELL_CACHE = "excavatorium-static-v2-lantern";
 const SHELL_URLS = [
   "/",
   "/offline.html",
-  "/manifest.webmanifest",
-  "/favicon.ico",
-  "/icon-192.png",
-  "/icon-512.png",
-  "/icon-192-maskable.png",
-  "/icon-512-maskable.png",
-  "/apple-touch-icon.png",
+  "/lantern.webmanifest",
+  "/lantern-favicon.ico",
+  "/lantern-icon-192.png",
+  "/lantern-icon-512.png",
+  "/lantern-icon-192-maskable.png",
+  "/lantern-icon-512-maskable.png",
+  "/lantern-apple-touch-icon.png",
 ];
 
 const PRIVATE_PATH_PREFIXES = [
@@ -41,12 +41,12 @@ function isStaticAsset(request, url) {
     url.pathname.startsWith("/assets/") ||
     url.pathname.startsWith("/_build/") ||
     [
-      "/apple-touch-icon.png",
-      "/favicon.ico",
-      "/icon-192-maskable.png",
-      "/icon-192.png",
-      "/icon-512-maskable.png",
-      "/icon-512.png",
+      "/lantern-apple-touch-icon.png",
+      "/lantern-favicon.ico",
+      "/lantern-icon-192-maskable.png",
+      "/lantern-icon-192.png",
+      "/lantern-icon-512-maskable.png",
+      "/lantern-icon-512.png",
     ].includes(url.pathname)
   );
 }
