@@ -48,22 +48,31 @@ function nonBlankText(maxLength: number) {
     .describe(`Nonblank. At most ${maxLength} characters.`);
 }
 
-function textList(maxItems: number, maxItemLength: number) {
-  return z.array(boundedText(maxItemLength)).max(maxItems);
+function nonBlankTextList(maxItems: number, maxItemLength: number) {
+  return z.array(nonBlankText(maxItemLength)).max(maxItems);
 }
 
-function hasMeaningfulCaveat(finding: {
-  uncertainties: string[];
-  assumptions: string[];
-  scope_limits: string[];
-  evidence_gaps: string[];
+function evidenceIdList() {
+  return z
+    .array(
+      z
+        .string()
+        .uuid()
+        .describe("UUID of an admitted evidence item from the current Case."),
+    )
+    .max(32);
+}
+
+function uniqueStrings(values: string[]): boolean {
+  return new Set(values).size === values.length;
+}
+
+function evidenceIdsDoNotOverlap(finding: {
+  supporting_evidence_ids: string[];
+  contrary_evidence_ids: string[];
 }): boolean {
-  return [
-    finding.uncertainties,
-    finding.assumptions,
-    finding.scope_limits,
-    finding.evidence_gaps,
-  ].some((items) => items.some((item) => item.trim().length > 0));
+  const contrary = new Set(finding.contrary_evidence_ids);
+  return finding.supporting_evidence_ids.every((id) => !contrary.has(id));
 }
 
 export const CustodianFindingSchema = z
@@ -73,12 +82,12 @@ export const CustodianFindingSchema = z
     conclusion: nonBlankText(30_000),
     analysis_mode: z.enum(FINDING_ANALYSIS_MODES),
     confidence: z.int().min(0).max(100),
-    supporting_evidence_ids: textList(32, 100),
-    contrary_evidence_ids: textList(32, 100),
-    uncertainties: textList(32, 1_000),
-    assumptions: textList(32, 1_000),
-    scope_limits: textList(32, 1_000),
-    evidence_gaps: textList(32, 1_000),
+    supporting_evidence_ids: evidenceIdList(),
+    contrary_evidence_ids: evidenceIdList(),
+    uncertainties: nonBlankTextList(32, 1_000),
+    assumptions: nonBlankTextList(32, 1_000),
+    scope_limits: nonBlankTextList(32, 1_000),
+    evidence_gaps: nonBlankTextList(32, 1_000),
     what_would_change_mind: boundedText(10_000),
     revisit_condition: boundedText(10_000),
   })
@@ -86,9 +95,20 @@ export const CustodianFindingSchema = z
     (finding) => finding.outcome !== "finding" || finding.supporting_evidence_ids.length > 0,
     { message: "finding_requires_supporting_evidence" },
   )
-  .refine((finding) => finding.outcome !== "unresolved" || hasMeaningfulCaveat(finding), {
-    message: "unresolved_requires_caveat",
-  });
+  .refine(
+    (finding) =>
+      finding.outcome !== "unresolved" ||
+      finding.uncertainties.length > 0 ||
+      finding.evidence_gaps.length > 0,
+    { message: "unresolved_requires_uncertainty_or_evidence_gap" },
+  )
+  .refine(
+    (finding) =>
+      uniqueStrings(finding.supporting_evidence_ids) &&
+      uniqueStrings(finding.contrary_evidence_ids),
+    { message: "evidence_ids_must_be_unique" },
+  )
+  .refine(evidenceIdsDoNotOverlap, { message: "evidence_ids_must_not_overlap" });
 
 export const CustodianSynthesisSchema = z.strictObject({
   summary: boundedText(10_000),
