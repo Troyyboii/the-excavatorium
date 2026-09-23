@@ -119,8 +119,16 @@ export function AppShell({ email, children }: { email: string | null; children: 
 
       <div className="relative flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-sidebar-border bg-sidebar/95 px-4 text-sidebar-foreground backdrop-blur md:hidden">
-          <span className="min-w-0 flex-1 truncate font-serif text-xl tracking-tight text-sidebar-foreground">
-            The Excavatorium
+          <span className="flex min-w-0 flex-1 items-center gap-2">
+            <img
+              src="/icon-192.png"
+              alt=""
+              aria-hidden="true"
+              className="h-9 w-9 shrink-0 object-contain"
+            />
+            <span className="truncate font-serif text-xl tracking-tight text-sidebar-foreground">
+              The Excavatorium
+            </span>
           </span>
           <CommandPalette enabled={online} shortcutScope="mobile" inverse />
           <NewMenu compact online={online} />
@@ -325,8 +333,16 @@ function SidebarInner({
   return (
     <>
       <div className="flex min-h-16 items-center justify-between border-b border-sidebar-border px-4">
-        <span className="font-serif text-lg tracking-tight text-sidebar-foreground">
-          The Excavatorium
+        <span className="flex min-w-0 items-center gap-2">
+          <img
+            src="/icon-192.png"
+            alt=""
+            aria-hidden="true"
+            className="h-9 w-9 shrink-0 object-contain"
+          />
+          <span className="truncate font-serif text-lg tracking-tight text-sidebar-foreground">
+            The Excavatorium
+          </span>
         </span>
         {onClose ? (
           <button
