@@ -129,6 +129,25 @@ export function validFindingCandidate(value: unknown): boolean {
   return CustodianFindingSchema.safeParse(value).success;
 }
 
+export function synthesisEvidenceIdsWithinSnapshot(
+  value: unknown,
+  snapshot: Record<string, unknown>,
+): boolean {
+  const parsed = CustodianSynthesisSchema.safeParse(value);
+  if (!parsed.success) return false;
+  const rawAllowed = snapshot.citable_evidence_ids;
+  const allowed = new Set(
+    Array.isArray(rawAllowed)
+      ? rawAllowed.filter((id): id is string => typeof id === "string")
+      : [],
+  );
+  return parsed.data.findings.every(
+    (finding) =>
+      finding.supporting_evidence_ids.every((id) => allowed.has(id)) &&
+      finding.contrary_evidence_ids.every((id) => allowed.has(id)),
+  );
+}
+
 export function parseSynthesis(value: unknown): CustodianSynthesis | null {
   const parsed = CustodianSynthesisSchema.safeParse(value);
   return parsed.success ? parsed.data : null;
