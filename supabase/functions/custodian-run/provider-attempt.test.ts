@@ -899,7 +899,7 @@ Deno.test("provider refusal with usage is billed and does not become a Finding",
 Deno.test("materialization failure keeps usage and retries do not fetch", async () => {
   const state = world();
   state.fetchImpl = () =>
-    Promise.resolve(Response.json(providerResponse(synthesis([finding("finding", "not-a-uuid")]))));
+    Promise.resolve(Response.json(providerResponse(synthesis([finding("finding")]))));
   state.materializeError = true;
   const failed = await advance(state);
   assertEquals(state.fetches, 1);
