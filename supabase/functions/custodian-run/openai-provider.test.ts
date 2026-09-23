@@ -123,6 +123,7 @@ const SUPPORTED_KEYWORDS = new Set([
   "enum",
   "description",
   "format",
+  "pattern",
   "minimum",
   "maximum",
   "minItems",
@@ -391,6 +392,9 @@ Deno.test("synthesis params are stored-off, bounded, and carry the Zod format", 
   }
   if (input[0].content[0].text.includes(EVIDENCE_SENTINEL)) {
     throw new Error("evidence must stay out of the system message");
+  }
+  if (!input[1].content[0].text.includes("use only UUIDs listed in citable_evidence_ids")) {
+    throw new Error("user message must constrain evidence citations to the admitted snapshot");
   }
   for (const bad of ["   ", "x".repeat(8_001)]) {
     let rejected = false;
