@@ -558,6 +558,7 @@ Deno.test(
       { authorization, "openai-project": "proj_x" },
       { authorization, "openai-organization": "org_x" },
       { authorization, "x-injected": "1" },
+      { authorization, "x-stainless-injected": "1" },
       {},
     ];
     for (const headers of cases) {
@@ -586,8 +587,22 @@ Deno.test(
         if (!name.startsWith("x-stainless-")) throw new Error(`unexpected SDK header ${name}`);
       }
     }
+    if (!names.includes("x-stainless-package-version")) throw new Error("SDK headers missing");
   },
 );
+
+Deno.test("a key with surrounding whitespace is compared as fetch sends it", async () => {
+  const fake = transport(() => Promise.resolve(Response.json(successBody())));
+  const exchange = await sendSynthesisRequest({
+    apiKey: `${apiKey}\n`,
+    fetch: fake.fetch,
+    timeoutMs: 5_000,
+    params: params(),
+  });
+  assertEquals(exchange.kind, "response");
+  assertEquals(fake.calls.length, 1);
+  assertEquals(new Headers(fake.calls[0]?.init.headers).get("authorization"), `Bearer ${apiKey}`);
+});
 
 Deno.test("a malformed output array in a 200 response keeps its usage readable", async () => {
   for (const output of [null, [null], [{ type: "message", role: "assistant", content: null }]]) {

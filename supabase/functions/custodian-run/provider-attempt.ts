@@ -1459,8 +1459,8 @@ async function executeBoundedSynthesisAttempt(input: {
       run,
       input.invocationKey,
       attemptKey,
-      "provider_request_refused",
-      "The provider request was refused before it was sent. The hold was released.",
+      "provider_request_not_sent",
+      "The provider request was not sent. The hold was released.",
       "blocked",
     );
   }

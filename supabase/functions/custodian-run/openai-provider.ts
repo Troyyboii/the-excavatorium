@@ -110,7 +110,7 @@ export function createOpenAiClient(input: {
 export type ProviderExchange =
   | { kind: "response"; body: unknown; diagnostic: ResponseDiagnostic }
   | { kind: "failure"; code: ProviderFailureCode; diagnostic: ProviderDiagnostic }
-  /** Refused before any network call, so the provider was definitely not contacted. */
+  /** Failed or refused before any network call, so the provider was definitely not contacted. */
   | { kind: "not_sent" };
 
 type ResponseDiagnostic = { httpStatus: number; requestId: string | null };
@@ -121,14 +121,29 @@ class ProviderFetchRefusedError extends Error {
   }
 }
 
-const SDK_HEADER_ALLOWLIST = new Set(["accept", "authorization", "content-type", "user-agent"]);
+const SDK_HEADER_ALLOWLIST = new Set([
+  "accept",
+  "authorization",
+  "content-type",
+  "user-agent",
+  "x-stainless-arch",
+  "x-stainless-lang",
+  "x-stainless-os",
+  "x-stainless-package-version",
+  "x-stainless-retry-count",
+  "x-stainless-runtime",
+  "x-stainless-runtime-version",
+  "x-stainless-timeout",
+]);
 
 /** The SDK's own platform headers plus the one expected credential, nothing else. */
 function unexpectedHeaders(init: RequestInit | undefined, authorization: string): boolean {
   const headers = new Headers(init?.headers);
-  if (headers.get("authorization") !== authorization) return true;
+  // Compare header-normalized values, as fetch sends them.
+  const expected = new Headers({ authorization }).get("authorization");
+  if (headers.get("authorization") !== expected) return true;
   for (const name of headers.keys()) {
-    if (!SDK_HEADER_ALLOWLIST.has(name) && !name.startsWith("x-stainless-")) return true;
+    if (!SDK_HEADER_ALLOWLIST.has(name)) return true;
   }
   return false;
 }
