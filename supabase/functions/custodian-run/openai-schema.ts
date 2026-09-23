@@ -54,12 +54,7 @@ function nonBlankTextList(maxItems: number, maxItemLength: number) {
 
 function evidenceIdList() {
   return z
-    .array(
-      z
-        .string()
-        .uuid()
-        .describe("UUID of an admitted evidence item from the current Case."),
-    )
+    .array(z.string().uuid().describe("UUID of an admitted evidence item from the current Case."))
     .max(32);
 }
 
