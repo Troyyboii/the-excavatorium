@@ -23,6 +23,7 @@ import {
   type ProviderFetch,
   type SynthesisRequestParams,
 } from "./openai-provider.ts";
+import { synthesisEvidenceIdsWithinSnapshot } from "./openai-schema.ts";
 
 export { classifyOpenAiHttpFailure } from "./openai-diagnostics.ts";
 export { OPENAI_RESPONSES_URL } from "./openai-provider.ts";
@@ -1527,7 +1528,10 @@ async function executeBoundedSynthesisAttempt(input: {
     );
   }
   const structured = synthesisOutput.kind === "json" ? synthesisOutput.value : null;
-  const accepted = structured !== null && input.validSynthesis(structured);
+  const accepted =
+    structured !== null &&
+    input.validSynthesis(structured) &&
+    synthesisEvidenceIdsWithinSnapshot(structured, run.input_snapshot);
   const errorCode =
     synthesisOutput.kind === "refusal"
       ? "openai_refusal"
