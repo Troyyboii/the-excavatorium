@@ -5,8 +5,11 @@ import {
   custodianRunInvocation,
   custodianRunsKey,
   describeCustodianRunAccounting,
+  describeProviderDiagnostic,
+  diagnosticsByRun,
   interpretCustodianFunctionResult,
   mapCustodianRunRow,
+  mapProviderDiagnosticRow,
   mapProviderHoldRow,
 } from "./custodian-runtime";
 
@@ -57,6 +60,7 @@ describe("Custodian run read contract", () => {
       createdAt: "2026-08-17T14:00:00.000Z",
       updatedAt: "2026-08-17T14:00:01.000Z",
       providerHold: null,
+      providerDiagnostic: null,
       latestStep: null,
     });
     expect(
@@ -200,5 +204,126 @@ describe("Custodian run read contract", () => {
     expect(source).not.toContain(".insert(");
     expect(source).not.toContain(".update(");
     expect(source).not.toMatch(/["']custodian-run["']/);
+  });
+});
+
+function diagnosticRow(patch: Record<string, unknown> = {}) {
+  return {
+    id: "00000000-0000-4000-8000-000000000020",
+    run_id: "00000000-0000-4000-8000-000000000001",
+    reservation_id: "00000000-0000-4000-8000-000000000010",
+    attempt_key: "provider-attempt:00000000-0000-4000-8000-000000000001:synthesize",
+    provider: "openai",
+    contact_state: "contacted",
+    classification: "openai_request_rejected",
+    http_status: 400,
+    request_id: "req_0123456789abcdef",
+    error_type: "invalid_request_error",
+    error_code: "invalid_json_schema",
+    error_param: "text.format.schema.properties.findings",
+    incomplete_reason: null,
+    created_at: "2026-09-23T12:00:00.000Z",
+    ...patch,
+  };
+}
+
+describe("Custodian provider diagnostic read contract", () => {
+  test("maps only allowlisted diagnostic metadata", () => {
+    const diagnostic = mapProviderDiagnosticRow({
+      ...diagnosticRow(),
+      message: "Bearer sk-live-secret prompt text",
+      body: '{"raw":true}',
+    });
+    expect(diagnostic).toEqual({
+      id: "00000000-0000-4000-8000-000000000020",
+      runId: "00000000-0000-4000-8000-000000000001",
+      reservationId: "00000000-0000-4000-8000-000000000010",
+      attemptKey: "provider-attempt:00000000-0000-4000-8000-000000000001:synthesize",
+      provider: "openai",
+      contactState: "contacted",
+      classification: "openai_request_rejected",
+      httpStatus: 400,
+      requestId: "req_0123456789abcdef",
+      errorType: "invalid_request_error",
+      errorCode: "invalid_json_schema",
+      errorParam: "text.format.schema.properties.findings",
+      incompleteReason: null,
+      createdAt: "2026-09-23T12:00:00.000Z",
+    });
+    expect(JSON.stringify(diagnostic)).not.toContain("sk-live-secret");
+    expect(JSON.stringify(diagnostic)).not.toContain("raw");
+  });
+
+  test("shows unsafe provider-derived values as absent instead of sanitizing them", () => {
+    const diagnostic = mapProviderDiagnosticRow(
+      diagnosticRow({
+        error_param: "text.format schema Bearer sk-x",
+        error_code: "Invalid Code",
+        error_type: "x".repeat(81),
+        request_id: `req_${"a".repeat(200)}`,
+        http_status: 99,
+      }),
+    );
+    expect(diagnostic?.errorParam).toBeNull();
+    expect(diagnostic?.errorCode).toBeNull();
+    expect(diagnostic?.errorType).toBeNull();
+    expect(diagnostic?.requestId).toBeNull();
+    expect(diagnostic?.httpStatus).toBeNull();
+    expect(mapProviderDiagnosticRow(diagnosticRow({ provider: "other" }))).toBeNull();
+    expect(mapProviderDiagnosticRow(diagnosticRow({ classification: "Bad Class" }))).toBeNull();
+    expect(mapProviderDiagnosticRow(diagnosticRow({ contact_state: "maybe" }))).toBeNull();
+    expect(mapProviderDiagnosticRow(null)).toBeNull();
+  });
+
+  test("describes a rejected request with the safe technical fields", () => {
+    const diagnostic = mapProviderDiagnosticRow(diagnosticRow());
+    if (!diagnostic) throw new Error("diagnostic fixture must map");
+    expect(describeProviderDiagnostic(diagnostic)).toEqual([
+      { label: "Provider", value: "OpenAI" },
+      { label: "Status", value: "400" },
+      { label: "Classification", value: "Request rejected" },
+      { label: "Error type", value: "invalid_request_error" },
+      { label: "Error code", value: "invalid_json_schema" },
+      { label: "Parameter", value: "text.format.schema.properties.findings" },
+      { label: "Request ID", value: "req_0123456789abcdef" },
+      {
+        label: "Attempt",
+        value: "provider-attempt:00000000-0000-4000-8000-000000000001:synthesize",
+      },
+      { label: "Time", value: "2026-09-23T12:00:00.000Z" },
+    ]);
+    const uncertain = mapProviderDiagnosticRow(
+      diagnosticRow({
+        contact_state: "contact_uncertain",
+        classification: "openai_timeout",
+        http_status: null,
+        request_id: null,
+        error_type: null,
+        error_code: null,
+        error_param: null,
+      }),
+    );
+    if (!uncertain) throw new Error("uncertain fixture must map");
+    expect(describeProviderDiagnostic(uncertain).map((entry) => entry.label)).toEqual([
+      "Provider",
+      "Status",
+      "Classification",
+      "Attempt",
+      "Time",
+    ]);
+    expect(describeProviderDiagnostic(uncertain)[1]?.value).toContain("uncertain");
+  });
+
+  test("keeps the newest valid diagnostic per run and skips malformed rows", () => {
+    const byRun = diagnosticsByRun([
+      diagnosticRow({ created_at: "2026-09-23T11:00:00.000Z", classification: "openai_timeout" }),
+      diagnosticRow(),
+      diagnosticRow({ id: "bad", provider: "other", created_at: "2026-09-23T13:00:00.000Z" }),
+      "not a row",
+    ]);
+    expect(byRun.size).toBe(1);
+    expect(byRun.get("00000000-0000-4000-8000-000000000001")?.classification).toBe(
+      "openai_request_rejected",
+    );
   });
 });

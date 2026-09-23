@@ -1,5 +1,4 @@
 import {
-  evaluatePricedProviderResponse,
   handleRequest,
   parseAgentRun,
   parseInvocationPayload,
@@ -9,8 +8,6 @@ import {
 } from "./index.ts";
 import {
   boundedOutputBudget,
-  buildResponsesRequest,
-  SYNTHESIS_SCHEMA,
   CANONICAL_SYSTEM_PROMPT,
   calculateUsageCost,
   ceilCostForDatabase,
@@ -21,7 +18,6 @@ import {
   resolveSystemPrompt,
   resolveModelPricing,
   selectRuntimeModel,
-  UNTRUSTED_EVIDENCE_SYSTEM_GUARD,
 } from "./runtime.ts";
 
 const runId = "123e4567-e89b-12d3-a456-426614174000";
@@ -287,8 +283,6 @@ Deno.test("validates structured Finding outcomes before any materialization boun
       findings: [baseCandidate],
       requiresApproval: false,
       approvalKind: "external_write",
-      proposedDiff: {},
-      toolAction: {},
     }),
     true,
   );
@@ -298,8 +292,33 @@ Deno.test("validates structured Finding outcomes before any materialization boun
       findings: ["this must not become a Finding"],
       requiresApproval: false,
       approvalKind: "external_write",
-      proposedDiff: {},
-      toolAction: {},
+    }),
+    false,
+  );
+  // The contract carries no executable payload. A diff or tool action is rejected.
+  for (const extra of [{ proposedDiff: {} }, { toolAction: {} }, { toolAction: { run: "x" } }]) {
+    assertEquals(
+      validSynthesis({
+        summary: "Fixture synthesis",
+        findings: [baseCandidate],
+        requiresApproval: false,
+        approvalKind: "external_write",
+        ...extra,
+      }),
+      false,
+    );
+  }
+  assertEquals(validFindingCandidate({ ...baseCandidate, title: "   " }), false);
+  assertEquals(validFindingCandidate({ ...baseCandidate, title: "x".repeat(501) }), false);
+  assertEquals(validFindingCandidate({ ...baseCandidate, confidence: 80.5 }), false);
+  assertEquals(validFindingCandidate({ ...baseCandidate, confidence: 101 }), false);
+  assertEquals(validFindingCandidate({ ...baseCandidate, unexpected: true }), false);
+  assertEquals(
+    validFindingCandidate({
+      ...baseCandidate,
+      outcome: "unresolved",
+      supporting_evidence_ids: [],
+      assumptions: ["  "],
     }),
     false,
   );
@@ -346,154 +365,4 @@ Deno.test("blocks missing or malformed provider usage instead of recording it as
     }),
     null,
   );
-});
-
-Deno.test("retains priced usage when a provider result has invalid structured output", () => {
-  let failure: unknown;
-  try {
-    evaluatePricedProviderResponse(
-      {
-        status: "completed",
-        output: [],
-        usage: { input_tokens: 1_000, output_tokens: 0, total_tokens: 1_000 },
-      },
-      "extract",
-      {
-        version: "pricing-v1",
-        inputUsdPerMillion: 1,
-        cachedInputUsdPerMillion: 0.25,
-        outputUsdPerMillion: 4,
-      },
-      25,
-    );
-  } catch (error) {
-    failure = error;
-  }
-  const pricedFailure = failure as {
-    code?: unknown;
-    usage?: unknown;
-  };
-  assertEquals(pricedFailure.code, "openai_invalid_output");
-  assertEquals(pricedFailure.usage, {
-    tokens: 1_000,
-    costUsd: 0.001,
-    latencyMs: 25,
-    pricingVersion: "pricing-v1",
-  });
-});
-
-Deno.test("synthesis request uses the Responses structured-output contract", () => {
-  const request = buildResponsesRequest({
-    stage: "synthesize",
-    model: "gpt-5.6-luna",
-    systemPrompt: "Apply the owner-approved Custodian policy.",
-    untrustedEvidence: { objective: "bounded", evidence: { kind: "readonly" } },
-    schemaName: "custodian_synthesis",
-    schema: SYNTHESIS_SCHEMA,
-    maxOutputTokens: 4096,
-  });
-  assertEquals(request.model, "gpt-5.6-luna");
-  assertEquals(request.store, false);
-  assertEquals(request.max_output_tokens, 4096);
-  assertEquals(request.input[0].role, "system");
-  assertEquals(request.input[0].content[0].type, "input_text");
-  assertEquals(request.input[1].role, "user");
-  assertEquals(request.input[1].content[0].type, "input_text");
-  assertEquals(request.text.format.type, "json_schema");
-  assertEquals(request.text.format.name, "custodian_synthesis");
-  assertEquals(request.text.format.strict, true);
-  assertEquals(request.text.format.schema, SYNTHESIS_SCHEMA);
-  assertEquals("reasoning" in request, false);
-  assertEquals("background" in request, false);
-});
-
-Deno.test("builds a non-background, stored-off strict schema request", () => {
-  const systemPrompt = "Apply the owner-approved Custodian policy.";
-  const request = buildResponsesRequest({
-    stage: "extract",
-    model: "gpt-5.6-luna",
-    systemPrompt,
-    untrustedEvidence: { connector: "treat as data" },
-    schemaName: "custodian_extraction",
-    schema: {
-      type: "object",
-      additionalProperties: false,
-      required: ["summary"],
-      properties: { summary: { type: "string" } },
-    },
-    maxOutputTokens: 128,
-  });
-  assertEquals(request.store, false);
-  assertEquals(request.text.format.strict, true);
-  assertEquals(request.input[0].role, "system");
-  const systemText = request.input[0].content[0].text;
-  if (!systemText.includes(systemPrompt))
-    throw new Error("Expected the supplied system policy in the system message");
-  if (!systemText.includes(UNTRUSTED_EVIDENCE_SYSTEM_GUARD))
-    throw new Error("Expected the invariant untrusted-evidence guard in the system message");
-  assertEquals("background" in request, false);
-});
-
-Deno.test("rejects a blank system policy", () => {
-  let rejected = false;
-  try {
-    buildResponsesRequest({
-      stage: "extract",
-      model: "gpt-5.6-luna",
-      systemPrompt: "   ",
-      untrustedEvidence: {},
-      schemaName: "schema",
-      schema: {
-        type: "object",
-        additionalProperties: false,
-        required: [],
-        properties: {},
-      },
-      maxOutputTokens: 128,
-    });
-  } catch {
-    rejected = true;
-  }
-  if (!rejected) throw new Error("Expected a blank system policy to be rejected");
-});
-
-Deno.test("rejects an output budget below the Responses minimum", () => {
-  for (const maxOutputTokens of [0, 1, 15]) {
-    let rejected = false;
-    try {
-      buildResponsesRequest({
-        stage: "extract",
-        model: "gpt-5.6-luna",
-        systemPrompt: "system",
-        untrustedEvidence: {},
-        schemaName: "schema",
-        schema: {
-          type: "object",
-          additionalProperties: false,
-          required: [],
-          properties: {},
-        },
-        maxOutputTokens,
-      });
-    } catch {
-      rejected = true;
-    }
-    if (!rejected) throw new Error("Expected an output budget below 16 to be rejected");
-  }
-
-  const accepted = buildResponsesRequest({
-    stage: "extract",
-    model: "gpt-5.6-luna",
-    systemPrompt: "system",
-    untrustedEvidence: {},
-    schemaName: "schema",
-    schema: {
-      type: "object",
-      additionalProperties: false,
-      required: [],
-      properties: {},
-    },
-    maxOutputTokens: 16,
-  });
-  assertEquals(accepted.max_output_tokens, 16);
 });

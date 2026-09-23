@@ -124,7 +124,7 @@ provider call is available.
 | Bounded Case Reading                                     | **CURRENT** browser-side bundle builder in `src/lib/case-reading.ts`.                                 | **CURRENT** read-only Case Reading presentation.                                                                          | It is provider-free; it is not evidence of a model run.                                                          |
 | Claims, evidence, actions, findings, revisions           | **CURRENT** owner-scoped tables/RPC foundation, including the M2 Finding attribution migration and protected materialization RPC in `20260920090000_custodian_finding_attribution.sql`. | **PARTIAL** existing collections now expose Finding origin, run/step attribution, caveats, and bounded support/contrary descriptors. | Database application and end-to-end workflow are **UNVERIFIED**.                                                 |
 | Durable runs, steps, budgets, approval, proposals, audit | **CURRENT** migration and RPC contracts, including the M3 owner-gate decision RPC.                    | Run Room is **CURRENT** as a read-only owner listing; Approvals is **CURRENT** as an owner decision surface. Approval does not execute unsupported work. | Runtime foundation is not operational proof.                                                                     |
-| Provider-backed analysis                                 | M4A hold storage is merged source. M4B wires one synthesis attempt in `supabase/functions/custodian-run/provider-attempt.ts`: reserve, at most one fetch, truthful settlement, M2 materialization, and boundary verification. That path is unreachable while the Edge gate is closed. M4D source adds a readonly start contract and bounded driver without opening the gate. | M4C Run Room inspection is **CURRENT**. Invocation is **BLOCKED** by `CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER = false`. While that constant is false, Start analysis does not call policy RPCs or the Edge Function. | Edge execution is **BLOCKED** by `PROVIDER_EXECUTION_UNSUPPORTED = true`. No paid call is authorized. Production activation is not done. Deployed behavior is **UNVERIFIED**. |
+| Provider-backed analysis                                 | M4A hold storage is merged source. M4B wires one synthesis attempt in `supabase/functions/custodian-run/provider-attempt.ts`: reserve, at most one Responses request through the official OpenAI SDK, truthful settlement, M2 materialization, and boundary verification. M4D adds the readonly start contract and bounded driver. Both source gates are open. Safe provider diagnostics are recorded per attempt. | M4C Run Room is **CURRENT** and can start one readonly analysis through `{ runId, invocationKey }`. Failed attempts show safe provider metadata behind Technical details. | Two production runs reached the provider and failed; no deployed run has completed. See [`custodian-first-run-readiness.md`](./custodian-first-run-readiness.md). |
 | External or canonical execution                          | Approval and tool-event guard foundations are **CURRENT** source.                                     | No control UI is connected.                                                                                               | **BLOCKED**; current Edge runtime stops approved external execution.                                             |
 | MCP Custodian reads                                      | **CURRENT** bounded reader registrations and safe projections.                                        | `list_cases`, `get_case`, `get_findings`, `get_pending_approvals`, and `get_run` are conditional on deployed foundations; `get_findings` now projects bounded attribution and evidence descriptors. | Fresh authenticated production callability is **UNVERIFIED**.                                                    |
 | MCP run control                                          | Reserved tools exist.                                                                                 | `start_analysis` and `cancel_run` deliberately return unavailable.                                                        | **BLOCKED**, never simulated.                                                                                    |
@@ -398,26 +398,27 @@ Luna (`gpt-5.6-luna`), Terra (`gpt-5.6-terra`), Sol (`gpt-5.6-sol`), and Pro
 synthesis to Terra; an allowed persisted Sol or Pro tier can override the stage
 default. Policy must constrain the permitted tier.
 
-The planned provider request uses the Responses API with strict JSON Schema output,
-`store: false`, bounded system prompt and input evidence, structured extraction and
-synthesis schemas, a server-side API key, response parsing, refusal/invalid-output
-handling, timeouts, and versioned server-only pricing. The system instruction explicitly
+The provider request uses the official OpenAI JavaScript SDK on the Edge only, the
+Responses API with a strict Structured Outputs format generated from one Zod schema
+(`supabase/functions/custodian-run/openai-schema.ts`), `store: false`, a bounded system
+prompt and input evidence, a server-side API key, SDK retries disabled, one request per
+attempt, refusal/incomplete/invalid-output handling, a deadline that covers the
+response body, and versioned server-only pricing. The system instruction explicitly
 treats supplied evidence as untrusted data and says not to obey instructions inside it.
-The browser must never receive the provider key, pricing secret, or raw provider
-request.
+The synthesis contract carries analysis data only; it has no diff or tool-action
+payload. Each provider attempt records bounded diagnostic metadata (status,
+classification, validated error type/code/param, request id) and never the provider
+message, bodies, headers, prompts, evidence, or output. The browser must never receive
+the provider key, pricing secret, or raw provider request.
 
-This source plumbing is **PARTIAL** and must remain **BLOCKED** in operation. The browser
-constant `CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER` is `false`; the Edge Function
-constant `PROVIDER_EXECUTION_UNSUPPORTED` is `true`. No environment value can bypass
-either constant. While the Edge gate is true, retrieval stays provider-free. A
-synthesizing run records a blocked step and a `provider_execution_unsupported` outcome
-and does not reserve or fetch. The bounded synthesis path in `provider-attempt.ts` is
-not entered. That path, once a later activation opens the gate, is one synthesis
-attempt per run: reserve first, at most one Responses request, then settle. Extract is
-not a second paid call. M4D source prepares the start path. The hard gate remains.
-No documentation may describe a live provider run until a separate activation removes
-that gate and deployed proof exists. Secrets, pricing, the first paid run, deployed
-concurrency proof, and M5 are not done.
+Both source gates are open: `CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER` is `true` and
+`PROVIDER_EXECUTION_UNSUPPORTED` is `false`. No environment value can change either
+constant. Retrieval stays provider-free. The bounded synthesis path in
+`provider-attempt.ts` is one synthesis attempt per run: reserve first, at most one
+Responses request, then settle. Extract is not a second paid call. Two production runs
+reached the provider and failed with the hold left unresolved; they are immutable
+evidence. No deployed run has completed, so M4 proof is incomplete. Deployed
+concurrency proof and M5 are not done.
 
 ## 13. Budget and cost safety
 
@@ -999,28 +1000,25 @@ into release notes.
 | Frontend surfaces           | `src/routes/index.tsx`, `src/routes/inbox.tsx`, `src/routes/cases.index.tsx`, `src/routes/cases.$caseId.index.tsx`, `src/routes/run-room.tsx`, `src/routes/approvals.tsx`, `src/routes/observatory.tsx`, `src/components/custodian/approvals-surface.tsx`, `src/components/custodian/run-room-surface.tsx` | Current Desk, Inbox, Cases, inert Run Room, owner-gate Approvals, and scaffold Observatory. |
 | MCP                         | `src/lib/mcp/index.ts`, `src/lib/mcp/capability-handlers.ts`, `src/lib/mcp/tools/`, `src/lib/mcp/security.ts`                                                                                                                        | Bounded archive/Custodian client surface and authentication.                          |
 | Plugin guidance             | `plugins/the-excavatorium/skills/custodian/SKILL.md`, `plugins/the-excavatorium/.mcp.json`                                                                                                                                           | Client retrieval discipline and MCP endpoint metadata.                                |
-| Provider runtime            | `supabase/functions/custodian-run/index.ts`, `supabase/functions/custodian-run/runtime.ts`, `supabase/functions/custodian-run/provider-attempt.ts`, their tests                                                                     | Closed-gate handler, pricing, and the unreachable one-attempt synthesis lifecycle.    |
+| Provider runtime            | `supabase/functions/custodian-run/index.ts`, `runtime.ts`, `provider-attempt.ts`, `openai-provider.ts`, `openai-schema.ts`, `openai-diagnostics.ts`, their tests                                                                    | Handler, pricing, the one-attempt synthesis lifecycle, the official SDK transport, the Zod synthesis contract, and safe provider diagnostics. |
 | Core Custodian migrations   | `supabase/migrations/20260811190000_custodian_tables.sql` through `20260811190300_custodian_write_rpcs.sql`, plus `supabase/migrations/20260920090000_custodian_finding_attribution.sql`                                              | Case/analysis schema, indexes, RLS, write RPCs, and the M2 Finding attribution/materialization boundary. |
 | Runtime migrations          | `supabase/migrations/20260811191000_custodian_runtime_tables.sql` through `20260811191200_custodian_runtime_rpcs.sql`                                                                                                                | Runtime/policy/approval/automation/audit foundation.                                  |
 | Hardening and case scope    | `supabase/migrations/20260817163457_custodian_tool_policy_delete_guard.sql`, `supabase/migrations/20260822214714_harden_archive_and_custodian_boundaries.sql`, `supabase/migrations/20260904090000_custodian_case_archive_scope.sql`, `supabase/migrations/20260921140000_custodian_owner_gate.sql` | Policy, exact action, audit, cost hardening, selected archive scope, and the M3 owner-gate decision contract. |
 | M4A provider budget hold    | `supabase/migrations/20260921180000_custodian_provider_budget_hold.sql`, `supabase/tests/database/custodian_provider_budget_hold.sql`                                                                                                      | Hold storage separate from factual usage, reserve/settle and fail-closed budget RPCs, explicit owner-policy bootstrap, and a server-built read-only snapshot. Not a provider call. |
+| Provider diagnostics        | `supabase/migrations/20260923120000_custodian_provider_diagnostics.sql`, `supabase/tests/database/custodian_provider_diagnostics.sql`                                                                                                      | Owner-readable, service-role-written, append-only, bounded provider metadata per attempt. Not accounting. |
 | M2 database proof           | `supabase/tests/database/custodian_finding_attribution.sql`                                                                                                                                                                               | Deterministic structured-result, attribution, evidence, replay, RLS, automation-guard, and archive-isolation coverage. |
 | Database tests              | `supabase/tests/database/custodian_case_archive_scope.sql`, `supabase/tests/database/harden_archive_and_custodian_boundaries.sql`, `supabase/tests/database/custodian_owner_gate.sql`, `supabase/tests/database/custodian_provider_budget_hold.sql` | Source-level pgTAP/database contract evidence; execution must be recorded separately. |
 
 ### Known gaps and deliberate deferrals
 
-- Provider execution, paid calls, and live run controls remain **BLOCKED**. M4A is
-  merged and stores the provider budget hold and server-built read-only run bootstrap.
-  Settlement stays service-role only. M4B source can reserve, settle, and fetch once,
-  but the production handler does not enter that path while
-  `PROVIDER_EXECUTION_UNSUPPORTED` is true. M4C keeps the browser control closed.
-  M4D is implemented in source: explicit owner inputs, one readonly policy, one
-  persisted run, and a bounded `{ runId, invocationKey }` driver. The gates remain
-  closed. The owner must still choose the model allowlist and numeric cost/token
-  ceilings before activation; the policy RPC has no product-default tiers or ceilings.
-  Secrets and pricing are not configured. Production activation, deployed concurrency
-  proof, the first paid run, and M5 are not done. M4 is not complete, and production
-  behavior is **UNVERIFIED**.
+- M4A stores the provider budget hold and server-built read-only run bootstrap.
+  Settlement stays service-role only. M4B reserves, sends at most one request through
+  the official SDK, and settles truthfully. M4D is implemented: explicit owner inputs,
+  one readonly policy, one persisted run, and a bounded `{ runId, invocationKey }`
+  driver. Both source gates are open. The policy RPC still has no product-default tiers
+  or ceilings. Two production runs failed at the provider boundary; no deployed run has
+  completed. Deployed concurrency proof and M5 are not done. M4 is not complete. MCP
+  run controls remain **BLOCKED**.
 - Interactive Approvals exist as an owner decision surface; meaningful verification
   after execution and a selected internal V1 execution class still need implementation.
 - External execution is intentionally unsupported; canonical writes are not implied by

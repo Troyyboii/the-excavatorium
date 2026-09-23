@@ -5,6 +5,7 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   mapCustodianRunRow,
+  mapProviderDiagnosticRow,
   mapProviderHoldRow,
   mapRunStepRow,
   type CustodianRun,
@@ -64,6 +65,62 @@ function run() {
 }
 
 describe("Run Room surface", () => {
+  test("shows safe provider diagnostics only behind Technical details", () => {
+    const withDiagnostic = {
+      ...run(),
+      providerDiagnostic: mapProviderDiagnosticRow({
+        id: "00000000-0000-4000-8000-000000000020",
+        run_id: "00000000-0000-4000-8000-000000000001",
+        reservation_id: "00000000-0000-4000-8000-000000000010",
+        attempt_key: "provider-attempt:00000000-0000-4000-8000-000000000001:synthesize",
+        provider: "openai",
+        contact_state: "contacted",
+        classification: "openai_request_rejected",
+        http_status: 400,
+        request_id: "req_0123456789abcdef",
+        error_type: "invalid_request_error",
+        error_code: "invalid_json_schema",
+        error_param: "text.format.schema",
+        incomplete_reason: null,
+        created_at: "2026-09-23T12:00:00.000Z",
+        message: "Bearer sk-live-secret leaked provider text",
+      }),
+    };
+    const { container } = render(
+      <RunRoomSurface
+        runs={[withDiagnostic]}
+        providerHoldProjection="available"
+        online
+        loading={false}
+        error={null}
+      />,
+    );
+    const details = container.querySelector("details");
+    expect(details).not.toBeNull();
+    expect(details?.open).toBe(false);
+    expect(screen.getByText("Technical details")).toBeTruthy();
+    expect(screen.getByText("Request rejected")).toBeTruthy();
+    expect(screen.getByText("invalid_json_schema")).toBeTruthy();
+    expect(screen.getByText("text.format.schema")).toBeTruthy();
+    expect(screen.getByText("req_0123456789abcdef")).toBeTruthy();
+    expect(container.textContent).not.toContain("sk-live-secret");
+    expect(container.textContent).not.toContain("leaked provider text");
+  });
+
+  test("renders no technical details when a run has no diagnostic", () => {
+    const { container } = render(
+      <RunRoomSurface
+        runs={[{ ...run(), providerDiagnostic: null }]}
+        providerHoldProjection="available"
+        online
+        loading={false}
+        error={null}
+      />,
+    );
+    expect(container.querySelector("details")).toBeNull();
+    expect(screen.queryByText("Technical details")).toBeNull();
+  });
+
   test("shows recorded cost separately from a held budget and keeps start disabled", () => {
     render(
       <RunRoomSurface

@@ -6,27 +6,9 @@ import {
   trustedRuntimeSupabase,
   type AuthenticatedSupabase,
 } from "../_shared/http.ts";
-import {
-  boundedOutputBudget,
-  buildResponsesRequest,
-  calculateUsageCost,
-  CUSTODIAN_MODEL_PRICING_ENV,
-  extractResponsesJson,
-  isAllowedModelTiers,
-  isApprovalOutput,
-  maximumPotentialUsageCost,
-  readUsage,
-  resolveModelPricing,
-  resolveSystemPrompt,
-  selectRuntimeModel,
-  stepKey,
-  transitionKey,
-  EXTRACTION_SCHEMA,
-  SYNTHESIS_SCHEMA,
-  type ModelPricing,
-  type ModelTier,
-  type RunStage,
-} from "./runtime.ts";
+import { isAllowedModelTiers, transitionKey, type ModelTier } from "./runtime.ts";
+import { validSynthesis } from "./openai-schema.ts";
+import type { ProviderDiagnostic } from "./openai-diagnostics.ts";
 import {
   advanceCustodianRun,
   approvalIdempotencyKey,
@@ -45,6 +27,8 @@ import {
   type VerificationArtifacts,
 } from "./provider-attempt.ts";
 
+export { validFindingCandidate, validSynthesis } from "./openai-schema.ts";
+
 export const MAX_REQUEST_BYTES = 16_384;
 export const MAX_INVOCATION_KEY_LENGTH = 300;
 export const OPENAI_TIMEOUT_MS = 25_000;
@@ -52,24 +36,6 @@ export const MAX_EVIDENCE_CHARS = 80_000;
 export const PROVIDER_EXECUTION_UNSUPPORTED = false;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const APPROVAL_KINDS = [
-  "tool_action",
-  "canonical_write",
-  "external_write",
-  "archive_change",
-] as const;
-const FINDING_OUTCOMES = ["finding", "unresolved", "refusal", "no_finding"] as const;
-const FINDING_ANALYSIS_MODES = [
-  "plan",
-  "claim_review",
-  "evidence_gap",
-  "contradiction",
-  "timeline",
-  "causal",
-  "risk",
-  "decision",
-  "synthesis",
-] as const;
 const TERMINAL_STATES = new Set([
   "completed",
   "blocked",
@@ -389,200 +355,6 @@ async function materializeRuntimeFindings(ownerId: string, stepId: string): Prom
   });
 }
 
-function boundedObject(value: unknown, maxChars = 120_000): value is JsonRecord {
-  if (!isObject(value)) return false;
-  try {
-    return JSON.stringify(value).length <= maxChars;
-  } catch {
-    return false;
-  }
-}
-
-function boundedString(value: unknown, maxLength: number): value is string {
-  return typeof value === "string" && value.length <= maxLength;
-}
-
-function boundedInteger(value: unknown, minimum: number, maximum: number): value is number {
-  return (
-    typeof value === "number" && Number.isInteger(value) && value >= minimum && value <= maximum
-  );
-}
-
-function boundedStringArray(
-  value: unknown,
-  maxItems: number,
-  maxItemLength: number,
-): value is string[] {
-  return (
-    Array.isArray(value) &&
-    value.length <= maxItems &&
-    value.every((item) => boundedString(item, maxItemLength))
-  );
-}
-
-function validExtraction(value: unknown): value is JsonRecord {
-  if (
-    !isObject(value) ||
-    !hasOnlyKeys(value, [
-      "summary",
-      "facts",
-      "uncertainties",
-      "requiresApproval",
-      "proposedDiff",
-      "toolAction",
-    ])
-  )
-    return false;
-  return (
-    boundedString(value.summary, 6_000) &&
-    boundedStringArray(value.facts, 32, 1_000) &&
-    boundedStringArray(value.uncertainties, 32, 1_000) &&
-    typeof value.requiresApproval === "boolean" &&
-    boundedObject(value.proposedDiff) &&
-    boundedObject(value.toolAction)
-  );
-}
-
-export function validFindingCandidate(value: unknown): value is JsonRecord {
-  if (
-    !isObject(value) ||
-    !hasOnlyKeys(value, [
-      "outcome",
-      "title",
-      "conclusion",
-      "analysis_mode",
-      "confidence",
-      "supporting_evidence_ids",
-      "contrary_evidence_ids",
-      "uncertainties",
-      "assumptions",
-      "scope_limits",
-      "evidence_gaps",
-      "what_would_change_mind",
-      "revisit_condition",
-    ])
-  )
-    return false;
-  const outcome = value.outcome;
-  const supporting = value.supporting_evidence_ids;
-  const contrary = value.contrary_evidence_ids;
-  const caveatArrays = [
-    value.uncertainties,
-    value.assumptions,
-    value.scope_limits,
-    value.evidence_gaps,
-  ];
-  const hasMeaningfulCaveat = caveatArrays.some(
-    (items) =>
-      Array.isArray(items) && items.some((item) => typeof item === "string" && item.trim()),
-  );
-  return (
-    typeof outcome === "string" &&
-    FINDING_OUTCOMES.includes(outcome as (typeof FINDING_OUTCOMES)[number]) &&
-    boundedString(value.title, 500) &&
-    value.title.trim().length > 0 &&
-    boundedString(value.conclusion, 30000) &&
-    value.conclusion.trim().length > 0 &&
-    typeof value.analysis_mode === "string" &&
-    FINDING_ANALYSIS_MODES.includes(
-      value.analysis_mode as (typeof FINDING_ANALYSIS_MODES)[number],
-    ) &&
-    boundedInteger(value.confidence, 0, 100) &&
-    boundedStringArray(supporting, 32, 100) &&
-    boundedStringArray(contrary, 32, 100) &&
-    boundedStringArray(value.uncertainties, 32, 1000) &&
-    boundedStringArray(value.assumptions, 32, 1000) &&
-    boundedStringArray(value.scope_limits, 32, 1000) &&
-    boundedStringArray(value.evidence_gaps, 32, 1000) &&
-    boundedString(value.what_would_change_mind, 10000) &&
-    boundedString(value.revisit_condition, 10000) &&
-    (outcome !== "finding" || supporting.length > 0) &&
-    (outcome !== "unresolved" || hasMeaningfulCaveat)
-  );
-}
-
-export function validSynthesis(value: unknown): value is JsonRecord {
-  if (
-    !isObject(value) ||
-    !hasOnlyKeys(value, [
-      "summary",
-      "findings",
-      "requiresApproval",
-      "approvalKind",
-      "proposedDiff",
-      "toolAction",
-    ])
-  )
-    return false;
-  return (
-    boundedString(value.summary, 10_000) &&
-    Array.isArray(value.findings) &&
-    value.findings.length <= 64 &&
-    value.findings.every(validFindingCandidate) &&
-    typeof value.requiresApproval === "boolean" &&
-    typeof value.approvalKind === "string" &&
-    APPROVAL_KINDS.includes(value.approvalKind as (typeof APPROVAL_KINDS)[number]) &&
-    boundedObject(value.proposedDiff) &&
-    boundedObject(value.toolAction)
-  );
-}
-
-export function evaluatePricedProviderResponse(
-  upstream: unknown,
-  stage: RunStage,
-  pricing: ModelPricing,
-  latencyMs: number,
-): {
-  output: JsonRecord;
-  usage: RecordedUsage & { pricingVersion: string };
-} {
-  const usage = readUsage(upstream);
-  if (!usage) {
-    throw new SafeFailure(
-      502,
-      "openai_usage_missing",
-      "Custodian model response did not include complete usage accounting.",
-      latencyMs,
-    );
-  }
-  const costUsd = calculateUsageCost(usage, pricing);
-  if (costUsd === null) {
-    throw new SafeFailure(
-      502,
-      "model_pricing_invalid",
-      "Custodian model pricing could not be applied safely.",
-      latencyMs,
-    );
-  }
-  const accountedUsage: RecordedUsage & { pricingVersion: string } = {
-    tokens: usage.tokens,
-    costUsd,
-    latencyMs,
-    pricingVersion: pricing.version,
-  };
-  const output = extractResponsesJson(upstream);
-  if (output === null) {
-    throw new SafeFailure(
-      502,
-      "openai_invalid_output",
-      "Custodian model returned an invalid bounded result.",
-      latencyMs,
-      accountedUsage,
-    );
-  }
-  const invalidOutput = stage === "extract" ? !validExtraction(output) : !validSynthesis(output);
-  if (invalidOutput) {
-    throw new SafeFailure(
-      502,
-      "openai_invalid_output",
-      "Custodian model returned an invalid bounded result.",
-      latencyMs,
-      accountedUsage,
-    );
-  }
-  return { output, usage: accountedUsage };
-}
-
 function finiteDbNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim().length > 0) {
@@ -644,8 +416,10 @@ async function createApproval(
       approval_kind: output.approvalKind,
       title: "Custodian synthesis requires approval",
       rationale: output.summary,
-      proposed_diff: output.proposedDiff,
-      tool_action: output.toolAction,
+      // The readonly synthesis contract carries no diff or tool action. The
+      // approval records an owner decision about the synthesis only.
+      proposed_diff: {},
+      tool_action: {},
       provenance: { runtime: "custodian-run", stage: "synthesize", evidence_untrusted: true },
     },
     idempotency_key: approvalIdempotencyKey(run.id),
@@ -795,6 +569,20 @@ async function readVerificationArtifacts(
   };
 }
 
+async function recordProviderDiagnostic(
+  ownerId: string,
+  runId: string,
+  idempotencyKey: string,
+  diagnostic: ProviderDiagnostic,
+): Promise<void> {
+  await rpc(trustedRuntimeClient(), "custodian_record_provider_diagnostic", {
+    runtime_owner_id: ownerId,
+    run_id: runId,
+    idempotency_key: idempotencyKey,
+    diagnostic,
+  });
+}
+
 function createCustodianIo(auth: AuthenticatedSupabase): CustodianIo {
   const ownerId = auth.user.id;
   return {
@@ -852,8 +640,10 @@ function createCustodianIo(auth: AuthenticatedSupabase): CustodianIo {
       materializeRuntimeFindings(runtimeOwnerId, stepId),
     createApproval: (run, output) => createApproval(auth.client, run as AgentRun, output),
     readVerificationArtifacts: (runId) => readVerificationArtifacts(auth.client, runId),
+    recordProviderDiagnostic: (runtimeOwnerId, runId, idempotencyKey, diagnostic) =>
+      recordProviderDiagnostic(runtimeOwnerId, runId, idempotencyKey, diagnostic),
     getEnv: (name) => Deno.env.get(name),
-    fetchProvider: (url, init) => fetch(url, init),
+    fetchProvider: (input, init) => fetch(input, init),
     trustedRuntimeAvailable: () =>
       Boolean(Deno.env.get("SUPABASE_URL") && Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")),
     now: () => Date.now(),
