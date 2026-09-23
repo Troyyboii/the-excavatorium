@@ -15,7 +15,12 @@ import {
   type ProviderFetch,
 } from "./openai-provider.ts";
 import { providerDiagnostic, safeErrorParam, safeRequestId } from "./openai-diagnostics.ts";
-import { APPROVAL_KINDS, synthesisTextFormat } from "./openai-schema.ts";
+import {
+  APPROVAL_KINDS,
+  synthesisEvidenceIdsWithinSnapshot,
+  synthesisTextFormat,
+  validFindingCandidate,
+} from "./openai-schema.ts";
 import { UNTRUSTED_EVIDENCE_SYSTEM_GUARD } from "./runtime.ts";
 
 const apiKey = "sk-test-adapter-key";
@@ -117,6 +122,7 @@ const SUPPORTED_KEYWORDS = new Set([
   "items",
   "enum",
   "description",
+  "format",
   "minimum",
   "maximum",
   "minItems",
@@ -231,6 +237,95 @@ Deno.test("the generated Structured Outputs format is strict, fixed, and authori
     if (serialized.includes(`"${keyword}"`)) throw new Error(`schema emits ${keyword}`);
   }
   if (serialized.length > 120_000) throw new Error("schema exceeds the documented size budget");
+});
+
+Deno.test("Finding validation matches materialization evidence and caveat rules", () => {
+  const support = "11111111-1111-4111-8111-111111111111";
+  const contrary = "22222222-2222-4222-8222-222222222222";
+  const base = {
+    outcome: "finding",
+    title: "Supported finding",
+    conclusion: "The admitted evidence supports the conclusion.",
+    analysis_mode: "synthesis",
+    confidence: 80,
+    supporting_evidence_ids: [support],
+    contrary_evidence_ids: [],
+    uncertainties: [],
+    assumptions: [],
+    scope_limits: [],
+    evidence_gaps: [],
+    what_would_change_mind: "",
+    revisit_condition: "",
+  };
+
+  assertEquals(validFindingCandidate(base), true, "valid evidence-backed finding");
+  assertEquals(
+    validFindingCandidate({ ...base, supporting_evidence_ids: ["not-a-uuid"] }),
+    false,
+    "evidence ids must be UUIDs",
+  );
+  assertEquals(
+    validFindingCandidate({ ...base, uncertainties: ["   "] }),
+    false,
+    "caveat arrays reject blank strings",
+  );
+  assertEquals(
+    validFindingCandidate({
+      ...base,
+      outcome: "unresolved",
+      supporting_evidence_ids: [],
+      assumptions: ["assumption only"],
+      uncertainties: [],
+      evidence_gaps: [],
+    }),
+    false,
+    "unresolved requires uncertainty or evidence gap",
+  );
+  assertEquals(
+    validFindingCandidate({
+      ...base,
+      outcome: "unresolved",
+      supporting_evidence_ids: [],
+      uncertainties: ["material uncertainty"],
+    }),
+    true,
+    "unresolved accepts uncertainty",
+  );
+  assertEquals(
+    validFindingCandidate({ ...base, supporting_evidence_ids: [support, support] }),
+    false,
+    "supporting evidence ids must be unique",
+  );
+  assertEquals(
+    validFindingCandidate({
+      ...base,
+      supporting_evidence_ids: [support],
+      contrary_evidence_ids: [support],
+    }),
+    false,
+    "supporting and contrary evidence must not overlap",
+  );
+
+  const synthesis = {
+    summary: "summary",
+    findings: [{ ...base, contrary_evidence_ids: [contrary] }],
+    requiresApproval: false,
+    approvalKind: "tool_action",
+  };
+  assertEquals(
+    synthesisEvidenceIdsWithinSnapshot(synthesis, {
+      citable_evidence_ids: [support, contrary],
+    }),
+    true,
+    "admitted evidence ids are accepted",
+  );
+  assertEquals(
+    synthesisEvidenceIdsWithinSnapshot(synthesis, {
+      citable_evidence_ids: [support],
+    }),
+    false,
+    "out-of-snapshot evidence ids are rejected before materialization",
+  );
 });
 
 Deno.test("the guardrail rejects the legacy property-less action objects", () => {
