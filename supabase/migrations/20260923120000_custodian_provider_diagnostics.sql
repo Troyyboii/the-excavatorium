@@ -26,15 +26,11 @@ create table if not exists public.agent_provider_diagnostics (
   constraint agent_provider_diagnostics_run_fk
     foreign key (owner_id, case_id, run_id)
     references public.agent_runs (owner_id, case_id, id) on delete cascade,
-  constraint agent_provider_diagnostics_attempt_fk
-    foreign key (owner_id, run_id, attempt_key)
-    references public.agent_provider_reservations (owner_id, run_id, idempotency_key)
-    on delete cascade,
   constraint agent_provider_diagnostics_reservation_fk
     foreign key (reservation_id)
     references public.agent_provider_reservations (id) on delete cascade,
   constraint agent_provider_diagnostics_one_per_attempt
-    unique (owner_id, reservation_id),
+    unique (reservation_id),
   constraint agent_provider_diagnostics_provider_ck check (provider = 'openai'),
   constraint agent_provider_diagnostics_contact_ck
     check (contact_state in ('contacted', 'contact_uncertain')),
@@ -70,6 +66,14 @@ create table if not exists public.agent_provider_diagnostics (
   constraint agent_provider_diagnostics_contact_status_ck check (
     (contact_state = 'contacted' and http_status is not null)
     or (contact_state = 'contact_uncertain' and http_status is null)
+  ),
+  -- A readable provider response is proof of contact.
+  constraint agent_provider_diagnostics_response_contact_ck check (
+    classification not in (
+      'openai_completed', 'openai_refusal', 'openai_incomplete', 'openai_invalid_output',
+      'openai_invalid_response', 'openai_usage_missing'
+    )
+    or contact_state = 'contacted'
   )
 );
 
@@ -105,6 +109,9 @@ create policy agent_provider_diagnostics_select_own
 
 revoke all privileges on public.agent_provider_diagnostics from public, anon, authenticated;
 grant select on public.agent_provider_diagnostics to authenticated;
+-- Writes go only through custodian_record_provider_diagnostic. The service role
+-- keeps read access; referential cascades do not need these grants.
+revoke insert, update, delete, truncate on public.agent_provider_diagnostics from service_role;
 
 -- Service-role Edge runtime only, matching custodian_settle_provider_reservation.
 -- The diagnostic binds to an existing reservation for the owner, run, and
@@ -198,7 +205,7 @@ begin
   if recorded.id is null then
     select * into recorded
       from public.agent_provider_diagnostics d
-     where d.owner_id = reservation.owner_id and d.reservation_id = reservation.id;
+     where d.reservation_id = reservation.id;
     return pg_catalog.jsonb_build_object('diagnostic', to_jsonb(recorded), 'idempotent', true);
   end if;
   return pg_catalog.jsonb_build_object('diagnostic', to_jsonb(recorded), 'idempotent', false);

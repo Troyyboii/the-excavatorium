@@ -3,7 +3,7 @@
 -- service-role runtime, and they never touch reservation accounting.
 begin;
 
-select plan(19);
+select plan(21);
 
 set local role postgres;
 
@@ -284,6 +284,15 @@ begin
   begin
     perform public.custodian_record_provider_diagnostic(
       'd1d1d1d1-d1d1-4d1d-8d1d-d1d1d1d1d1d1', target_run, attempt,
+      jsonb_build_object('provider', 'openai', 'contact_state', 'contact_uncertain', 'classification', 'openai_completed')
+    );
+    raise exception 'a completed response without contact was stored';
+  exception
+    when check_violation then null;
+  end;
+  begin
+    perform public.custodian_record_provider_diagnostic(
+      'd1d1d1d1-d1d1-4d1d-8d1d-d1d1d1d1d1d1', target_run, attempt,
       jsonb_build_object('provider', 'openai', 'contact_state', 'contacted', 'classification', 'openai_request_rejected', 'http_status', 400, 'error_type', 42)
     );
     raise exception 'a non-text error_type was accepted';
@@ -293,7 +302,27 @@ begin
 end;
 $$;
 
-select ok(true, 'unsafe or oversized provider tokens are refused by the database bounds');
+select ok(true, 'unsafe, oversized, or incoherent provider metadata is refused by the database bounds');
+
+do $$
+declare
+  target_run uuid := (select id from public.agent_runs where idempotency_key = 'diag-run-a');
+  target_reservation uuid := (select id from public.agent_provider_reservations where run_id = target_run);
+begin
+  execute 'set local role service_role';
+  insert into public.agent_provider_diagnostics (
+    owner_id, case_id, run_id, reservation_id, attempt_key, provider, contact_state, classification, http_status
+  ) values (
+    'd1d1d1d1-d1d1-4d1d-8d1d-d1d1d1d1d1d1', 'd4d4d4d4-d4d4-4d4d-8d4d-d4d4d4d4d4d4', target_run,
+    target_reservation, 'forged-attempt', 'openai', 'contacted', 'openai_completed', 200
+  );
+  raise exception 'the service role inserted a diagnostic outside the writer RPC';
+exception
+  when insufficient_privilege then null;
+end;
+$$;
+
+select ok(true, 'the service role cannot write diagnostics except through the writer RPC');
 
 do $$
 declare
@@ -418,7 +447,20 @@ exception
 end;
 $$;
 
-select ok(true, 'provider diagnostics are append-only even for privileged roles');
+select ok(true, 'the append-only trigger rejects updates even for the table owner');
+
+set local role service_role;
+
+do $$
+begin
+  delete from public.agent_provider_diagnostics;
+  raise exception 'the service role deleted a provider diagnostic';
+exception
+  when insufficient_privilege then null;
+end;
+$$;
+
+select ok(true, 'the service role cannot delete or rewrite provider diagnostics');
 
 set local role authenticated;
 select set_config('request.jwt.claim.role', 'authenticated', true);

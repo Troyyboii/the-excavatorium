@@ -530,20 +530,85 @@ Deno.test("a malformed 2xx body is an invalid response after one fetch", async (
 
 Deno.test("the transport refuses a second request before reaching the network", async () => {
   let underlying = 0;
+  const authorization = `Bearer ${apiKey}`;
   const guarded = singleRequestTransport(() => {
     underlying += 1;
     return Promise.resolve(new Response("{}", { headers: { "x-request-id": "req_once" } }));
-  });
-  await guarded.fetch(OPENAI_RESPONSES_URL, { method: "POST" });
+  }, authorization);
+  const init = { method: "POST", headers: { authorization } };
+  await guarded.fetch(OPENAI_RESPONSES_URL, init);
   let refused = false;
   try {
-    await guarded.fetch(OPENAI_RESPONSES_URL, { method: "POST" });
+    await guarded.fetch(OPENAI_RESPONSES_URL, init);
   } catch {
     refused = true;
   }
   assertEquals(refused, true, "second request refused");
   assertEquals(underlying, 1, "underlying transport calls");
+  assertEquals(guarded.sent(), true);
   assertEquals(guarded.observed(), { httpStatus: 200, requestId: "req_once" });
+});
+
+Deno.test(
+  "the transport refuses replaced credentials or injected headers before the network",
+  async () => {
+    const authorization = `Bearer ${apiKey}`;
+    const cases: Array<Record<string, string>> = [
+      { authorization: "Bearer attacker" },
+      { authorization, "openai-project": "proj_x" },
+      { authorization, "openai-organization": "org_x" },
+      { authorization, "x-injected": "1" },
+      {},
+    ];
+    for (const headers of cases) {
+      let underlying = 0;
+      const guarded = singleRequestTransport(() => {
+        underlying += 1;
+        return Promise.resolve(new Response("{}"));
+      }, authorization);
+      let refused = false;
+      try {
+        await guarded.fetch(OPENAI_RESPONSES_URL, { method: "POST", headers });
+      } catch {
+        refused = true;
+      }
+      assertEquals(refused, true, `refused ${JSON.stringify(Object.keys(headers))}`);
+      assertEquals(underlying, 0, "no network call");
+      assertEquals(guarded.sent(), false, "not sent");
+    }
+    // The headers the SDK really sends pass the allowlist (covered end to end above).
+    const fake = transport(() => Promise.resolve(Response.json(successBody())));
+    const exchange = await send(fake);
+    assertEquals(exchange.kind, "response");
+    const names = [...new Headers(fake.calls[0]?.init.headers).keys()];
+    for (const name of names) {
+      if (!["accept", "authorization", "content-type", "user-agent"].includes(name)) {
+        if (!name.startsWith("x-stainless-")) throw new Error(`unexpected SDK header ${name}`);
+      }
+    }
+  },
+);
+
+Deno.test("a malformed output array in a 200 response keeps its usage readable", async () => {
+  for (const output of [null, [null], [{ type: "message", role: "assistant", content: null }]]) {
+    const fake = transport(() =>
+      Promise.resolve(
+        Response.json({
+          object: "response",
+          status: "completed",
+          output,
+          usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+        }),
+      ),
+    );
+    const exchange = await send(fake);
+    assertEquals(fake.calls.length, 1, "one fetch");
+    assertEquals(exchange.kind, "response", `response for ${JSON.stringify(output)}`);
+    if (exchange.kind !== "response") continue;
+    const read = interpretSynthesisResponse(exchange.body);
+    assertEquals(read.kind === "read" && read.usage?.tokens, 15, "usage kept");
+    assertEquals(read.kind === "read" && read.output.kind, "malformed", "output malformed");
+  }
 });
 
 Deno.test("diagnostics keep safe tokens and discard unsafe or free-text values", async () => {

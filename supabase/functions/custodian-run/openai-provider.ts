@@ -89,7 +89,9 @@ export function createOpenAiClient(input: {
   timeoutMs: number;
 }): OpenAI {
   // Every option the SDK would otherwise read from the environment is explicit,
-  // so no ambient variable can redirect the request or add credentials.
+  // so no ambient variable can redirect the request or turn on logging. The SDK
+  // still reads OPENAI_CUSTOM_HEADERS; singleRequestTransport refuses any
+  // request whose headers it changed.
   return new OpenAI({
     apiKey: input.apiKey,
     adminAPIKey: null,
@@ -107,31 +109,58 @@ export function createOpenAiClient(input: {
 
 export type ProviderExchange =
   | { kind: "response"; body: unknown; diagnostic: ResponseDiagnostic }
-  | { kind: "failure"; code: ProviderFailureCode; diagnostic: ProviderDiagnostic };
+  | { kind: "failure"; code: ProviderFailureCode; diagnostic: ProviderDiagnostic }
+  /** Refused before any network call, so the provider was definitely not contacted. */
+  | { kind: "not_sent" };
 
 type ResponseDiagnostic = { httpStatus: number; requestId: string | null };
 
-class ProviderFetchRepeatedError extends Error {
-  constructor() {
-    super("provider_fetch_repeated");
+class ProviderFetchRefusedError extends Error {
+  constructor(reason: string) {
+    super(reason);
   }
+}
+
+const SDK_HEADER_ALLOWLIST = new Set(["accept", "authorization", "content-type", "user-agent"]);
+
+/** The SDK's own platform headers plus the one expected credential, nothing else. */
+function unexpectedHeaders(init: RequestInit | undefined, authorization: string): boolean {
+  const headers = new Headers(init?.headers);
+  if (headers.get("authorization") !== authorization) return true;
+  for (const name of headers.keys()) {
+    if (!SDK_HEADER_ALLOWLIST.has(name) && !name.startsWith("x-stainless-")) return true;
+  }
+  return false;
 }
 
 /**
  * Wraps the transport so it can be used for exactly one request. A second call
- * is refused before reaching the network, whatever the SDK retry settings.
- * The first response's status and validated request id are kept for diagnostics.
+ * is refused before reaching the network, whatever the SDK retry settings. A
+ * request whose headers are not exactly the SDK defaults plus the expected
+ * key is also refused before the network, so an ambient variable such as
+ * OPENAI_CUSTOM_HEADERS cannot replace the credential or add an org, project,
+ * or arbitrary header. The response status and validated request id are kept
+ * for diagnostics.
  */
-export function singleRequestTransport(fetch: ProviderFetch): {
+export function singleRequestTransport(
+  fetch: ProviderFetch,
+  authorization: string,
+): {
   fetch: ProviderFetch;
   observed: () => ResponseDiagnostic | null;
+  sent: () => boolean;
 } {
   let used = false;
+  let sent = false;
   let observed: ResponseDiagnostic | null = null;
   return {
     fetch: async (url, init) => {
-      if (used) throw new ProviderFetchRepeatedError();
+      if (used) throw new ProviderFetchRefusedError("provider_fetch_repeated");
       used = true;
+      if (unexpectedHeaders(init, authorization)) {
+        throw new ProviderFetchRefusedError("provider_headers_unexpected");
+      }
+      sent = true;
       const response = await fetch(url, init);
       observed = {
         httpStatus: response.status,
@@ -140,15 +169,19 @@ export function singleRequestTransport(fetch: ProviderFetch): {
       return response;
     },
     observed: () => observed,
+    sent: () => sent,
   };
 }
 
 /**
- * Sends the one Responses request for an already-reserved attempt. The call
- * uses `responses.create` with the Zod-derived format rather than
- * `responses.parse`: parse throws on schema-invalid output, which would lose
- * the usage needed for truthful accounting. The same Zod schema validates the
- * output afterwards.
+ * Sends the one Responses request for an already-reserved attempt.
+ *
+ * The call uses `responses.create` with the Zod-derived format and reads the
+ * raw body itself rather than using `responses.parse` or the SDK's parsed
+ * value: parse throws on schema-invalid output, and the SDK's output-text
+ * helper throws on a malformed output array. Either would discard the usage
+ * needed for truthful accounting. The same Zod schema validates the output
+ * afterwards. Non-2xx statuses still surface as SDK `APIError`s.
  */
 export async function sendSynthesisRequest(input: {
   apiKey: string;
@@ -156,32 +189,45 @@ export async function sendSynthesisRequest(input: {
   timeoutMs: number;
   params: SynthesisRequestParams;
 }): Promise<ProviderExchange> {
-  const transport = singleRequestTransport(input.fetch);
-  const client = createOpenAiClient({
-    apiKey: input.apiKey,
-    fetch: transport.fetch,
-    timeoutMs: input.timeoutMs,
-  });
+  const transport = singleRequestTransport(input.fetch, `Bearer ${input.apiKey}`);
   // The deadline also covers reading the response body.
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), input.timeoutMs);
   try {
-    const { data, response, request_id } = await client.responses
+    const client = createOpenAiClient({
+      apiKey: input.apiKey,
+      fetch: transport.fetch,
+      timeoutMs: input.timeoutMs,
+    });
+    const response = await client.responses
       .create(input.params, {
         signal: controller.signal,
         timeout: input.timeoutMs,
         maxRetries: 0,
       })
-      .withResponse();
-    return {
-      kind: "response",
-      body: data,
-      diagnostic: {
-        httpStatus: response.status,
-        requestId: safeRequestId(request_id),
-      },
+      .asResponse();
+    const diagnostic = {
+      httpStatus: response.status,
+      requestId: safeRequestId(response.headers.get("x-request-id")),
     };
+    const text = await response.text();
+    let body: unknown;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      return {
+        kind: "failure",
+        code: "openai_invalid_response",
+        diagnostic: providerDiagnostic({
+          classification: "openai_invalid_response",
+          httpStatus: diagnostic.httpStatus,
+          requestId: diagnostic.requestId,
+        }),
+      };
+    }
+    return { kind: "response", body, diagnostic };
   } catch (error) {
+    if (!transport.sent()) return { kind: "not_sent" };
     return classifyExchangeFailure(error, controller.signal.aborted, transport.observed());
   } finally {
     clearTimeout(timeout);

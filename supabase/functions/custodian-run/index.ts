@@ -98,8 +98,6 @@ class SafeFailure extends Error {
     readonly status: 502 | 503 | 504,
     readonly code: string,
     readonly publicMessage: string,
-    readonly latencyMs = 0,
-    readonly usage?: RecordedUsage,
   ) {
     super(code);
   }

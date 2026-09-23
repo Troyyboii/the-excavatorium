@@ -2589,3 +2589,64 @@ Deno.test("racing invocations record one diagnostic for the single attempt", asy
   await advanceOpen(state, "race-c", ioFor(state));
   check("later replay does not fetch", state.fetches, 1);
 });
+
+Deno.test("a hung diagnostic write cannot delay or change settlement", async () => {
+  const known = world();
+  const order: string[] = [];
+  const base = ioFor(known);
+  const io: CustodianIo = {
+    ...base,
+    settleProviderReservation: (...args) => {
+      order.push("settle");
+      return base.settleProviderReservation(...args);
+    },
+    recordProviderDiagnostic: () => {
+      order.push("diagnostic");
+      return new Promise<void>(() => undefined);
+    },
+  };
+  const started = Date.now();
+  const result = await advanceOpen(known, "hung-diagnostic", io);
+  check("settles before the diagnostic", order, ["settle", "diagnostic"]);
+  check("known usage settled", known.reservation?.status, "settled_known");
+  check("run advanced", result.body.state, "advanced");
+  check("diagnostic wait is bounded", Date.now() - started < 10_000, true);
+
+  const unknown = world();
+  unknown.fetchImpl = () =>
+    Promise.resolve(providerErrorResponse(500, { error: { type: "server_error", code: null } }));
+  const unknownOrder: string[] = [];
+  const unknownBase = ioFor(unknown);
+  await advanceOpen(unknown, "hung-diagnostic-unknown", {
+    ...unknownBase,
+    settleProviderReservation: (...args) => {
+      unknownOrder.push("settle");
+      return unknownBase.settleProviderReservation(...args);
+    },
+    recordProviderDiagnostic: () => {
+      unknownOrder.push("diagnostic");
+      return new Promise<void>(() => undefined);
+    },
+  });
+  check("unknown settles first", unknownOrder, ["settle", "diagnostic"]);
+  assertUnknownContactHold(unknown, "openai_server_error");
+});
+
+Deno.test("malformed output with known usage settles the usage as known", async () => {
+  const state = world();
+  state.fetchImpl = () =>
+    Promise.resolve(
+      Response.json({
+        object: "response",
+        status: "completed",
+        output: null,
+        usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+      }),
+    );
+  await advance(state);
+  check("fetches once", state.fetches, 1);
+  check("usage known", state.reservation?.status, "settled_known");
+  check("actual tokens", state.reservation?.actualTokens, 15);
+  check("step code", state.steps.at(-1)?.output?.errorCode, "openai_invalid_output");
+  check("no materialization", state.materializeCalls, 0);
+});
