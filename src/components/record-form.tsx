@@ -29,6 +29,7 @@ import {
   emptyRecordData,
 } from "@/lib/types";
 import { normalizeTags } from "@/lib/format";
+import { validateRecordDraft } from "@/lib/record-draft-validation";
 import {
   applyDocumentDraft,
   documentDataSchema,
@@ -106,32 +107,7 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
   }
 
   function clientValidate(): string[] {
-    if (title.trim() === "") return ["Title is required."];
-    if (recordType === "tool") {
-      const d = data as ToolData;
-      if (!d.category.trim()) return ["Category is required."];
-      if (!d.status) return ["Status is required."];
-      if (d.replacementToolId && d.replacementToolId === existing?.id)
-        return ["Replacement tool cannot be the current record."];
-    } else if (recordType === "repository") {
-      const d = data as RepositoryData;
-      if (!d.githubUrl.trim()) return ["GitHub URL is required."];
-    } else if (recordType === "decision") {
-      const d = data as DecisionData;
-      if (!d.reason.trim()) return ["Reason is required."];
-      if (!d.decisionDate) return ["Decision date is required."];
-      if (!d.status) return ["Status is required."];
-      if (!d.confidence) return ["Confidence is required."];
-      if (d.supersedesDecisionId && d.supersedesDecisionId === existing?.id)
-        return ["Supersedes cannot reference the current record."];
-    } else if (recordType === "conversation") {
-      // Title is the only required field; project route is optional (null when blank).
-    } else if (recordType === "document") {
-      const d = data as DocumentData;
-      const result = documentDataSchema.safeParse(d);
-      if (!result.success) return formatDocumentValidationIssues(result.error.issues);
-    }
-    return [];
+    return validateRecordDraft(recordType, title, data, existing?.id);
   }
 
   async function onSubmit(e: React.FormEvent) {
