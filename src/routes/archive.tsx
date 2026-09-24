@@ -1,5 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
+import { archiveRecordHref } from "@/components/custodian/custodian-format";
 import { RecordList } from "@/components/record-list";
 import { ArchiveViewNav } from "@/components/archive-view-nav";
 import { useArchive } from "@/lib/archive";
@@ -112,8 +113,8 @@ function BrowseRecord({ record }: { record: ArchiveRecord }) {
     record.recordType === "repository" ? "Code repository" : RECORD_TYPE_LABEL[record.recordType];
   const firstLine = record.summary.trim() || firstUsefulLine(record);
   return (
-    <a
-      href={`/${record.recordType === "repository" ? "repositories" : record.recordType === "tool" ? "tools" : `${record.recordType}s`}/${record.id}`}
+    <Link
+      to={archiveRecordHref(record)}
       className="group grid min-h-20 grid-cols-[minmax(0,1fr)_auto] items-center gap-4 px-4 py-3 transition-colors hover:bg-record-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-5"
     >
       <span className="min-w-0">
@@ -136,7 +137,7 @@ function BrowseRecord({ record }: { record: ArchiveRecord }) {
       <span aria-hidden="true" className="text-brass">
         →
       </span>
-    </a>
+    </Link>
   );
 }
 
