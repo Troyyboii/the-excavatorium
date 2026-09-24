@@ -23,7 +23,11 @@ import {
   type ProviderFetch,
   type SynthesisRequestParams,
 } from "./openai-provider.ts";
-import { synthesisEvidenceIdsWithinSnapshot } from "./openai-schema.ts";
+import {
+  citableEvidenceIdsFromSnapshot,
+  classifySynthesisRejection,
+  synthesisEvidenceIdsWithinSnapshot,
+} from "./openai-schema.ts";
 
 export { classifyOpenAiHttpFailure } from "./openai-diagnostics.ts";
 export { OPENAI_RESPONSES_URL } from "./openai-provider.ts";
@@ -1383,6 +1387,7 @@ async function executeBoundedSynthesisAttempt(input: {
         evidence: run.input_snapshot,
       },
       maxOutputTokens,
+      citableEvidenceIds: citableEvidenceIdsFromSnapshot(run.input_snapshot),
     });
     inputBytes = serializedRequestBytes(params);
   } catch {
@@ -1595,6 +1600,14 @@ async function executeBoundedSynthesisAttempt(input: {
         : accepted
           ? null
           : "openai_invalid_output";
+  // Bounded local reason only; the rejected provider output itself is never kept.
+  const rejectionReason =
+    accepted || errorCode !== "openai_invalid_output"
+      ? null
+      : structured === null
+        ? "malformed_response_shape"
+        : (classifySynthesisRejection(structured, run.input_snapshot) ??
+          "invalid_synthesis_schema");
   // The classification describes the provider outcome. Pricing and settlement
   // failures after it are recorded on the run and reservation, not here.
   const diagnostic = responded(errorCode ?? "openai_completed", incompleteReason);
@@ -1619,7 +1632,13 @@ async function executeBoundedSynthesisAttempt(input: {
         actual_cost_usd: costUsd,
         step_status: accepted ? "completed" : "failed",
         input_payload: { stage: "synthesize", providerContact: true },
-        output_payload: accepted ? structured : { errorCode, usage_knowledge: "known" },
+        output_payload: accepted
+          ? structured
+          : {
+              errorCode,
+              usage_knowledge: "known",
+              ...(rejectionReason ? { validationReason: rejectionReason } : {}),
+            },
         latency_ms: latencyMs,
       });
     } catch {
