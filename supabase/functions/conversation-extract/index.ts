@@ -26,7 +26,6 @@ const corsHeaders = {
   Vary: "Origin",
 };
 
-const projectRoutes = ["The Forge", "The Chamber", "The Book", "General", "Do not preserve"];
 
 type CandidateRecord = { id: string; title: string; recordType: string };
 type QuotaDecision = { allowed: boolean; remaining: number; retryAfterSeconds: number };
@@ -35,7 +34,7 @@ type Extraction = {
   title: string;
   summary: string;
   tags: string[];
-  projectRoute: string;
+  projectRoute: string | null;
   highSignalFindings: string;
   decisionsMade: string;
   openLoops: string;
@@ -150,8 +149,11 @@ function isExtraction(value: unknown, allowedIds: Set<string>): value is Extract
     typeof output.summary === "string" &&
     output.summary.length <= 2_000 &&
     isStringList(output.tags, 12, 48) &&
-    typeof output.projectRoute === "string" &&
-    projectRoutes.includes(output.projectRoute) &&
+    // The model never invents a route; only an explicitly stated one is kept.
+    (output.projectRoute === null ||
+      (typeof output.projectRoute === "string" &&
+        output.projectRoute.trim().length > 0 &&
+        output.projectRoute.length <= 120)) &&
     [
       "highSignalFindings",
       "decisionsMade",
@@ -209,7 +211,7 @@ const responseSchema = {
     title: { type: "string", maxLength: 240 },
     summary: { type: "string", maxLength: 2_000 },
     tags: { type: "array", maxItems: 12, items: { type: "string", maxLength: 48 } },
-    projectRoute: { type: "string", enum: projectRoutes },
+    projectRoute: { anyOf: [{ type: "string", maxLength: 120 }, { type: "null" }] },
     highSignalFindings: { type: "string", maxLength: 5_000 },
     decisionsMade: { type: "string", maxLength: 5_000 },
     openLoops: { type: "string", maxLength: 5_000 },
@@ -395,7 +397,7 @@ export async function handleConversationExtract(
           {
             role: "system",
             content:
-              "Extract a careful, neutral draft for a private technical archive. Do not invent facts. Use concise plain text. Suggested record IDs must only come from the supplied candidate records. Return empty strings or arrays when unsupported.",
+              "Extract a careful, neutral draft for a private technical archive. Do not invent facts. Use concise plain text. Suggested record IDs must only come from the supplied candidate records. Return empty strings or arrays when unsupported. Set projectRoute to null unless the conversation explicitly names a project, workspace, or route; never invent or guess one.",
           },
           {
             role: "user",

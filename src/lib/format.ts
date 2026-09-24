@@ -10,10 +10,10 @@ import type {
   ToolData,
 } from "./types";
 import { documentDataSchema } from "./document";
+import { isValidProjectRoute } from "./project-route";
 import {
   CONFIDENCE_LEVELS,
   DECISION_STATUSES,
-  PROJECT_ROUTES,
   RATING_LEVELS,
   REPOSITORY_ACTIONS,
   TOOL_STATUSES,
@@ -221,10 +221,7 @@ function validateRecordData(type: RecordType, d: unknown): string | null {
         c.conversationDate === null ||
           (typeof c.conversationDate === "string" && ISO_DATE_RE.test(c.conversationDate)),
       ),
-      req(
-        "projectRoute",
-        typeof c.projectRoute === "string" && (PROJECT_ROUTES as string[]).includes(c.projectRoute),
-      ),
+      req("projectRoute", isValidProjectRoute(c.projectRoute)),
       req("highSignalFindings", typeof c.highSignalFindings === "string"),
       req("decisionsMade", typeof c.decisionsMade === "string"),
       req("openLoops", typeof c.openLoops === "string"),

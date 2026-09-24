@@ -3,6 +3,8 @@ import { useNavigate } from "@tanstack/react-router";
 import { Field, TextInput, TextArea, Select, Section } from "./form-parts";
 import { TagInput } from "./tag-input";
 import { RecordPicker } from "./record-picker";
+import { ProjectRouteField } from "./project-route-field";
+import { withNormalizedProjectRoute } from "@/lib/project-route";
 import { Banner } from "./page-parts";
 import { useSaveRecord, useDeleteRecord } from "@/lib/archive";
 import type {
@@ -21,7 +23,6 @@ import type {
 import {
   CONFIDENCE_LEVELS,
   DECISION_STATUSES,
-  PROJECT_ROUTES,
   RATING_LEVELS,
   REPOSITORY_ACTIONS,
   TOOL_STATUSES,
@@ -115,9 +116,6 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
     } else if (recordType === "repository") {
       const d = data as RepositoryData;
       if (!d.githubUrl.trim()) return ["GitHub URL is required."];
-    } else if (recordType === "conversation") {
-      const d = data as ConversationData;
-      if (!d.projectRoute) return ["Project route is required."];
     } else if (recordType === "decision") {
       const d = data as DecisionData;
       if (!d.reason.trim()) return ["Reason is required."];
@@ -154,7 +152,10 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
         title: title.trim(),
         summary,
         tags: normalizeTags(tags),
-        recordData: data as unknown as Record<string, unknown>,
+        recordData: withNormalizedProjectRoute(
+          recordType,
+          data as unknown as Record<string, unknown>,
+        ),
         selectedTargetIds: selectedLinks,
         documentFile: recordType === "document" ? (documentFile ?? undefined) : undefined,
         documentFileRemoved: recordType === "document" ? documentFileRemoved : false,
@@ -1146,24 +1147,10 @@ function DocumentFields({ data, patch }: { data: DocumentData; patch: Patcher<Do
             onChange={(e) => patch("pageCount", e.target.value ? Number(e.target.value) : null)}
           />
         </Field>
-        <Field label="Project route">
-          <Select
-            value={data.projectRoute ?? ""}
-            onChange={(e) =>
-              patch(
-                "projectRoute",
-                e.target.value ? (e.target.value as DocumentData["projectRoute"]) : null,
-              )
-            }
-          >
-            <option value="">— None —</option>
-            {PROJECT_ROUTES.map((route) => (
-              <option key={route} value={route}>
-                {route}
-              </option>
-            ))}
-          </Select>
-        </Field>
+        <ProjectRouteField
+          value={data.projectRoute}
+          onChange={(value) => patch("projectRoute", value)}
+        />
       </div>
       <DocumentInsightEditor
         label="High-signal findings"
@@ -1422,20 +1409,10 @@ function ConversationFields({
             onChange={(e) => patch("conversationDate", e.target.value || null)}
           />
         </Field>
-        <Field label="Project route" required>
-          <Select
-            value={data.projectRoute}
-            onChange={(e) =>
-              patch("projectRoute", e.target.value as ConversationData["projectRoute"])
-            }
-          >
-            {PROJECT_ROUTES.map((r) => (
-              <option key={r} value={r}>
-                {r}
-              </option>
-            ))}
-          </Select>
-        </Field>
+        <ProjectRouteField
+          value={data.projectRoute}
+          onChange={(value) => patch("projectRoute", value)}
+        />
       </div>
       <Field label="High-signal findings">
         <TextArea
@@ -1692,20 +1669,11 @@ function ExtractionReview({
       <Field label="Draft tags">
         <TagInput value={extraction.tags} onChange={(value) => patch("tags", value)} />
       </Field>
-      <Field label="Draft project route">
-        <Select
-          value={extraction.projectRoute}
-          onChange={(event) =>
-            patch("projectRoute", event.target.value as ConversationData["projectRoute"])
-          }
-        >
-          {PROJECT_ROUTES.map((route) => (
-            <option key={route} value={route}>
-              {route}
-            </option>
-          ))}
-        </Select>
-      </Field>
+      <ProjectRouteField
+        label="Draft project route"
+        value={extraction.projectRoute}
+        onChange={(value) => patch("projectRoute", value)}
+      />
       {(
         [
           ["High-signal findings", "highSignalFindings"],

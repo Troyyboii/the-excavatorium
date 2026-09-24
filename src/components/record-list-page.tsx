@@ -1,9 +1,9 @@
+import { ownerProjectRoutes } from "@/lib/project-route";
 import { useMemo, useState } from "react";
 import type {
   ArchiveRecord,
   Confidence,
   DecisionStatus,
-  ProjectRoute,
   RatingLevel,
   RecordType,
   RepositoryAction,
@@ -12,7 +12,6 @@ import type {
 import {
   CONFIDENCE_LEVELS,
   DECISION_STATUSES,
-  PROJECT_ROUTES,
   RATING_LEVELS,
   REPOSITORY_ACTIONS,
   TOOL_STATUSES,
@@ -68,7 +67,7 @@ type Filters = {
   toolCategory?: string;
   repoAction?: RepositoryAction | "awaiting" | "";
   repoRisk?: RatingLevel | "";
-  convRoute?: ProjectRoute | "";
+  convRoute?: string;
   convHasLoops?: boolean;
   decisionStatus?: DecisionStatus | "";
   decisionConfidence?: Confidence | "";
@@ -78,6 +77,7 @@ type Filters = {
 export function RecordListPage({ type, records }: { type: RecordType; records: ArchiveRecord[] }) {
   const items = useMemo(() => records.filter((r) => r.recordType === type), [records, type]);
   const [f, setF] = useState<Filters>({});
+  const routeOptions = useMemo(() => ownerProjectRoutes(items), [items]);
   const allTags = useMemo(() => {
     const canonical = new Map<string, string>();
     for (const r of items) {
@@ -210,12 +210,14 @@ export function RecordListPage({ type, records }: { type: RecordType; records: A
           ) : null}
           {type === "conversation" ? (
             <>
-              <FilterSelect
-                label="Route"
-                value={f.convRoute ?? ""}
-                onChange={(v) => setF({ ...f, convRoute: v as ProjectRoute | "" })}
-                options={PROJECT_ROUTES}
-              />
+              {routeOptions.length ? (
+                <FilterSelect
+                  label="Route"
+                  value={f.convRoute ?? ""}
+                  onChange={(v) => setF({ ...f, convRoute: v })}
+                  options={routeOptions}
+                />
+              ) : null}
               <label className="inline-flex min-h-11 w-full items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground sm:w-auto">
                 <input
                   type="checkbox"
