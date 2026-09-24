@@ -43,15 +43,44 @@ export function jsonResponse(
 
 export type AuthenticatedSupabase = { client: SupabaseClient; user: User; authorization: string };
 
+type EnvReader = (name: string) => string | undefined;
+
 /**
- * Server-only client for trusted runtime producer RPCs. The service-role key
- * is read only inside the Edge Function and is never returned to callers.
+ * Resolves the server-side Supabase secret used by the trusted admin client.
+ * Prefers the legacy SUPABASE_SERVICE_ROLE_KEY; otherwise reads the default
+ * key from the SUPABASE_SECRET_KEYS JSON bundle ({"default":"sb_secret_..."}).
+ * Returns null when neither is usable. The value is never logged.
  */
-export function trustedRuntimeSupabase(): SupabaseClient | null {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !serviceRoleKey) return null;
-  return createClient(supabaseUrl, serviceRoleKey, {
+export function resolveSupabaseServiceKey(
+  getEnv: EnvReader = (name) => Deno.env.get(name),
+): string | null {
+  const legacy = getEnv("SUPABASE_SERVICE_ROLE_KEY")?.trim();
+  if (legacy) return legacy;
+  const bundle = getEnv("SUPABASE_SECRET_KEYS")?.trim();
+  if (!bundle) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(bundle);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const preferred = (parsed as Record<string, unknown>).default;
+  if (typeof preferred === "string" && preferred.trim()) return preferred.trim();
+  return null;
+}
+
+/**
+ * Server-only client for trusted runtime producer RPCs. The secret key is
+ * read only inside the Edge Function and is never returned to callers.
+ */
+export function trustedRuntimeSupabase(
+  getEnv: EnvReader = (name) => Deno.env.get(name),
+): SupabaseClient | null {
+  const supabaseUrl = getEnv("SUPABASE_URL");
+  const serviceKey = resolveSupabaseServiceKey(getEnv);
+  if (!supabaseUrl || !serviceKey) return null;
+  return createClient(supabaseUrl, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
   });
 }

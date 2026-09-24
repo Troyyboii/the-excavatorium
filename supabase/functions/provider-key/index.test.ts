@@ -117,9 +117,12 @@ Deno.test("an unconfigured server never stores plaintext", async () => {
   const noCrypto = harness({ env: {} });
   const response = await noCrypto.handler(post({ action: "set", apiKey }));
   assertEquals(response.status, 503);
+  assertEquals((await response.json()).code, "encryption_config");
   assertEquals(noCrypto.calls.length, 0);
   const noTrusted = harness({ trusted: false });
-  assertEquals((await noTrusted.handler(post({ action: "set", apiKey }))).status, 503);
+  const trustedResponse = await noTrusted.handler(post({ action: "set", apiKey }));
+  assertEquals(trustedResponse.status, 503);
+  assertEquals((await trustedResponse.json()).code, "trusted_client");
   assertEquals(noTrusted.calls.length, 0);
 });
 

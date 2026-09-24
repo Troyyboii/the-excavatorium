@@ -2,6 +2,7 @@ import {
   authenticatedSupabase,
   allowedOrigin,
   jsonResponse,
+  resolveSupabaseServiceKey,
   responseHeaders,
   trustedRuntimeSupabase,
   type AuthenticatedSupabase,
@@ -671,7 +672,7 @@ function createCustodianIo(auth: AuthenticatedSupabase): CustodianIo {
     getEnv: (name) => Deno.env.get(name),
     fetchProvider: (input, init) => fetch(input, init),
     trustedRuntimeAvailable: () =>
-      Boolean(Deno.env.get("SUPABASE_URL") && Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")),
+      Boolean(Deno.env.get("SUPABASE_URL") && resolveSupabaseServiceKey()),
     now: () => Date.now(),
   };
 }
