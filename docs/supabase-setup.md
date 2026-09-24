@@ -77,12 +77,17 @@ authorized operator links the existing project and applies changes explicitly:
 ```text
 supabase db push --dry-run
 supabase db push
+supabase functions deploy provider-key
 supabase functions deploy conversation-extract
 supabase functions deploy document-extract
 supabase functions deploy document-save
 supabase functions deploy document-fetch
 supabase functions deploy custodian-run
+supabase functions deploy account-delete
 ```
+
+Provider contact for Custodian and excavate paths uses owner BYOK only. Do not
+deploy assuming a shared `OPENAI_API_KEY` will fund registered-user traffic.
 
 Require aligned local and remote migration history, an empty reviewed dry run
 when no schema change is expected, JWT verification left enabled, and retained

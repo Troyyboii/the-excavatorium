@@ -172,8 +172,40 @@ secrets and Auth settings, export/deletion scope, and remaining hosted steps.
 - [Supabase setup](./docs/supabase-setup.md) — migrations, owner-account
   bootstrap, secrets, and explicit Edge Function deployment. Hosted CI does not
   deploy Supabase.
+- [Diagnostics migration reconcile](./docs/migration-reconcile-diagnostics.md) —
+  operator-only ledger repair for hosted `20260923113236` vs source
+  `20260923120000` (no hosted apply from this doc alone).
 - [Supabase verification checklist](./docs/supabase-verification.md) —
   database, authentication, production, and Conversation Excavation checks.
+
+## License
+
+The Excavatorium is **source-available** under the
+[Business Source License 1.1](./LICENSE). That is **not** an OSI open-source
+license. The Additional Use Grant covers personal, internal, and academic use;
+other commercial use needs a separate license from the licensor. Change license
+on the Change Date in `LICENSE` is Apache-2.0.
+
+## Public beta limits
+
+The public beta is an authenticated private archive plus optional owner-funded
+AI features. Expect:
+
+- **BYOK only** for Custodian runs and Conversation/File Excavation — your
+  OpenAI key and Settings model; no shared operator key pays for those paths.
+- **No teams, sharing, billing, or social login** in this beta.
+- **MCP Custodian start/cancel** remain unavailable (`RUNTIME_UNAVAILABLE`).
+- **Hosted Auth** (signup open/closed, SMTP, CAPTCHA, redirects) and Edge
+  deploys lag the Git source until an operator completes the checklist in
+  [Public readiness](./docs/public-readiness.md). Source alone does not mean
+  every checkbox is live.
+- Account JSON export omits private Storage binaries; deletion is owner
+  self-serve in source and still needs hosted proof before relying on it in
+  production.
+
+## Contributing and security
+
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md) and [`SECURITY.md`](./SECURITY.md).
 
 ## Verification status and known limitations
 
