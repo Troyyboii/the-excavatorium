@@ -1,3 +1,5 @@
+import { defaultModelForTier } from "./openai-models";
+
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 export type JsonObject = { [key: string]: JsonValue };
@@ -284,11 +286,15 @@ export function shouldStopForBudget(limits: BudgetLimits, usage: BudgetUsage): b
   return budgetStopReason(limits, usage) !== null;
 }
 
+// Tier -> default catalog model, derived from the central OpenAI model catalog
+// (src/lib/openai-models.ts). The model a run actually uses is the owner's
+// stored choice, resolved by the Custodian runtime; this map only names the
+// tiers and the default model of each.
 export const MODEL_ALLOWLIST = {
-  luna: "gpt-5.6-luna",
-  terra: "gpt-5.6-terra",
-  sol: "gpt-5.6-sol",
-  pro: "gpt-5.6-pro",
+  luna: defaultModelForTier("luna"),
+  terra: defaultModelForTier("terra"),
+  sol: defaultModelForTier("sol"),
+  pro: defaultModelForTier("pro"),
 } as const;
 export type ModelTier = keyof typeof MODEL_ALLOWLIST;
 export type ModelStage = "extract" | "synthesize";

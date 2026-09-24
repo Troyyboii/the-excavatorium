@@ -144,7 +144,21 @@ server-only, versioned `CUSTODIAN_MODEL_PRICING_JSON` configuration and a
 database-backed per-run provider-call reservation so concurrent invocations
 cannot spend the same remaining budget.
 
+## Accounts and bring-your-own OpenAI key
+
+Anyone can create an account. A new account is an empty private archive and
+needs no AI provider key. Provider-backed Custodian work runs on the owner's own
+OpenAI API key, encrypted server-side and never readable again, with the model
+chosen from a fixed six-model list in Settings. Conversation and File Excavation
+still use the server-side key. See
+[Public readiness](./docs/public-readiness.md) for the architecture, required
+secrets and Auth settings, export/deletion scope, and open cost decisions.
+
 ## Detailed setup and verification
+
+- [Public readiness](./docs/public-readiness.md) — signup, empty accounts,
+  bring-your-own OpenAI key, and the release-time checklist. Nothing there is
+  deployed by source alone.
 
 - [Custodian program](./docs/custodian-program.md) — the canonical long-lived
   product, architecture, authority, and implementation program for The Custodian;

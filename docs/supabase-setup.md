@@ -212,6 +212,12 @@ upstream errors, and does not persist extraction output in The Excavatorium or
 the Edge Function. The OpenAI request explicitly uses `store: false`; standard
 OpenAI API abuse-monitoring retention policies may still apply.
 
+> **Scope of `OPENAI_API_KEY`.** It funds Conversation and File Excavation only.
+> The Custodian (`custodian-run`) no longer reads it: provider-backed Custodian
+> work uses each owner's own encrypted key (see
+> [Public readiness](./public-readiness.md), which also lists the
+> `PROVIDER_KEY_ENCRYPTION_KEYS` secrets and the `provider-key` function).
+
 `OPENAI_API_KEY` must exist only in Supabase Edge Function secrets. Do not put
 it in a `VITE_*` variable, `.env.example`, frontend source, Git, logs, or error
 messages. Suggested record IDs are untrusted draft values; the existing

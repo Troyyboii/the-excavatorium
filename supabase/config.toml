@@ -12,3 +12,6 @@ verify_jwt = true
 
 [functions.document-fetch]
 verify_jwt = true
+
+[functions.provider-key]
+verify_jwt = true

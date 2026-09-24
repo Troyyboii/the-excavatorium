@@ -27,6 +27,11 @@ export function createSessionStore(auth: SessionAuthClient) {
   let started = false;
   let authEventRevision = 0;
   let restoreRequestRevision = 0;
+  // True between a PASSWORD_RECOVERY auth event and the owner either setting a
+  // new password or signing out. It is in-memory only; a reload of the
+  // recovery session falls back to the normal signed-in shell, where Settings
+  // offers the ordinary change-password form.
+  let recoveryPending = false;
 
   function emit() {
     for (const listener of listeners) listener();
@@ -88,6 +93,8 @@ export function createSessionStore(auth: SessionAuthClient) {
     const preSubscriptionRevision = authEventRevision;
     auth.onAuthStateChange((event, session) => {
       authEventRevision += 1;
+      if (event === "PASSWORD_RECOVERY") recoveryPending = true;
+      if (event === "SIGNED_OUT") recoveryPending = false;
       // USER_UPDATED can retain both the user id and token while changing
       // profile/email metadata. It is still authoritative and must reach
       // subscribers so account-dependent UI does not remain stale.
@@ -112,6 +119,12 @@ export function createSessionStore(auth: SessionAuthClient) {
     getSnapshot: () => currentState,
     getServerSnapshot: () => SERVER_STATE,
     retry: restoreSession,
+    isRecoveryPending: () => recoveryPending,
+    clearRecovery: () => {
+      if (!recoveryPending) return;
+      recoveryPending = false;
+      emit();
+    },
   };
 }
 
@@ -123,6 +136,15 @@ export function useSession(): SessionState {
     sessionStore.getSnapshot,
     sessionStore.getServerSnapshot,
   );
+}
+
+/** True while the owner arrived through a password-reset link and has not yet chosen a new password. */
+export function usePasswordRecoveryPending(): boolean {
+  return useSyncExternalStore(sessionStore.subscribe, sessionStore.isRecoveryPending, () => false);
+}
+
+export function finishPasswordRecovery(): void {
+  sessionStore.clearRecovery();
 }
 
 export function retrySessionRestoration(): Promise<void> {

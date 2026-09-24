@@ -3,7 +3,7 @@
     "strict": true
   },
   "tasks": {
-    "check": "deno check --no-lock conversation-extract/index.ts document-extract/index.ts document-save/index.ts custodian-run/index.ts document-fetch/index.ts",
-    "test": "deno test --no-lock conversation-extract/request.test.ts document-extract/document.test.ts document-save/index.test.ts custodian-run/runtime.test.ts custodian-run/provider-attempt.test.ts custodian-run/openai-provider.test.ts document-fetch/runtime.test.ts document-fetch/authorization.test.ts"
+    "check": "deno check --no-lock conversation-extract/index.ts document-extract/index.ts document-save/index.ts custodian-run/index.ts document-fetch/index.ts provider-key/index.ts",
+    "test": "deno test --no-lock conversation-extract/request.test.ts document-extract/document.test.ts document-save/index.test.ts custodian-run/runtime.test.ts custodian-run/provider-attempt.test.ts custodian-run/openai-provider.test.ts document-fetch/runtime.test.ts document-fetch/authorization.test.ts _shared/openai-models.test.ts _shared/provider-key-crypto.test.ts provider-key/index.test.ts custodian-run/owner-provider-key.test.ts"
   }
 }

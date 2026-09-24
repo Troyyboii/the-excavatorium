@@ -11,6 +11,7 @@ import {
   useRestoreArchive,
 } from "@/lib/archive";
 import { PageHeader, Banner, Toast } from "@/components/page-parts";
+import { ProviderSection } from "@/components/provider-settings";
 import {
   backupFilename,
   buildBackup,
@@ -54,6 +55,7 @@ function Page() {
       <fieldset disabled={!online} className="space-y-6 disabled:opacity-75">
         <AccountSection email={email} setToast={setToast} setError={setError} />
         <PasswordSection />
+        <ProviderSection setToast={setToast} setError={setError} />
         <BackupSection q={q} online={online} setToast={setToast} setError={setError} />
         <StorageSection />
         <DestructiveSection setToast={setToast} setError={setError} />
@@ -346,6 +348,11 @@ function BackupSection({
           Loading the complete archive… Import and restore enable once it is ready.
         </p>
       ) : null}
+      <p className="text-sm text-muted-foreground">
+        The JSON backup contains your archive records and the links between them. It does not
+        include uploaded document files, Investigations, Findings, approvals, Custodian run history,
+        or your provider API key.
+      </p>
       <div className="flex flex-wrap gap-2">
         <button
           type="button"

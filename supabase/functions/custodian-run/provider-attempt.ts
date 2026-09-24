@@ -4,7 +4,7 @@ import {
   classifyModelPricing,
   CUSTODIAN_MODEL_PRICING_ENV,
   maximumPotentialUsageCost,
-  MODEL_ALLOWLIST,
+  resolveOwnerModel,
   resolveSystemPrompt,
   type ModelPricing,
   type ModelTier,
@@ -196,6 +196,11 @@ export type ApprovalIdentity = {
   exactActionHash: string;
 };
 
+export type OwnerProviderKey =
+  | { status: "ok"; apiKey: string }
+  | { status: "missing" }
+  | { status: "unreadable" };
+
 export type CustodianIo = {
   getRun(runId: string): Promise<SynthesisRun>;
   getBudget(runId: string): Promise<BudgetSnapshot>;
@@ -242,6 +247,17 @@ export type CustodianIo = {
     idempotencyKey: string,
     diagnostic: ProviderDiagnostic,
   ): Promise<void>;
+  /**
+   * The owner's stored model choice (owner-scoped read), or null when none is
+   * set. Never a default and never another owner's choice.
+   */
+  getOwnerModelPreference(ownerId: string): Promise<string | null>;
+  /**
+   * The owner's own OpenAI key, decrypted inside the trusted runtime for this
+   * one attempt. `ownerId` is the authenticated caller; the lookup is keyed by
+   * it alone. The plaintext must never be logged, stored, or returned.
+   */
+  getOwnerProviderKey(ownerId: string): Promise<OwnerProviderKey>;
   getEnv(name: string): string | undefined;
   /** The only provider transport. The OpenAI SDK sends its one request through it. */
   fetchProvider: ProviderFetch;
@@ -1259,7 +1275,39 @@ async function executeBoundedSynthesisAttempt(input: {
       502,
     );
   }
-  const model = MODEL_ALLOWLIST[run.model_tier];
+  let preferredModel: string | null;
+  try {
+    preferredModel = await io.getOwnerModelPreference(ownerId);
+  } catch {
+    return transitionFailure(
+      io,
+      run,
+      input.invocationKey,
+      "blocked",
+      "model_preference_unavailable",
+      "The owner's Custodian model choice could not be read, so provider execution remains blocked.",
+      emptyAccounting(run),
+      503,
+    );
+  }
+  const modelChoice = resolveOwnerModel(preferredModel, run.model_tier);
+  if (!modelChoice.ok) {
+    return transitionFailure(
+      io,
+      run,
+      input.invocationKey,
+      "blocked",
+      modelChoice.code,
+      modelChoice.code === "model_not_selected"
+        ? "No Custodian model is selected. Choose a model in Settings before provider-backed work."
+        : modelChoice.code === "model_tier_mismatch"
+          ? "The selected Custodian model does not match this run's model tier. No other model was substituted."
+          : "The selected Custodian model is not on the supported list. No other model was substituted.",
+      emptyAccounting(run),
+      409,
+    );
+  }
+  const model = modelChoice.model;
   const pricingClass = classifyModelPricing(io.getEnv(CUSTODIAN_MODEL_PRICING_ENV), model);
   if (pricingClass.status !== "ready") {
     const missing = pricingClass.status === "missing";
@@ -1292,19 +1340,28 @@ async function executeBoundedSynthesisAttempt(input: {
       502,
     );
   }
-  const apiKey = io.getEnv("OPENAI_API_KEY");
-  if (!apiKey) {
+  let ownerKey: OwnerProviderKey;
+  try {
+    ownerKey = await io.getOwnerProviderKey(ownerId);
+  } catch {
+    ownerKey = { status: "unreadable" };
+  }
+  if (ownerKey.status !== "ok") {
+    const missing = ownerKey.status === "missing";
     return transitionFailure(
       io,
       run,
       input.invocationKey,
       "blocked",
-      "openai_not_configured",
-      "Custodian model service is not configured.",
+      missing ? "provider_key_not_configured" : "provider_key_unreadable",
+      missing
+        ? "No OpenAI API key is configured for this owner. Add your own key in Settings to run provider-backed Custodian work."
+        : "The owner's stored OpenAI API key could not be read. Replace it in Settings.",
       emptyAccounting(run),
-      503,
+      missing ? 409 : 503,
     );
   }
+  const apiKey = ownerKey.apiKey;
   const maxOutputTokens = boundedOutputBudget(input.budget.run_tokens_remaining);
   if (maxOutputTokens < 1) {
     return transitionFailure(

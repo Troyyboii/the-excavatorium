@@ -77,6 +77,14 @@ Retain the outputs. They must contain no secrets. Do not treat a GitHub reposito
 
 ## 5. Provider transport and diagnostics (source)
 
+> **Credential source changed.** Wherever this section says the server holds the
+> OpenAI key, read it as: the request uses the calling owner's own key, decrypted
+> inside the trusted runtime for that one attempt (bring-your-own key). The
+> server-wide `OPENAI_API_KEY` is not used by `custodian-run`, and the model is
+> the owner's stored choice from the six-model catalog. Transport, reservation,
+> one-attempt, and diagnostic guarantees below are unchanged. See
+> [Public readiness](./public-readiness.md).
+
 - **Transport.** The official OpenAI JavaScript SDK (`npm:openai@7.20.0`, Edge-only; the frontend bundle does not include it) owns the Responses request in `supabase/functions/custodian-run/openai-provider.ts`. `provider-attempt.ts` keeps reservation, idempotency, cancellation, settlement, and authority.
 - **One request per attempt.** The SDK client is created with `maxRetries: 0`, and the injected transport refuses a second fetch before it reaches the network. It also refuses, before the network, any request whose headers differ from the SDK defaults plus the expected key; a request that fails or is refused before the network is released as uncontacted (`provider_request_not_sent`). The deadline covers headers and body. The raw response body is parsed by the runtime, so a malformed output array still leaves its usage readable. Base URL, organization, project, admin key, and logging are explicit, so no ambient environment variable redirects the request, adds a credential, or turns on logging. The SDK still reads `OPENAI_CUSTOM_HEADERS`; if it changes the request headers, the request is refused as above. Do not set it on the function.
 - **`store: false`** is set on every synthesis request.

@@ -1,7 +1,8 @@
 import { useLayoutEffect, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { retrySessionRestoration, useSession } from "@/lib/session";
+import { retrySessionRestoration, usePasswordRecoveryPending, useSession } from "@/lib/session";
 import { LoginScreen } from "./login-screen";
+import { ResetPasswordScreen } from "./reset-password-screen";
 import { AppShell } from "./app-shell";
 
 /**
@@ -21,6 +22,7 @@ import { AppShell } from "./app-shell";
 export function AuthGate({ children }: { children: ReactNode }) {
   const s = useSession();
   const qc = useQueryClient();
+  const recoveryPending = usePasswordRecoveryPending();
 
   const currentUserId = s.status === "signed-in" ? s.session.user.id : null;
 
@@ -82,6 +84,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }
   if (s.status === "signed-out") {
     return <LoginScreen />;
+  }
+  if (recoveryPending) {
+    return <ResetPasswordScreen />;
   }
   return <AppShell email={s.session.user.email ?? null}>{children}</AppShell>;
 }

@@ -8,6 +8,7 @@ import {
 } from "../_shared/http.ts";
 import { isAllowedModelTiers, transitionKey, type ModelTier } from "./runtime.ts";
 import { validSynthesis } from "./openai-schema.ts";
+import { parseStoredCredential, resolveOwnerProviderKey } from "./owner-provider-key.ts";
 import type { ProviderDiagnostic } from "./openai-diagnostics.ts";
 import {
   advanceCustodianRun,
@@ -640,6 +641,33 @@ function createCustodianIo(auth: AuthenticatedSupabase): CustodianIo {
     readVerificationArtifacts: (runId) => readVerificationArtifacts(auth.client, runId),
     recordProviderDiagnostic: (runtimeOwnerId, runId, idempotencyKey, diagnostic) =>
       recordProviderDiagnostic(runtimeOwnerId, runId, idempotencyKey, diagnostic),
+    getOwnerModelPreference: async (runtimeOwnerId) => {
+      // Owner-scoped read under the caller's own JWT: RLS returns only this
+      // owner's row, and the explicit owner filter mirrors it.
+      const { data, error } = await auth.client
+        .from("owner_provider_settings")
+        .select("model_name")
+        .eq("owner_id", runtimeOwnerId)
+        .eq("provider", "openai")
+        .maybeSingle();
+      if (error) throw new RpcFailure();
+      return data && typeof data.model_name === "string" ? data.model_name : null;
+    },
+    getOwnerProviderKey: (runtimeOwnerId) =>
+      resolveOwnerProviderKey({
+        ownerId: runtimeOwnerId,
+        getEnv: (name) => Deno.env.get(name),
+        fetchCredential: async (credentialOwnerId) => {
+          const { data, error } = await trustedRuntimeClient().rpc(
+            "custodian_get_provider_credential",
+            { runtime_owner_id: credentialOwnerId },
+          );
+          if (error) throw new RpcFailure();
+          const parsed = parseStoredCredential(data);
+          if (parsed === "malformed") throw new RpcFailure();
+          return parsed;
+        },
+      }),
     getEnv: (name) => Deno.env.get(name),
     fetchProvider: (input, init) => fetch(input, init),
     trustedRuntimeAvailable: () =>
