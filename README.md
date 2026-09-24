@@ -1,100 +1,106 @@
+<p align="center">
+  <img src="./public/brand/excavatorium-lantern.png" alt="The Excavatorium lantern" height="72">
+</p>
+
 # The Excavatorium
-
-**The Excavatorium is a private archive for things you want to remember, connect, and investigate later with AI.**
-
-It is currently in **beta**.
-
-[Open The Excavatorium](https://the-excavatorium.lovable.app)
-
-## What you can do
-
-- Save tools, repositories, conversations, decisions, and documents.
-- Link related records together and follow backlinks.
-- Search your Archive and browse it through connections and timeline views.
-- Upload and excavate supported documents into editable drafts.
-- Turn long AI conversations into structured records.
-- Create **Investigations**, choose evidence from your Archive, and ask the **Custodian** to examine it.
-- Keep model Findings separate from your own judgment.
-- Export your Archive or your broader account data.
-- Connect The Excavatorium to compatible AI clients through MCP.
-
-The basic Archive does not need an AI key.
-
-## Quick start
-
-1. Create an account.
-2. Add a few records to your Archive.
-3. Link anything that belongs together.
-4. If you want AI features, open **Settings**, add your own OpenAI API key, and choose a model.
-5. Create an **Investigation**, select the Archive material you want examined, and run the Custodian.
-6. Review the Finding and decide what, if anything, you want to do with it.
-
-That is the basic loop:
 
 **The Archive remembers. The Custodian examines. The Owner decides.**
 
-## AI features and BYOK
+The Excavatorium is an owner-controlled archive and judgment layer for AI.
 
-The Excavatorium itself does not provide a shared OpenAI allowance.
+Save the things that matter — conversations, documents, decisions, tools, repositories, and the context around them — into a durable private Archive. Then let the Custodian examine a bounded set of that evidence, without ever silently turning model output into truth.
 
-Provider-backed features use **your own OpenAI API key**:
+**[Open the live beta →](https://the-excavatorium.lovable.app)**
 
-- Custodian Investigations
-- Conversation Excavation
-- File / Document Excavation
+> **Public beta.** The core loop works and is in daily use, and it is still rough around the edges. See [Beta limitations](#beta-limitations).
 
-Your key is encrypted server-side. The app does not expose the plaintext key back to the browser, and there is no operator-key fallback for normal user requests.
+<p align="center">
+  <img src="./docs/images/home-empty.png" alt="The Excavatorium Home for a new, empty Archive" width="900">
+</p>
+<p align="center"><sub>A new account: a private Archive that starts empty. No sample data, no shared content.</sub></p>
 
-Everything that does not contact the AI provider remains usable without a key.
+## Why it exists
 
-## Privacy
+AI work piles up in places that forget. A useful conversation is buried in a chat history, a decision loses its reasons, a document's real claims are never extracted, and every model answer sounds equally sure of itself.
 
-Each account has its own private Archive.
+The Excavatorium is built around one rule: **you keep the record, and you keep the authority.** Evidence lives in your Archive. AI reads only what you select. What it concludes is stored as an attributable interpretation you can accept, revise, or reject — never as fact.
 
-Supabase Row Level Security and owner-scoped application boundaries are used to isolate user data. Uploaded document files are stored privately. AI requests use the owner's configured key and send requests with `store: false`.
+## The doctrine
 
-The app does not automatically turn model output into owner truth. Findings stay attributable to the Investigation, run, model, and evidence that produced them.
+### The Archive remembers
 
-## Beta notes
+A private, owner-scoped record space for **tools, repositories, conversations, decisions, and documents**. Records carry tags and optional project or route metadata *you* define, link to each other with plain-language relationships, and can be found again through search, connections, and a timeline. Nothing in it is shared, and nothing is inferred as a link unless you or a persisted rule made it.
 
-This is a real beta, not a finished commercial product.
+### The Custodian examines
 
-Expect rough edges and ongoing changes to the UI, data model, integrations, and workflows. There are currently no teams, billing, social login, or shared Archives.
+You open an **Investigation**: a question, the Archive records you choose as evidence, and any background context you want to add. The Custodian examines only that bounded material and returns a structured result: a conclusion, the evidence that supports it, tensions and alternatives, what is uncertain or missing, and what would change its mind. If the evidence is not there, the honest output is *unresolved*, not a confident guess.
 
-MCP retrieval is available for owner-scoped Archive access. Some Custodian actions exposed through MCP are intentionally still unavailable while the runtime is tightened further.
+### The Owner decides
 
-If something breaks, open an issue in this repository. For security problems, use the contact method in [SECURITY.md](./SECURITY.md) instead of posting sensitive details publicly.
+A **Custodian Finding** is an examination output. It is recorded with the Investigation, run, model, and evidence that produced it, and it never becomes your judgment on its own. Your own decisions stay separate, and disagreeing with a Finding never erases it.
+
+## What works today
+
+- **Private Archive** — five record types, tags, optional owner-defined project route, per-account isolation enforced by Supabase Row Level Security.
+- **Links, search, and timeline** — follow backlinks, browse connections, search across everything, and read your Archive chronologically.
+- **Conversation excavation** — paste a long AI conversation and get an editable structured draft: findings, decisions, open loops, reusable prompts. Nothing is saved until you apply and save it.
+- **Document excavation** — upload a PDF, Markdown, or text file (up to 10 MB) and get an editable draft with cited source references. Files are stored privately.
+- **Investigations and Findings** — evidence-bounded analysis with Findings kept separate from Owner Judgment.
+- **Bring your own key** — provider-backed features use your own OpenAI API key.
+- **Export and portability** — export your Archive, or your broader account data, and delete your account through the product.
+- **MCP** — an OAuth-backed MCP server so compatible AI clients can read your own Archive within the same owner boundary.
+
+## A first session
+
+1. Create an account. Your Archive starts empty; no AI key is needed to use it.
+2. Add a few records — paste a conversation, upload a document, note a decision — and link the ones that belong together.
+3. To use AI features, open **Settings**, add your OpenAI API key, and choose a model.
+4. Start an **Investigation**: write the question, select the Archive material to examine, and run the Custodian.
+5. Read the Finding, check its evidence, and decide what — if anything — you want to do with it.
+
+## Bring your own key
+
+The Excavatorium does not provide a shared AI allowance and has no operator-key fallback. **Every provider-backed feature uses your own OpenAI API key**: Custodian Investigations, conversation excavation, and document excavation. Everything that does not contact the provider works without a key.
+
+- Your key is encrypted on the server before it is stored, and the plaintext key is never returned to the browser.
+- Requests are sent with `store: false`, one provider call per attempt, with no automatic retries.
+- Usage and cost are recorded per run and shown as *known*, *held*, or *unknown* — unknown usage is never displayed as zero.
+- You choose the model. The catalog is GPT-5.6 (Luna, Terra, Sol) and GPT-6 (Luna, Sol, Astra). Whether a model works depends on what your own OpenAI project can access.
+
+## Privacy and security
+
+- Each account has its own Archive. Row Level Security and owner-scoped Edge Functions keep it separate from every other account.
+- Uploaded files live in private storage under your account.
+- Provider secrets, wrapping keys, and service credentials are server-side only and are never placed in browser configuration.
+- Findings stay attributable to the Investigation, run, model, and evidence that produced them, and evidence links are validated against the material you selected.
+
+For vulnerability reports, follow [SECURITY.md](./SECURITY.md) rather than posting details publicly.
 
 ## MCP
 
-The Excavatorium includes an OAuth-backed MCP integration for compatible clients.
+The Excavatorium includes an OAuth-backed MCP integration. After you connect your account, a compatible client can retrieve your own Archive data and use the available tools within the same owner boundary. Some Custodian actions are deliberately not exposed through MCP yet. See [plugins/the-excavatorium/README.md](./plugins/the-excavatorium/README.md) for the current tool surface and setup.
 
-After connecting your Excavatorium account, supported clients can retrieve your own Archive data and use the available tools within the same owner boundary.
+## Beta limitations
 
-See [plugins/the-excavatorium/README.md](./plugins/the-excavatorium/README.md) for the current tool surface and setup details.
+This is a real beta, not a finished commercial product.
 
-## Running locally
+- The interface and workflows are still being refined, and the data model and integrations may change.
+- Accounts are single-owner: there are no teams, shared Archives, billing, or social login.
+- AI features require your own OpenAI API key, and their quality depends on the model and evidence you provide.
+- Some Custodian controls exposed through MCP are intentionally unavailable.
 
-Requirements:
+If something breaks, please open an issue.
 
-- Bun
-- Supabase CLI
-- a Supabase project or local Supabase stack
+## Run it locally
 
-Install and run:
+Requirements: [Bun](https://bun.sh), the [Supabase CLI](https://supabase.com/docs/guides/cli), and a Supabase project or local Supabase stack.
 
 ```sh
 bun install
 bun run dev
 ```
 
-The local app runs on:
-
-```text
-http://localhost:8080
-```
-
-Browser configuration uses only public Supabase values:
+The app runs at `http://localhost:8080`. Browser configuration uses only public Supabase values:
 
 ```sh
 VITE_SUPABASE_URL=https://<your-project-ref>.supabase.co
@@ -103,7 +109,7 @@ VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 
 Never put service-role keys, OpenAI keys, wrapping keys, database passwords, or other secrets in browser environment variables or committed files.
 
-Useful docs:
+More detail:
 
 - [Public beta / production readiness](./docs/public-readiness.md)
 - [Supabase setup](./docs/supabase-setup.md)
@@ -112,12 +118,8 @@ Useful docs:
 
 ## Contributing
 
-Contributions, bug reports, and useful criticism are welcome.
-
-Please read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a pull request.
+Bug reports, ideas, and pull requests are welcome. Please read [CONTRIBUTING.md](./CONTRIBUTING.md) first.
 
 ## License
 
-The Excavatorium is **source-available** under the [Business Source License 1.1](./LICENSE).
-
-It is not currently OSI open source. See the license for the Additional Use Grant, commercial-use terms, Change Date, and eventual Apache-2.0 change license.
+The Excavatorium is **source-available** under the [Business Source License 1.1](./LICENSE). It is **not** OSI open source. Personal, non-commercial use and internal use within your own organization are covered by the Additional Use Grant; the [license](./LICENSE) sets out the commercial-use terms, the Change Date, and the eventual Apache-2.0 change license.
