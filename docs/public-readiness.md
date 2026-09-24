@@ -200,57 +200,63 @@ Six IDs, one central list per layer:
   paid model. Provider 4xx / permission / model-unavailable responses are
   classified by the existing diagnostics; choosing a model does not prove the
   owner's OpenAI project can use it.
-- Open UX item: the Run Room's technical `model_tier` field is unchanged. The
-  parallel UI branch should default it from the owner's chosen model's tier.
+- Open UX: the Run Room's technical `model_tier` field defaults from the owner's
+  chosen model's policy tier (via `custodian_openai_model_tier` / catalog mirror).
+  Advanced may still override; the server still rejects `model_tier_mismatch`.
 
-## 5. Other AI extraction: unresolved cost exposure
+## 5. Other AI extraction: owner BYOK (decision a)
 
 **Conversation Excavation (`conversation-extract`) and File/Document Excavation
-(`document-extract`) still use the operator's server-side `OPENAI_API_KEY`.** They
-were not changed: the requirement names the Custodian, and these paths are not
-routed through the owner-provider contract. Consequences for a public launch:
+(`document-extract`) use the authenticated owner's encrypted OpenAI key and
+Settings model preference.** They share the Custodian credential decrypt path
+(`resolveOwnerProviderKey` / `custodian_get_provider_credential`). There is no
+operator `OPENAI_API_KEY` fallback on those production paths. Missing key or
+model fails closed with a clear Settings-directed message before any provider
+contact. Requests use `store: false`. Secrets never appear in logs, errors, or
+drafts.
 
-- Every signed-in stranger can spend operator money on those two features.
-  Existing controls: `conversation-extract` admits ten authenticated requests
-  per rolling hour per user with a 30-second cooldown and a 110 KB body limit
-  (README); `document-extract` also consults a per-user quota decision. Both
-  have 20–25 s timeouts. Whether those quotas are adequate for strangers is a
-  product decision, not something verified here.
-- `conversation-extract` hard-codes `gpt-5.6-terra`; `document-extract` defaults to
-  `gpt-5.6-luna` (env override `OPENAI_DOCUMENT_MODEL`).
-
-**Smallest decision needed before public release**, pick one:
-(a) route both through the same owner key and model (small, mirrors this change:
-inject `resolveOwnerProviderKey`), (b) keep them operator-funded behind a tighter
-quota or an allow-list, or (c) disable them for non-owner accounts.
+Hosted activation still **REQUIRES PRODUCTION ACTION**: BYOK migrations, wrapping
+key secrets, and Edge deploys for `provider-key` plus the updated extract
+functions. See §8.
 
 ## 6. Data export and deletion scope
 
-**What the JSON backup contains** (`export_user_archive_snapshot` →
-`buildBackup`): archive records and the links between them. Uploaded document
+**Restorable archive backup** (`export_user_archive_snapshot` → `buildBackup`,
+schemaVersion 1): archive records and the links between them. Uploaded document
 files are detached (`storagePath`, `extractedContentPath`, `contentHash` are
-nulled).
+nulled). This is what Import restore accepts.
 
-**What it does not contain:** private Storage objects (`document-files`),
-Investigations/cases, evidence, claims, Findings, approvals and proposals,
-Custodian runs, steps, reservations and diagnostics, inbox items, record
-revisions, audit events, and provider credentials or preferences. Settings now
-says so.
+**Full account export** (`export_user_account_snapshot` → `buildAccountExport`,
+schemaVersion 2 / `exportKind: "account"`): the archive slice above plus
+Investigations/cases, evidence, claims, Findings (and finding–evidence links),
+approvals/judgments, decision-review state, Custodian run history **metadata**
+(not full forensic step payloads), and non-secret provider preferences /
+key-status last4. The payload documents `limitations.storageBinariesIncluded:
+false` — JSON does **not** contain `document-files` uploads. Ciphertext, wrapping
+keys, plaintext API keys, and service-role secrets are never exported.
 
-**Account deletion is not implemented, and no owner-delete RPC exists.**
-`reset_user_archive` only empties records and links. To ship real deletion:
+**Account deletion** is implemented as Edge Function `account-delete`
+(`verify_jwt` on) with typed confirmation `DELETE MY ACCOUNT` **and password
+re-authentication** (email login via `signInWithPassword`):
 
-1. A server-side flow (Edge Function, service role, re-authenticated owner) that
-   removes the owner's `document-files/<user_id>/` Storage objects, since Storage
-   does not cascade from `auth.users`.
-2. Then `auth.admin.deleteUser`. 37 owner references cascade; 19
-   `created_by`/`updated_by` references are `NO ACTION`. They point at rows that
-   the owner cascade also deletes, so this should work, but it **must be tested**
-   on a populated account before relying on it.
-3. Also purge or anonymize anything not keyed by `auth.users` (none found), and
-   define the retention statement for OpenAI's own logs (out of our control).
-4. Offer a full export first, which needs the export to grow to cover the data in
-   the previous list.
+1. Authenticated owner only (JWT user id) + password step-up (verified user id
+   must match the JWT subject; ephemeral verify session is signed out).
+2. Purge `document-files/<user_id>/` Storage objects (Storage does not cascade
+   from `auth.users`). Abort the leave path on Storage failure **before** any
+   structured DB wipe.
+3. `purge_owner_account_data(runtime_owner_id)` via the trusted **service_role**
+   client only (authenticated EXECUTE revoked). Delete order breaks ON DELETE
+   RESTRICT graphs (analysis findings ↔ runs/steps; runs ↔ tool_policies)
+   before removing cases.
+4. `auth.admin.deleteUser` via the trusted service-role boundary (only after
+   Storage and DB purge both succeed).
+
+`reset_user_archive` remains an archive-only reset and is **not** account
+deletion. Deletion must be tested on a local/ephemeral populated account before
+hosted reliance — not on production forensic data.
+
+OpenAI-side retention remains outside app control (`store: false` on excavate
+paths does not bind provider abuse-monitoring policies).
 
 ## 7. Cross-owner isolation: what is proven and what is not
 
@@ -279,13 +285,16 @@ the actual Auth dashboard behavior.
 
 - [ ] Reconcile migration `20260923113236` (applied) with source
       `20260923120000_custodian_provider_diagnostics.sql` before applying new ones;
-      new migrations sort after both.
-- [ ] Apply migrations `20260924100000`, `…110000`, `…120000` (staging first).
+      new migrations sort after both. Operator procedure only:
+      [`migration-reconcile-diagnostics.md`](./migration-reconcile-diagnostics.md).
+- [ ] Apply migrations `20260924100000`, `…110000`, `…120000`, `…130000`,
+      `…140000` (staging first).
 - [ ] Set `PROVIDER_KEY_ENCRYPTION_KEYS`, `PROVIDER_KEY_ACTIVE_VERSION`, and
       `CUSTODIAN_MODEL_PRICING_JSON` (six models) as Edge secrets.
-- [ ] Deploy `provider-key` and the updated `custodian-run` (JWT verification on).
+- [ ] Deploy `provider-key`, updated `custodian-run`, extract functions, and
+      `account-delete` (JWT verification on).
 - [ ] Verify and set hosted Auth settings (§1).
 - [ ] Two-account isolation run on staging (§7).
-- [ ] Decide the Conversation/File Excavation exposure (§5).
-- [ ] Decide account deletion and expanded export (§6).
+- [x] Account deletion and expanded export implemented in source (§6); hosted
+      deploy + ephemeral populated-account proof still required.
 - [ ] Lovable publication and release.

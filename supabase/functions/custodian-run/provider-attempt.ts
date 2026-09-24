@@ -196,10 +196,8 @@ export type ApprovalIdentity = {
   exactActionHash: string;
 };
 
-export type OwnerProviderKey =
-  | { status: "ok"; apiKey: string }
-  | { status: "missing" }
-  | { status: "unreadable" };
+export type { OwnerProviderKey } from "../_shared/owner-provider-key.ts";
+import type { OwnerProviderKey } from "../_shared/owner-provider-key.ts";
 
 export type CustodianIo = {
   getRun(runId: string): Promise<SynthesisRun>;

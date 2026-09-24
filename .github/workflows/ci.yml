@@ -39,8 +39,8 @@ jobs:
       - name: Typecheck frontend
         run: bun run typecheck
 
-      - name: Regenerate decorated MCP manifest
-        run: bun run mcp:manifest
+      - name: Check decorated MCP manifest stays aligned
+        run: bun run mcp:manifest:check
 
       - name: Test frontend regressions
         run: bun test src

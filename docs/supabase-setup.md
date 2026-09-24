@@ -77,12 +77,17 @@ authorized operator links the existing project and applies changes explicitly:
 ```text
 supabase db push --dry-run
 supabase db push
+supabase functions deploy provider-key
 supabase functions deploy conversation-extract
 supabase functions deploy document-extract
 supabase functions deploy document-save
 supabase functions deploy document-fetch
 supabase functions deploy custodian-run
+supabase functions deploy account-delete
 ```
+
+Provider contact for Custodian and excavate paths uses owner BYOK only. Do not
+deploy assuming a shared `OPENAI_API_KEY` will fund registered-user traffic.
 
 Require aligned local and remote migration history, an empty reviewed dry run
 when no schema change is expected, JWT verification left enabled, and retained
@@ -189,11 +194,11 @@ SMTP credentials, OAuth secrets, or GitHub tokens in browser code.
 
 The optional Build Week Conversation Excavation feature lives in
 `supabase/functions/conversation-extract/index.ts`. It is not a migration and
-does not write to the database. Deploy it only after configuring the OpenAI key
-as a Supabase project secret:
+does not write to the database. Deploy it only after the owner BYOK stack is
+live (`PROVIDER_KEY_*` secrets, `provider-key` function, and migrations through
+`20260924120000` — see [Public readiness](./public-readiness.md)):
 
 ```
-supabase secrets set OPENAI_API_KEY=...
 supabase functions deploy conversation-extract
 ```
 
@@ -203,33 +208,32 @@ when preview use is required. The function otherwise permits only
 browser origins receive a sanitized rejection.
 
 The browser invokes the function only after the user explicitly chooses
-**“Excavate with GPT-5.6”**. The function validates the Supabase bearer token
-server-side with `auth.getUser()`, never accepts a browser-provided user ID,
-and uses `gpt-5.6-terra` via the OpenAI Responses API with strict JSON-schema
-output. It rejects malformed and oversized requests, caps model output and
-upstream wait time, does not log transcripts, output, headers, secrets, or raw
-upstream errors, and does not persist extraction output in The Excavatorium or
-the Edge Function. The OpenAI request explicitly uses `store: false`; standard
-OpenAI API abuse-monitoring retention policies may still apply.
+excavation. The function validates the Supabase bearer token server-side with
+`auth.getUser()`, never accepts a browser-provided user ID, and calls the OpenAI
+Responses API with the owner's decrypted key and Settings model preference,
+`store: false`, and strict JSON-schema output. Missing key or model fails closed
+before provider contact. It rejects malformed and oversized requests, caps model
+output and upstream wait time, does not log transcripts, output, headers, secrets,
+or raw upstream errors, and does not persist extraction output in The Excavatorium
+or the Edge Function. Standard OpenAI API abuse-monitoring retention policies may
+still apply.
 
-> **Scope of `OPENAI_API_KEY`.** It funds Conversation and File Excavation only.
-> The Custodian (`custodian-run`) no longer reads it: provider-backed Custodian
-> work uses each owner's own encrypted key (see
-> [Public readiness](./public-readiness.md), which also lists the
-> `PROVIDER_KEY_ENCRYPTION_KEYS` secrets and the `provider-key` function).
+> **No operator `OPENAI_API_KEY` on excavate paths.** Conversation and File
+> Excavation fund themselves from the authenticated owner's encrypted key, the
+> same contract as Custodian (`custodian-run`). Do not set `OPENAI_API_KEY` to
+> fund public excavate traffic.
 
-`OPENAI_API_KEY` must exist only in Supabase Edge Function secrets. Do not put
-it in a `VITE_*` variable, `.env.example`, frontend source, Git, logs, or error
-messages. Suggested record IDs are untrusted draft values; the existing
-`save_record_with_links` RPC remains authoritative for ownership validation at
-save time.
+Do not put provider keys in a `VITE_*` variable, `.env.example`, frontend source,
+Git, logs, or error messages. Suggested record IDs are untrusted draft values; the
+existing `save_record_with_links` RPC remains authoritative for ownership
+validation at save time.
 
 Migration `20260802153543_conversation_extraction_guardrails.sql` creates an
 RLS-protected rate-limit table in the non-public `private` schema and one
 authenticated RPC, `consume_conversation_extraction_quota()`. It admits at
 most ten valid requests in a rolling hour and enforces a 30-second cooldown.
-The function consumes quota only after authentication and full input
-validation, immediately before the OpenAI request. It keeps the
+The function consumes quota only after authentication, funding checks, and full
+input validation, immediately before the OpenAI request. It keeps the
 `Content-Length` check as a cheap early rejection but also stream-reads and
 counts the actual request bytes, so a missing or forged header cannot bypass
 the 110 KB limit.
@@ -250,8 +254,8 @@ Supabase project. The normalized object stores a bounded provenance manifest
 in Storage metadata; the record validator checks that the saved source
 reference IDs and content hash match that manifest.
 
-Deploy the two new functions only after the migration and the existing
-`OPENAI_API_KEY` Edge Function secret are configured:
+Deploy the two new functions only after the migration and the owner BYOK secrets
+are configured:
 
 ```
 supabase functions deploy document-extract
@@ -260,8 +264,9 @@ supabase functions deploy document-save
 
 `document-extract` accepts only PDF, Markdown, and UTF-8 text within its
 bounded request, file, page, extracted-text, chunk, synthesis-input, and
-output limits. It uses the existing authenticated quota RPC once per explicit
-excavation request, then performs at most 24 chunk calls, with no more than
+output limits. It uses the owner's encrypted key and Settings model preference
+(no operator `OPENAI_API_KEY`), the existing authenticated quota RPC once per
+explicit excavation request, then performs at most 24 chunk calls, with no more than
 four running concurrently, plus one synthesis call. The server never stores the full extracted body in
 `records.record_data`.
 

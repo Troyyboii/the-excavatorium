@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   ArchiveErrorState,
   CustodianPage,
@@ -41,6 +41,11 @@ export function RunRoomSurface({
   ownerPresent = false,
   surfaceEnabled = CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER,
   ports = null,
+  preferredModelTier = null,
+  providerKeyConfigured = true,
+  modelPreferenceSelected = true,
+  settingsLoading = false,
+  settingsUnavailable = false,
 }: {
   runs: CustodianRun[];
   providerHoldProjection: CustodianRunRead["providerHoldProjection"];
@@ -50,8 +55,16 @@ export function RunRoomSurface({
   ownerPresent?: boolean;
   surfaceEnabled?: boolean;
   ports?: ReadonlyAnalysisPorts | null;
+  /** Policy tier derived from the owner's Settings model preference, when known. */
+  preferredModelTier?: ModelTier | null;
+  /** When false, Advanced still shows technical history but Start is blocked. */
+  providerKeyConfigured?: boolean;
+  modelPreferenceSelected?: boolean;
+  settingsLoading?: boolean;
+  /** Settings queries failed — distinct from key not configured. */
+  settingsUnavailable?: boolean;
 }) {
-  const startBlock = readonlyStartBlock({
+  const foundationBlock = readonlyFoundationBlock({
     online,
     loading,
     error,
@@ -59,13 +72,21 @@ export function RunRoomSurface({
     surfaceEnabled,
     ports,
   });
+  const readinessBlock = readonlyReadinessBlock({
+    providerKeyConfigured,
+    modelPreferenceSelected,
+    settingsLoading,
+    settingsUnavailable,
+  });
+  const startBlock = foundationBlock ?? readinessBlock;
+  const formAvailable = foundationBlock === null && ports !== null;
   const canStart = startBlock === null && ports !== null;
   return (
     <CustodianPage
       title="Analysis history"
       description={
-        canStart
-          ? "Owner-scoped readonly analysis. Start analysis sends explicit owner inputs through the readonly policy and run RPCs, then advances one persisted run. It does not stream model output."
+        formAvailable
+          ? "Advanced technical Run Room. Ordinary Investigation start lives on the Investigation page and does not require case_id, policy_name, model_tier, prompt_version, or reservation ceilings. This form keeps explicit owner inputs for operators."
           : "Owner-scoped inspection of persisted Custodian runs. Recorded provider cost and budget holds are separate. This surface cannot start a provider call."
       }
       status={
@@ -82,11 +103,13 @@ export function RunRoomSurface({
       }
     >
       <div className="space-y-6">
-        {canStart && ports ? (
+        {formAvailable && ports ? (
           <ReadonlyAnalysisStart
             ports={ports}
             runs={runs}
             providerHoldProjection={providerHoldProjection}
+            preferredModelTier={preferredModelTier}
+            submitBlockedReason={readinessBlock ? readonlyStartReason(readinessBlock) : null}
           />
         ) : (
           <>
@@ -148,16 +171,33 @@ function ReadonlyAnalysisStart({
   ports,
   runs,
   providerHoldProjection,
+  preferredModelTier,
+  submitBlockedReason = null,
 }: {
   ports: ReadonlyAnalysisPorts;
   runs: CustodianRun[];
   providerHoldProjection: CustodianRunRead["providerHoldProjection"];
+  preferredModelTier: ModelTier | null;
+  submitBlockedReason?: string | null;
 }) {
   const session = useRef(createReadonlyAnalysisSession()).current;
   const busyRef = useRef(false);
-  const [draft, setDraft] = useState<ReadonlyAnalysisDraft>(emptyReadonlyAnalysisDraft);
+  const [draft, setDraft] = useState<ReadonlyAnalysisDraft>(() =>
+    emptyReadonlyAnalysisDraft({
+      modelTier: preferredModelTier ?? "",
+    }),
+  );
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ReadonlyAnalysisStartResult | null>(null);
+  const seededRef = useRef(preferredModelTier !== null);
+
+  useEffect(() => {
+    if (seededRef.current || preferredModelTier === null) return;
+    seededRef.current = true;
+    setDraft((current) =>
+      current.modelTier === "" ? { ...current, modelTier: preferredModelTier } : current,
+    );
+  }, [preferredModelTier]);
 
   function update(patch: Partial<ReadonlyAnalysisDraft>) {
     setDraft((current) => ({ ...current, ...patch }));
@@ -177,6 +217,14 @@ function ReadonlyAnalysisStart({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitBlockedReason) {
+      setResult({
+        ok: false,
+        reason: "invalid_input",
+        errors: [submitBlockedReason],
+      });
+      return;
+    }
     const parsed = parseReadonlyAnalysisDraft(draft);
     if (!parsed.ok) {
       setResult({ ok: false, reason: "invalid_input", errors: parsed.errors });
@@ -201,10 +249,17 @@ function ReadonlyAnalysisStart({
 
   return (
     <form className="space-y-4" onSubmit={(event) => void submit(event)}>
-      <FoundationState title="Readonly analysis">
-        Every field is an explicit owner input. This form does not choose a model, ceiling, or
-        objective. It is not a chat.
+      <FoundationState title="Readonly analysis (Advanced)">
+        Technical owner inputs. model_tier defaults from the Custodian model chosen in Settings when
+        present; Advanced may still override it. The server still rejects a preference that does not
+        match the persisted run tier. Ordinary owners should start from an Investigation instead.
+        This form is not a chat.
       </FoundationState>
+      {submitBlockedReason ? (
+        <p className="border border-risk/40 bg-risk/10 px-4 py-3 text-sm text-risk" role="status">
+          {submitBlockedReason}
+        </p>
+      ) : null}
       <div className="grid gap-4 md:grid-cols-2">
         <Field label="case_id">
           <input
@@ -329,7 +384,7 @@ function ReadonlyAnalysisStart({
       </div>
       <button
         type="submit"
-        disabled={busy}
+        disabled={busy || Boolean(submitBlockedReason)}
         className="inline-flex min-h-11 items-center border border-luminous-gold/40 px-4 text-sm text-white-gold disabled:cursor-not-allowed disabled:opacity-60"
       >
         Start analysis
@@ -351,9 +406,13 @@ type ReadonlyStartBlock =
   | "read_error"
   | "owner_missing"
   | "ports_unavailable"
-  | "gate_closed";
+  | "gate_closed"
+  | "settings_loading"
+  | "settings_unavailable"
+  | "provider_key_missing"
+  | "model_not_selected";
 
-function readonlyStartBlock(input: {
+function readonlyFoundationBlock(input: {
   online: boolean;
   loading: boolean;
   error: string | null;
@@ -373,6 +432,19 @@ function readonlyStartBlock(input: {
   return null;
 }
 
+function readonlyReadinessBlock(input: {
+  providerKeyConfigured: boolean;
+  modelPreferenceSelected: boolean;
+  settingsLoading: boolean;
+  settingsUnavailable: boolean;
+}): ReadonlyStartBlock | null {
+  if (input.settingsLoading) return "settings_loading";
+  if (input.settingsUnavailable) return "settings_unavailable";
+  if (!input.providerKeyConfigured) return "provider_key_missing";
+  if (!input.modelPreferenceSelected) return "model_not_selected";
+  return null;
+}
+
 function readonlyStartReason(block: ReadonlyStartBlock | null): string {
   if (block === "offline") {
     return "Start analysis is unavailable while the network is offline. Persisted runs stay visible. No policy, run, or Edge call is made.";
@@ -388,6 +460,18 @@ function readonlyStartReason(block: ReadonlyStartBlock | null): string {
   }
   if (block === "ports_unavailable") {
     return "Start analysis is unavailable because the runtime ports are not available. No policy, run, or Edge call is made.";
+  }
+  if (block === "settings_loading") {
+    return "Start analysis is waiting for Settings key and model preference to load. No policy, run, or Edge call is made.";
+  }
+  if (block === "settings_unavailable") {
+    return "Start analysis is unavailable because Settings could not be read. Key and model status are unknown. No policy, run, or Edge call is made.";
+  }
+  if (block === "provider_key_missing") {
+    return "Start analysis is unavailable until an OpenAI API key is saved in Settings. The Excavatorium does not use a shared operator key for Custodian work.";
+  }
+  if (block === "model_not_selected") {
+    return "Start analysis is unavailable until a Custodian model is chosen in Settings.";
   }
   return "Provider invocation stays off until a later activation milestone. No analysis is being started.";
 }

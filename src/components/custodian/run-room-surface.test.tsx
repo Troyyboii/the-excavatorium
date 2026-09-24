@@ -281,6 +281,37 @@ describe("Run Room surface", () => {
     expect(drive.refreshes).toBeGreaterThan(0);
   });
 
+  test("defaults model_tier from the owner Settings preference and still allows override", async () => {
+    const user = userEvent.setup();
+    const drive = scriptedPorts([observed("completed", "settled_known", "known")]);
+    render(enabledRoom(drive.ports, [], "sol"));
+    const tierSelect = screen.getByLabelText("model_tier") as HTMLSelectElement;
+    expect(tierSelect.value).toBe("sol");
+    await user.selectOptions(tierSelect, "terra");
+    expect(tierSelect.value).toBe("terra");
+  });
+
+  test("keeps the technical form visible but blocks Start when the provider key is missing", () => {
+    const drive = scriptedPorts([observed("completed", "settled_known", "known")]);
+    render(
+      <RunRoomSurface
+        runs={[]}
+        providerHoldProjection="available"
+        online
+        loading={false}
+        error={null}
+        ownerPresent
+        surfaceEnabled
+        ports={drive.ports}
+        providerKeyConfigured={false}
+        modelPreferenceSelected
+      />,
+    );
+    expect(screen.getByLabelText("case_id")).not.toBeNull();
+    expect(screen.getByText(/OpenAI API key is saved in Settings/)).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Start analysis" })).toHaveProperty("disabled", true);
+  });
+
   test("enabled start reports approval, hold, and invocation failure without another call", async () => {
     const user = userEvent.setup();
     const approval = scriptedPorts([
@@ -638,7 +669,11 @@ function terminalRun(status: "blocked" | "completed", hold: null) {
   };
 }
 
-function enabledRoom(ports: ReadonlyAnalysisPorts, runs: CustodianRun[] = []) {
+function enabledRoom(
+  ports: ReadonlyAnalysisPorts,
+  runs: CustodianRun[] = [],
+  preferredModelTier: "luna" | "terra" | "sol" | "pro" | null = null,
+) {
   return (
     <RunRoomSurface
       runs={runs}
@@ -648,6 +683,7 @@ function enabledRoom(ports: ReadonlyAnalysisPorts, runs: CustodianRun[] = []) {
       error={null}
       ownerPresent
       surfaceEnabled
+      preferredModelTier={preferredModelTier}
       ports={ports}
     />
   );

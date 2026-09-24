@@ -211,13 +211,14 @@ evidence is the only bookkeeping proof.
 ## Build Week Conversation Excavation deployment checks
 
 The following checks require a deployed `conversation-extract` Edge Function,
-an `OPENAI_API_KEY` Supabase secret, and a signed-in test user. They are not
-covered by the source-only verification above.
+owner BYOK secrets (`PROVIDER_KEY_*`), a signed-in test user with a saved OpenAI
+key and model preference, and must not rely on an operator `OPENAI_API_KEY`.
+They are not covered by the source-only verification above.
 
 | Scenario                                    | Expected result                                                                    | Status     |
 | ------------------------------------------- | ---------------------------------------------------------------------------------- | ---------- |
 | signed-out request                          | `401`; no OpenAI call or persisted data                                            | Not tested |
-| missing `OPENAI_API_KEY` secret             | sanitized `503`; no key detail returned                                            | Not tested |
+| missing owner key or model preference       | sanitized `409` with Settings-directed message; no OpenAI call                     | Not tested |
 | malformed request                           | sanitized `400`; no OpenAI call                                                    | Not tested |
 | oversized transcript                        | client blocks it; function rejects it if bypassed                                  | Not tested |
 | OpenAI timeout or invalid structured output | sanitized retryable `502`/`504`; no persisted data                                 | Not tested |

@@ -1,9 +1,18 @@
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import {
   declaredContentLengthExceedsLimit,
   MAX_REQUEST_BYTES,
   readJsonObjectBody,
 } from "./request.ts";
+import {
+  excavationFundingMessage,
+  parseStoredCredential,
+  resolveOwnerExcavationFunding,
+  type ExcavationFunding,
+  type ExcavationFundingFailure,
+  type StoredCredential,
+} from "../_shared/owner-excavation-funding.ts";
+import { trustedRuntimeSupabase } from "../_shared/http.ts";
 
 const MAX_TRANSCRIPT_CHARS = 24_000;
 const MAX_CANDIDATE_RECORDS = 75;
@@ -35,9 +44,21 @@ type Extraction = {
   suggestedRecordIds: string[];
 };
 
-function allowedOrigins() {
+export type ConversationExtractDependencies = {
+  getEnv?: (name: string) => string | undefined;
+  createUserClient?: (authorization: string) => SupabaseClient;
+  trustedClient?: () => SupabaseClient | null;
+  resolveFunding?: (input: {
+    ownerId: string;
+    preferredModel: string | null;
+    client: SupabaseClient;
+  }) => Promise<ExcavationFunding>;
+  fetchProvider?: typeof fetch;
+};
+
+function allowedOrigins(getEnv: (name: string) => string | undefined) {
   const origins = new Set(["https://the-excavatorium.lovable.app", "http://localhost:8080"]);
-  const previewOrigin = Deno.env.get("LOVABLE_PREVIEW_ORIGIN");
+  const previewOrigin = getEnv("LOVABLE_PREVIEW_ORIGIN");
   if (previewOrigin) {
     try {
       const normalized = new URL(previewOrigin).origin;
@@ -198,9 +219,59 @@ const responseSchema = {
   },
 };
 
-Deno.serve(async (req) => {
+function fundingStatus(reason: ExcavationFundingFailure): 409 {
+  void reason;
+  return 409;
+}
+
+async function defaultResolveFunding(input: {
+  ownerId: string;
+  preferredModel: string | null;
+  client: SupabaseClient;
+  getEnv: (name: string) => string | undefined;
+  trustedClient: () => SupabaseClient | null;
+}): Promise<ExcavationFunding> {
+  return resolveOwnerExcavationFunding({
+    ownerId: input.ownerId,
+    preferredModel: input.preferredModel,
+    getEnv: input.getEnv,
+    fetchCredential: async (credentialOwnerId) => {
+      const trusted = input.trustedClient();
+      if (!trusted) throw new Error("trusted_runtime_unavailable");
+      const { data, error } = await trusted.rpc("custodian_get_provider_credential", {
+        runtime_owner_id: credentialOwnerId,
+      });
+      if (error) throw new Error("credential_lookup_failed");
+      const parsed = parseStoredCredential(data);
+      if (parsed === "malformed") throw new Error("credential_malformed");
+      return parsed as StoredCredential | null;
+    },
+  });
+}
+
+export async function handleConversationExtract(
+  req: Request,
+  dependencies: ConversationExtractDependencies = {},
+): Promise<Response> {
+  const getEnv = dependencies.getEnv ?? ((name: string) => Deno.env.get(name));
+  const fetchProvider = dependencies.fetchProvider ?? fetch;
+  const trustedClient = dependencies.trustedClient ?? trustedRuntimeSupabase;
+  const createUserClient =
+    dependencies.createUserClient ??
+    ((authorization: string) => {
+      const supabaseUrl = getEnv("SUPABASE_URL");
+      const supabaseAnonKey = getEnv("SUPABASE_ANON_KEY");
+      if (!supabaseUrl || !supabaseAnonKey) {
+        throw new Error("service_configuration_unavailable");
+      }
+      return createClient(supabaseUrl, supabaseAnonKey, {
+        global: { headers: { Authorization: authorization } },
+      });
+    });
+
   const requestOrigin = req.headers.get("Origin");
-  const allowedOrigin = requestOrigin && allowedOrigins().has(requestOrigin) ? requestOrigin : null;
+  const origins = allowedOrigins(getEnv);
+  const allowedOrigin = requestOrigin && origins.has(requestOrigin) ? requestOrigin : null;
   if (requestOrigin && !allowedOrigin) return json({ error: "Origin is not allowed." }, 403);
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: responseHeaders(allowedOrigin) });
@@ -212,9 +283,7 @@ Deno.serve(async (req) => {
   }
 
   const authorization = req.headers.get("Authorization");
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
-  if (!authorization || !supabaseUrl || !supabaseAnonKey) {
+  if (!authorization) {
     return json(
       { error: "Authentication or service configuration is unavailable." },
       401,
@@ -222,13 +291,21 @@ Deno.serve(async (req) => {
     );
   }
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-    global: { headers: { Authorization: authorization } },
-  });
+  let supabase: SupabaseClient;
+  try {
+    supabase = createUserClient(authorization);
+  } catch {
+    return json(
+      { error: "Authentication or service configuration is unavailable." },
+      401,
+      allowedOrigin,
+    );
+  }
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError || !authData.user) {
     return json({ error: "Sign in is required." }, 401, allowedOrigin);
   }
+  const ownerId = authData.user.id;
 
   const parsedBody = await readJsonObjectBody(req, MAX_REQUEST_BYTES);
   if (!parsedBody.ok) return json({ error: parsedBody.error }, parsedBody.status, allowedOrigin);
@@ -248,11 +325,35 @@ Deno.serve(async (req) => {
     );
   }
 
-  const openAiKey = Deno.env.get("OPENAI_API_KEY");
-  if (!openAiKey) {
+  const { data: settings, error: settingsError } = await supabase
+    .from("owner_provider_settings")
+    .select("model_name")
+    .eq("owner_id", ownerId)
+    .eq("provider", "openai")
+    .maybeSingle();
+  if (settingsError) {
     return json(
-      { error: "Excavation is not configured. Please try again later." },
+      { error: "Excavation is temporarily unavailable. Please retry." },
       503,
+      allowedOrigin,
+    );
+  }
+  const preferredModel =
+    settings && typeof settings.model_name === "string" ? settings.model_name : null;
+
+  const resolveFunding =
+    dependencies.resolveFunding ??
+    ((input) =>
+      defaultResolveFunding({
+        ...input,
+        getEnv,
+        trustedClient,
+      }));
+  const funding = await resolveFunding({ ownerId, preferredModel, client: supabase });
+  if (!funding.ok) {
+    return json(
+      { error: excavationFundingMessage(funding.reason), code: funding.reason },
+      fundingStatus(funding.reason),
       allowedOrigin,
     );
   }
@@ -279,15 +380,15 @@ Deno.serve(async (req) => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS);
   try {
-    const response = await fetch("https://api.openai.com/v1/responses", {
+    const response = await fetchProvider("https://api.openai.com/v1/responses", {
       method: "POST",
       signal: controller.signal,
       headers: {
-        Authorization: `Bearer ${openAiKey}`,
+        Authorization: `Bearer ${funding.apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-5.6-terra",
+        model: funding.model,
         store: false,
         max_output_tokens: 2_400,
         input: [
@@ -356,4 +457,6 @@ Deno.serve(async (req) => {
   } finally {
     clearTimeout(timeout);
   }
-});
+}
+
+if (import.meta.main) Deno.serve((req) => handleConversationExtract(req));

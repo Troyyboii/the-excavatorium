@@ -134,12 +134,36 @@ describe("readonly analysis start", () => {
 
   test("rejects omitted owner input before any rpc", async () => {
     const calls = { policy: 0 };
+    expect(emptyReadonlyAnalysisDraft().modelTier).toBe("");
+    expect(emptyReadonlyAnalysisDraft({ modelTier: "sol" }).modelTier).toBe("sol");
     const parsed = parseReadonlyAnalysisDraft(emptyReadonlyAnalysisDraft());
     expect(parsed.ok).toBe(false);
     if (!parsed.ok) {
       expect(parsed.errors.join(" ")).toContain("case_id");
       expect(parsed.errors.join(" ")).toContain("objective");
       expect(parsed.errors.join(" ")).toContain("allowed_model_tiers");
+    }
+    const mismatched = parseReadonlyAnalysisDraft(
+      emptyReadonlyAnalysisDraft({
+        caseId: CASE_ID,
+        policyName: "owner-readonly",
+        allowedModelTiers: ["terra"],
+        perRunTokenBudget: "1000",
+        perRunCostUsd: "1",
+        perRunLatencyMs: "5000",
+        perRunToolEventBudget: "4",
+        dailyTokenBudget: "2000",
+        monthlyTokenBudget: "4000",
+        dailyCostUsd: "2",
+        monthlyCostUsd: "4",
+        modelTier: "sol",
+        promptVersion: "owner-prompt-1",
+        objective: "What does the admitted record support?",
+      }),
+    );
+    expect(mismatched.ok).toBe(false);
+    if (!mismatched.ok) {
+      expect(mismatched.errors.join(" ")).toContain("model_tier");
     }
     const result = await startReadonlyAnalysis(
       { ...ownerInput(), objective: "  ", allowedModelTiers: [] },

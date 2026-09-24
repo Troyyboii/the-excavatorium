@@ -1,6 +1,7 @@
 # The Excavatorium plugin
 
-This package points to the production OAuth 2.1 MCP server:
+Source-available under the repository [Business Source License 1.1](../../LICENSE)
+(not OSI open source). This package points to the production OAuth 2.1 MCP server:
 
 `https://the-excavatorium.lovable.app/mcp`
 

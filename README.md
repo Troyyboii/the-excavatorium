@@ -99,10 +99,12 @@ Function do not persist extraction requests or generated drafts; a draft only
 becomes archive data when the user reviews, applies, and saves it. Standard
 OpenAI API abuse-monitoring retention policies may still apply.
 
-Markdown record exports and full JSON backups keep the archive portable and
-give the owner an independent recovery path. JSON backups preserve Document
-metadata and conclusions but not private Storage objects; restored file-backed
-Documents are detached until a file is selected and saved again.
+Markdown record exports, restorable archive JSON backups (records and links), and
+full account JSON exports keep the archive portable. Account exports also include
+Investigations, evidence, findings, approvals, Custodian run metadata, review
+state, and non-secret provider preferences. JSON never contains private Storage
+objects or plaintext API keys; restored file-backed Documents remain detached
+until a file is selected and saved again.
 
 ## Technology
 
@@ -112,7 +114,7 @@ Documents are detached until a file is selected and saved again.
 - Direct Supabase for authentication, PostgreSQL storage, Row Level Security,
   and approved write RPCs
 - Supabase Edge Functions for authenticated Conversation and File Excavation
-  with `gpt-5.6-terra`
+  using the owner's encrypted key and Settings model preference (BYOK)
 - Lovable deployment; no Lovable Cloud backend and no second backend
 
 ## Local development
@@ -133,8 +135,9 @@ VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 
 Never put service-role keys, database passwords, private API keys, or other
 secrets in browser code or committed files. Conversation and File Excavation
-require the existing `OPENAI_API_KEY` configured as a Supabase Edge Function
-secret; see the setup guide below.
+use the authenticated owner's encrypted OpenAI key and Settings model preference
+(same BYOK path as Custodian). There is no shared operator `OPENAI_API_KEY`
+fallback on those production paths; see the setup guide below.
 
 The MCP server also requires a server-only `MCP_ALLOWED_CLIENT_IDS` value: a
 comma-separated UUID allow-list of explicitly approved OAuth clients. Do not
@@ -147,12 +150,12 @@ cannot spend the same remaining budget.
 ## Accounts and bring-your-own OpenAI key
 
 Anyone can create an account. A new account is an empty private archive and
-needs no AI provider key. Provider-backed Custodian work runs on the owner's own
-OpenAI API key, encrypted server-side and never readable again, with the model
-chosen from a fixed six-model list in Settings. Conversation and File Excavation
-still use the server-side key. See
+needs no AI provider key. Provider-backed Custodian work, Conversation
+Excavation, and File Excavation all run on the owner's own OpenAI API key,
+encrypted server-side and never readable again, with the model chosen from a
+fixed six-model list in Settings. See
 [Public readiness](./docs/public-readiness.md) for the architecture, required
-secrets and Auth settings, export/deletion scope, and open cost decisions.
+secrets and Auth settings, export/deletion scope, and remaining hosted steps.
 
 ## Detailed setup and verification
 
@@ -169,8 +172,40 @@ secrets and Auth settings, export/deletion scope, and open cost decisions.
 - [Supabase setup](./docs/supabase-setup.md) — migrations, owner-account
   bootstrap, secrets, and explicit Edge Function deployment. Hosted CI does not
   deploy Supabase.
+- [Diagnostics migration reconcile](./docs/migration-reconcile-diagnostics.md) —
+  operator-only ledger repair for hosted `20260923113236` vs source
+  `20260923120000` (no hosted apply from this doc alone).
 - [Supabase verification checklist](./docs/supabase-verification.md) —
   database, authentication, production, and Conversation Excavation checks.
+
+## License
+
+The Excavatorium is **source-available** under the
+[Business Source License 1.1](./LICENSE). That is **not** an OSI open-source
+license. The Additional Use Grant covers personal, internal, and academic use;
+other commercial use needs a separate license from the licensor. Change license
+on the Change Date in `LICENSE` is Apache-2.0.
+
+## Public beta limits
+
+The public beta is an authenticated private archive plus optional owner-funded
+AI features. Expect:
+
+- **BYOK only** for Custodian runs and Conversation/File Excavation — your
+  OpenAI key and Settings model; no shared operator key pays for those paths.
+- **No teams, sharing, billing, or social login** in this beta.
+- **MCP Custodian start/cancel** remain unavailable (`RUNTIME_UNAVAILABLE`).
+- **Hosted Auth** (signup open/closed, SMTP, CAPTCHA, redirects) and Edge
+  deploys lag the Git source until an operator completes the checklist in
+  [Public readiness](./docs/public-readiness.md). Source alone does not mean
+  every checkbox is live.
+- Account JSON export omits private Storage binaries; deletion is owner
+  self-serve in source and still needs hosted proof before relying on it in
+  production.
+
+## Contributing and security
+
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md) and [`SECURITY.md`](./SECURITY.md).
 
 ## Verification status and known limitations
 

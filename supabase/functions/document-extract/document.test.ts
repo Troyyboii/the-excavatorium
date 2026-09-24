@@ -206,22 +206,69 @@ Deno.test("keeps missing authentication at 401", async () => {
   assert(response.status === 401, "expected missing authentication to remain unauthorized");
 });
 
-Deno.test("reports missing OpenAI configuration safely", async () => {
+Deno.test("reports missing owner funding before provider contact", async () => {
   const auth = {
-    client: {} as AuthenticatedSupabase["client"],
-    user: {} as AuthenticatedSupabase["user"],
+    client: {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({ data: null, error: null }),
+            }),
+          }),
+        }),
+      }),
+    },
+    user: { id: "11111111-1111-4111-8111-111111111111" },
     authorization: "Bearer test",
-  } as AuthenticatedSupabase;
+  } as unknown as AuthenticatedSupabase;
   const response = await handleDocumentExtract(
     new Request("https://example.test", { method: "POST" }),
-    { authenticate: async () => auth, getEnv: () => undefined },
+    {
+      authenticate: async () => auth,
+      resolveFunding: async () => ({ ok: false, reason: "provider_key_missing" }),
+    },
   );
   const body = await response.json();
-  assert(response.status === 503, "expected missing configuration to be service unavailable");
-  assert(body.diagnostic === "configuration_unavailable", "expected safe config diagnostic");
+  assert(response.status === 409, "expected missing owner key to conflict closed");
+  assert(body.diagnostic === "provider_key_missing", "expected provider_key_missing diagnostic");
+  assert(
+    typeof body.error === "string" && body.error.includes("Settings"),
+    "expected a clear Settings-directed message",
+  );
+  assert(!JSON.stringify(body).includes("OPENAI_API_KEY"), "must not mention operator key");
+  assert(!JSON.stringify(body).includes("sk-"), "must not leak key material");
 });
 
-Deno.test("classifies OpenAI failures without retaining upstream details", () => {
+Deno.test("reports missing model preference before provider contact", async () => {
+  const auth = {
+    client: {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({ data: null, error: null }),
+            }),
+          }),
+        }),
+      }),
+    },
+    user: { id: "11111111-1111-4111-8111-111111111111" },
+    authorization: "Bearer test",
+  } as unknown as AuthenticatedSupabase;
+  const response = await handleDocumentExtract(
+    new Request("https://example.test", { method: "POST" }),
+    {
+      authenticate: async () => auth,
+      resolveFunding: async () => ({ ok: false, reason: "model_not_selected" }),
+    },
+  );
+  const body = await response.json();
+  assert(response.status === 409, "expected missing model to conflict closed");
+  assert(body.diagnostic === "model_not_selected", "expected model_not_selected diagnostic");
+});
+
+Deno.test("classifies OpenAi failures without retaining upstream details", () => {
   assert(
     classifyOpenAiFailure(401, { error: { message: "private" } }) === "upstream_authentication",
     "expected authentication classification",

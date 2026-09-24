@@ -87,9 +87,11 @@ export function ApprovalsSurface({
 
   return (
     <div className="space-y-6">
-      <FoundationState title="Execution remains unavailable">
-        This is an owner decision surface for persisted proposals and approval requests. It does not
-        execute provider, external, or canonical archive work.{" "}
+      <FoundationState title="Owner Judgment — not Findings">
+        Review records Owner Judgment on persisted proposals and approval requests. A Custodian
+        Finding on an Investigation is interpretation; approving or rejecting here is a separate
+        owner decision. This surface does not invent a queue, and it does not execute provider,
+        external, or canonical archive work.{" "}
         {CUSTODIAN_OWNER_GATE_CAN_EXECUTE
           ? "Execution was unexpectedly enabled."
           : "No internal V1 execution class has been selected."}
@@ -139,8 +141,8 @@ export function ApprovalsSurface({
       ) : null}
       {!error && visible.length ? (
         <Section
-          title="Owner gates"
-          description="Exact proposed actions bound to case, run, policy, and action hash. Approval is not execution."
+          title="Owner Judgment gates"
+          description="Exact proposed actions bound to case, run, policy, and action hash. Owner Judgment is not a Finding, and approval is not execution."
           action={`${visible.length} shown`}
         >
           <div className="divide-y divide-luminous-gold/15">

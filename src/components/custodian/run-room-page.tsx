@@ -8,6 +8,8 @@ import {
   custodianRunsKey,
   useCustodianRuns,
 } from "@/lib/custodian-runtime";
+import { openAiModelTier } from "@/lib/openai-models";
+import { useModelPreference, useProviderKeyStatus } from "@/lib/provider-key";
 import { useCurrentUserId } from "@/lib/session";
 
 export function RunRoomPage() {
@@ -15,6 +17,9 @@ export function RunRoomPage() {
   const userId = useCurrentUserId();
   const queryClient = useQueryClient();
   const runs = useCustodianRuns(online);
+  const modelPreference = useModelPreference();
+  const providerKeyStatus = useProviderKeyStatus();
+  const preferredModelTier = modelPreference.data ? openAiModelTier(modelPreference.data) : null;
   const foundationPending = Boolean(runs.error && isCustodianFoundationMissing(runs.error));
   const error = !online
     ? "Network unavailable. Persisted runs cannot be retrieved."
@@ -33,6 +38,15 @@ export function RunRoomPage() {
       error={error}
       ownerPresent={Boolean(userId)}
       surfaceEnabled={CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER}
+      preferredModelTier={preferredModelTier}
+      providerKeyConfigured={providerKeyStatus.data?.configured === true}
+      modelPreferenceSelected={Boolean(modelPreference.data)}
+      settingsLoading={providerKeyStatus.isLoading || modelPreference.isLoading}
+      settingsUnavailable={
+        !providerKeyStatus.isLoading &&
+        !modelPreference.isLoading &&
+        (providerKeyStatus.isError || modelPreference.isError)
+      }
       ports={productionReadonlyAnalysisPorts({
         ownerId: userId,
         refreshRuns: async () => {
