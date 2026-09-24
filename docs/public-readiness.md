@@ -200,29 +200,24 @@ Six IDs, one central list per layer:
   paid model. Provider 4xx / permission / model-unavailable responses are
   classified by the existing diagnostics; choosing a model does not prove the
   owner's OpenAI project can use it.
-- Open UX item: the Run Room's technical `model_tier` field is unchanged. The
-  parallel UI branch should default it from the owner's chosen model's tier.
+- Open UX: the Run Room's technical `model_tier` field defaults from the owner's
+  chosen model's policy tier (via `custodian_openai_model_tier` / catalog mirror).
+  Advanced may still override; the server still rejects `model_tier_mismatch`.
 
-## 5. Other AI extraction: unresolved cost exposure
+## 5. Other AI extraction: owner BYOK (decision a)
 
 **Conversation Excavation (`conversation-extract`) and File/Document Excavation
-(`document-extract`) still use the operator's server-side `OPENAI_API_KEY`.** They
-were not changed: the requirement names the Custodian, and these paths are not
-routed through the owner-provider contract. Consequences for a public launch:
+(`document-extract`) use the authenticated owner's encrypted OpenAI key and
+Settings model preference.** They share the Custodian credential decrypt path
+(`resolveOwnerProviderKey` / `custodian_get_provider_credential`). There is no
+operator `OPENAI_API_KEY` fallback on those production paths. Missing key or
+model fails closed with a clear Settings-directed message before any provider
+contact. Requests use `store: false`. Secrets never appear in logs, errors, or
+drafts.
 
-- Every signed-in stranger can spend operator money on those two features.
-  Existing controls: `conversation-extract` admits ten authenticated requests
-  per rolling hour per user with a 30-second cooldown and a 110 KB body limit
-  (README); `document-extract` also consults a per-user quota decision. Both
-  have 20–25 s timeouts. Whether those quotas are adequate for strangers is a
-  product decision, not something verified here.
-- `conversation-extract` hard-codes `gpt-5.6-terra`; `document-extract` defaults to
-  `gpt-5.6-luna` (env override `OPENAI_DOCUMENT_MODEL`).
-
-**Smallest decision needed before public release**, pick one:
-(a) route both through the same owner key and model (small, mirrors this change:
-inject `resolveOwnerProviderKey`), (b) keep them operator-funded behind a tighter
-quota or an allow-list, or (c) disable them for non-owner accounts.
+Hosted activation still **REQUIRES PRODUCTION ACTION**: BYOK migrations, wrapping
+key secrets, and Edge deploys for `provider-key` plus the updated extract
+functions. See §8.
 
 ## 6. Data export and deletion scope
 
@@ -286,6 +281,5 @@ the actual Auth dashboard behavior.
 - [ ] Deploy `provider-key` and the updated `custodian-run` (JWT verification on).
 - [ ] Verify and set hosted Auth settings (§1).
 - [ ] Two-account isolation run on staging (§7).
-- [ ] Decide the Conversation/File Excavation exposure (§5).
 - [ ] Decide account deletion and expanded export (§6).
 - [ ] Lovable publication and release.

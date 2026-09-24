@@ -133,8 +133,9 @@ VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 
 Never put service-role keys, database passwords, private API keys, or other
 secrets in browser code or committed files. Conversation and File Excavation
-require the existing `OPENAI_API_KEY` configured as a Supabase Edge Function
-secret; see the setup guide below.
+use the authenticated owner's encrypted OpenAI key and Settings model preference
+(same BYOK path as Custodian). There is no shared operator `OPENAI_API_KEY`
+fallback on those production paths; see the setup guide below.
 
 The MCP server also requires a server-only `MCP_ALLOWED_CLIENT_IDS` value: a
 comma-separated UUID allow-list of explicitly approved OAuth clients. Do not
@@ -147,12 +148,12 @@ cannot spend the same remaining budget.
 ## Accounts and bring-your-own OpenAI key
 
 Anyone can create an account. A new account is an empty private archive and
-needs no AI provider key. Provider-backed Custodian work runs on the owner's own
-OpenAI API key, encrypted server-side and never readable again, with the model
-chosen from a fixed six-model list in Settings. Conversation and File Excavation
-still use the server-side key. See
+needs no AI provider key. Provider-backed Custodian work, Conversation
+Excavation, and File Excavation all run on the owner's own OpenAI API key,
+encrypted server-side and never readable again, with the model chosen from a
+fixed six-model list in Settings. See
 [Public readiness](./docs/public-readiness.md) for the architecture, required
-secrets and Auth settings, export/deletion scope, and open cost decisions.
+secrets and Auth settings, export/deletion scope, and remaining hosted steps.
 
 ## Detailed setup and verification
 

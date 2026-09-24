@@ -5,6 +5,7 @@ import {
   jsonResponse,
   logDiagnostic,
   responseHeaders,
+  trustedRuntimeSupabase,
   type AuthenticatedSupabase,
 } from "../_shared/http.ts";
 import {
@@ -31,6 +32,14 @@ import {
   DOCUMENT_SYNTHESIS_LIMITS,
   orderSourceReferenceIds,
 } from "../_shared/document-draft.ts";
+import {
+  excavationFundingMessage,
+  parseStoredCredential,
+  resolveOwnerExcavationFunding,
+  type ExcavationFunding,
+  type ExcavationFundingFailure,
+  type StoredCredential,
+} from "../_shared/owner-excavation-funding.ts";
 
 const MAX_CANDIDATE_RECORDS = 75;
 const MAX_INSIGHTS = 12;
@@ -47,11 +56,14 @@ const OPENAI_TIMEOUT_MS = 20_000;
 const OPENAI_MAX_OUTPUT_TOKENS = 6_000;
 const MAX_PIPELINE_MS = 135_000;
 const MAX_SYNTHESIS_INPUT_BYTES = 300_000;
-const DEFAULT_MODEL = "gpt-5.6-luna";
 
 export type DocumentExtractDiagnostic =
   | "authentication_unavailable"
   | "configuration_unavailable"
+  | "provider_key_missing"
+  | "provider_key_unreadable"
+  | "model_not_selected"
+  | "model_selection_invalid"
   | "quota_rpc_failure"
   | "quota_exceeded"
   | "extraction_timeout"
@@ -79,12 +91,6 @@ function diagnosticResponse(
   extraHeaders: Record<string, string> = {},
 ): Response {
   return jsonResponse({ error: message, diagnostic }, status, origin, extraHeaders);
-}
-
-/** Resolves the excavation model: OPENAI_DOCUMENT_MODEL when set, else the default. */
-function excavationModel(): string {
-  const configured = Deno.env.get("OPENAI_DOCUMENT_MODEL")?.trim();
-  return configured && configured.length > 0 ? configured : DEFAULT_MODEL;
 }
 
 type Insight = { text: string; sourceReferenceIds: string[] };
@@ -293,11 +299,10 @@ async function openAiJson(
   schema: Record<string, unknown>,
   requestSignal: AbortSignal,
   deadline: number,
-  getEnv: (name: string) => string | undefined,
+  funding: { apiKey: string; model: string },
+  fetchProvider: typeof fetch = fetch,
 ): Promise<unknown> {
   if (Date.now() > deadline) throw new DocumentExtractFailure("extraction_timeout");
-  const openAiKey = getEnv("OPENAI_API_KEY");
-  if (!openAiKey) throw new DocumentExtractFailure("configuration_unavailable");
   const remainingMs = deadline - Date.now();
   if (remainingMs <= 0) throw new DocumentExtractFailure("extraction_timeout");
   const controller = new AbortController();
@@ -306,12 +311,12 @@ async function openAiJson(
   const timeout = setTimeout(() => controller.abort(), Math.min(OPENAI_TIMEOUT_MS, remainingMs));
   const startedAt = Date.now();
   try {
-    const response = await fetch("https://api.openai.com/v1/responses", {
+    const response = await fetchProvider("https://api.openai.com/v1/responses", {
       method: "POST",
       signal: controller.signal,
-      headers: { Authorization: `Bearer ${openAiKey}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${funding.apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: excavationModel(),
+        model: funding.model,
         store: false,
         reasoning: { effort: "none" },
         max_output_tokens: OPENAI_MAX_OUTPUT_TOKENS,
@@ -594,7 +599,42 @@ function finalDraft(
 export type DocumentExtractDependencies = {
   authenticate?: typeof authenticatedSupabase;
   getEnv?: (name: string) => string | undefined;
+  trustedClient?: () => ReturnType<typeof trustedRuntimeSupabase>;
+  resolveFunding?: (input: {
+    ownerId: string;
+    preferredModel: string | null;
+    client: AuthenticatedSupabase["client"];
+  }) => Promise<ExcavationFunding>;
+  fetchProvider?: typeof fetch;
 };
+
+async function defaultResolveFunding(input: {
+  ownerId: string;
+  preferredModel: string | null;
+  getEnv: (name: string) => string | undefined;
+  trustedClient: () => ReturnType<typeof trustedRuntimeSupabase>;
+}): Promise<ExcavationFunding> {
+  return resolveOwnerExcavationFunding({
+    ownerId: input.ownerId,
+    preferredModel: input.preferredModel,
+    getEnv: input.getEnv,
+    fetchCredential: async (credentialOwnerId) => {
+      const trusted = input.trustedClient();
+      if (!trusted) throw new Error("trusted_runtime_unavailable");
+      const { data, error } = await trusted.rpc("custodian_get_provider_credential", {
+        runtime_owner_id: credentialOwnerId,
+      });
+      if (error) throw new Error("credential_lookup_failed");
+      const parsed = parseStoredCredential(data);
+      if (parsed === "malformed") throw new Error("credential_malformed");
+      return parsed as StoredCredential | null;
+    },
+  });
+}
+
+function fundingDiagnostic(reason: ExcavationFundingFailure): DocumentExtractDiagnostic {
+  return reason;
+}
 
 export async function handleDocumentExtract(
   request: Request,
@@ -603,6 +643,8 @@ export async function handleDocumentExtract(
   const requestStartedAt = Date.now();
   const authenticate = dependencies.authenticate ?? authenticatedSupabase;
   const getEnv = dependencies.getEnv ?? ((name: string) => Deno.env.get(name));
+  const trustedClient = dependencies.trustedClient ?? trustedRuntimeSupabase;
+  const fetchProvider = dependencies.fetchProvider ?? fetch;
   const origin = originFor(request);
   if (origin === "__denied__") return jsonResponse({ error: "Origin is not allowed." }, 403);
   if (request.method === "OPTIONS") return new Response("ok", { headers: responseHeaders(origin) });
@@ -624,18 +666,46 @@ export async function handleDocumentExtract(
     );
   }
   if (!auth) return jsonResponse({ error: "Sign in is required." }, 401, origin);
-  const openAiKey = getEnv("OPENAI_API_KEY");
-  if (!openAiKey) {
+
+  const { data: settings, error: settingsError } = await auth.client
+    .from("owner_provider_settings")
+    .select("model_name")
+    .eq("owner_id", auth.user.id)
+    .eq("provider", "openai")
+    .maybeSingle();
+  if (settingsError) {
     const durationMs = Date.now() - requestStartedAt;
-    logDiagnostic("preflight", "configuration", { status: 503, durationMs });
+    logDiagnostic("preflight", "model_preference", { status: 503, durationMs });
     return diagnosticResponse(
-      "Excavation is not configured. Please try again later.",
+      "Excavation is temporarily unavailable. Please retry.",
       503,
       origin,
       "configuration_unavailable",
     );
   }
-  void openAiKey;
+  const preferredModel =
+    settings && typeof settings.model_name === "string" ? settings.model_name : null;
+
+  const resolveFunding =
+    dependencies.resolveFunding ??
+    ((input) =>
+      defaultResolveFunding({
+        ownerId: input.ownerId,
+        preferredModel: input.preferredModel,
+        getEnv,
+        trustedClient,
+      }));
+  const funding = await resolveFunding({
+    ownerId: auth.user.id,
+    preferredModel,
+    client: auth.client,
+  });
+  if (!funding.ok) {
+    const durationMs = Date.now() - requestStartedAt;
+    const diagnostic = fundingDiagnostic(funding.reason);
+    logDiagnostic("preflight", diagnostic, { status: 409, durationMs });
+    return diagnosticResponse(excavationFundingMessage(funding.reason), 409, origin, diagnostic);
+  }
 
   try {
     const bytes = await readBoundedBody(request);
@@ -718,7 +788,8 @@ export async function handleDocumentExtract(
         chunkResponseSchema,
         request.signal,
         deadline,
-        getEnv,
+        funding,
+        fetchProvider,
       );
       return validateChunkAnalysis(result, new Set(chunk.sourceReferenceIds));
     });
@@ -765,7 +836,8 @@ export async function handleDocumentExtract(
       synthesisResponseSchema,
       request.signal,
       deadline,
-      getEnv,
+      funding,
+      fetchProvider,
     );
     const draft = finalDraft(synthesis, normalized, candidates, displayFileName(file.name));
     if (!draft)

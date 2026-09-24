@@ -207,7 +207,9 @@ export type ReadonlyAnalysisStartResult =
       detail?: string;
     };
 
-export function emptyReadonlyAnalysisDraft(): ReadonlyAnalysisDraft {
+export function emptyReadonlyAnalysisDraft(
+  overrides: Partial<ReadonlyAnalysisDraft> = {},
+): ReadonlyAnalysisDraft {
   return {
     caseId: "",
     policyName: "",
@@ -223,6 +225,7 @@ export function emptyReadonlyAnalysisDraft(): ReadonlyAnalysisDraft {
     modelTier: "",
     promptVersion: "",
     objective: "",
+    ...overrides,
   };
 }
 

@@ -60,10 +60,6 @@ describe("OpenAI model catalog", () => {
     const allowed = new Set([
       "src/lib/openai-models.ts",
       "supabase/functions/_shared/openai-models.ts",
-      // Not Custodian: these server-key extraction paths keep their own model
-      // literals until the operator-cost decision in docs/public-readiness.md.
-      "supabase/functions/conversation-extract/index.ts",
-      "supabase/functions/document-extract/index.ts",
     ]);
     const offenders: string[] = [];
     const walk = (dir: string) => {

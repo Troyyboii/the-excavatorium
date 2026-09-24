@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   ArchiveErrorState,
   CustodianPage,
@@ -41,6 +41,7 @@ export function RunRoomSurface({
   ownerPresent = false,
   surfaceEnabled = CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER,
   ports = null,
+  preferredModelTier = null,
 }: {
   runs: CustodianRun[];
   providerHoldProjection: CustodianRunRead["providerHoldProjection"];
@@ -50,6 +51,8 @@ export function RunRoomSurface({
   ownerPresent?: boolean;
   surfaceEnabled?: boolean;
   ports?: ReadonlyAnalysisPorts | null;
+  /** Policy tier derived from the owner's Settings model preference, when known. */
+  preferredModelTier?: ModelTier | null;
 }) {
   const startBlock = readonlyStartBlock({
     online,
@@ -87,6 +90,7 @@ export function RunRoomSurface({
             ports={ports}
             runs={runs}
             providerHoldProjection={providerHoldProjection}
+            preferredModelTier={preferredModelTier}
           />
         ) : (
           <>
@@ -148,16 +152,31 @@ function ReadonlyAnalysisStart({
   ports,
   runs,
   providerHoldProjection,
+  preferredModelTier,
 }: {
   ports: ReadonlyAnalysisPorts;
   runs: CustodianRun[];
   providerHoldProjection: CustodianRunRead["providerHoldProjection"];
+  preferredModelTier: ModelTier | null;
 }) {
   const session = useRef(createReadonlyAnalysisSession()).current;
   const busyRef = useRef(false);
-  const [draft, setDraft] = useState<ReadonlyAnalysisDraft>(emptyReadonlyAnalysisDraft);
+  const [draft, setDraft] = useState<ReadonlyAnalysisDraft>(() =>
+    emptyReadonlyAnalysisDraft({
+      modelTier: preferredModelTier ?? "",
+    }),
+  );
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ReadonlyAnalysisStartResult | null>(null);
+  const seededRef = useRef(preferredModelTier !== null);
+
+  useEffect(() => {
+    if (seededRef.current || preferredModelTier === null) return;
+    seededRef.current = true;
+    setDraft((current) =>
+      current.modelTier === "" ? { ...current, modelTier: preferredModelTier } : current,
+    );
+  }, [preferredModelTier]);
 
   function update(patch: Partial<ReadonlyAnalysisDraft>) {
     setDraft((current) => ({ ...current, ...patch }));
@@ -202,8 +221,9 @@ function ReadonlyAnalysisStart({
   return (
     <form className="space-y-4" onSubmit={(event) => void submit(event)}>
       <FoundationState title="Readonly analysis">
-        Every field is an explicit owner input. This form does not choose a model, ceiling, or
-        objective. It is not a chat.
+        Every field is an explicit owner input. model_tier defaults from the Custodian model chosen
+        in Settings when present; Advanced may still override it. The server still rejects a
+        preference that does not match the persisted run tier. This form is not a chat.
       </FoundationState>
       <div className="grid gap-4 md:grid-cols-2">
         <Field label="case_id">
