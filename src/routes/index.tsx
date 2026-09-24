@@ -7,6 +7,7 @@ import { buildDashboardViewModel } from "@/lib/dashboard";
 import { homeAttentionCopy } from "./-home-helpers";
 import { CaptureMenu } from "@/components/app-shell";
 import { useOnlineStatus } from "@/hooks/use-online";
+import { CustodianFigure } from "@/components/custodian/custodian-figure";
 
 export const Route = createFileRoute("/")({ component: HomePage, ssr: false });
 
@@ -62,63 +63,66 @@ function HomePage() {
   const attentionCopy = homeAttentionCopy(model.attentionItems.length > 0);
 
   return (
-    <div className="mx-auto max-w-5xl space-y-10 py-5 sm:py-9">
-      <header className="max-w-3xl">
-        <p className="font-mono text-xs uppercase tracking-[0.18em] text-brass">Home</p>
-        <h1 className="mt-3 font-serif text-4xl leading-tight text-foreground sm:text-5xl">
-          {attentionCopy.heading}
-        </h1>
-        <p className="mt-3 max-w-2xl text-base leading-7 text-muted-foreground">
-          {attentionCopy.explanation}
-        </p>
-      </header>
+    <div className="mx-auto grid max-w-5xl gap-10 py-5 sm:py-9 lg:grid-cols-[13rem_minmax(0,1fr)]">
+      <CustodianFigure className="w-52 self-start" />
+      <div className="min-w-0 space-y-10 lg:col-start-2 lg:row-start-1">
+        <header className="max-w-3xl">
+          <p className="font-mono text-xs uppercase tracking-[0.18em] text-brass">Home</p>
+          <h1 className="mt-3 font-serif text-4xl leading-tight text-foreground sm:text-5xl">
+            {attentionCopy.heading}
+          </h1>
+          <p className="mt-3 max-w-2xl text-base leading-7 text-muted-foreground">
+            {attentionCopy.explanation}
+          </p>
+        </header>
 
-      {model.attentionItems.length ? (
-        <section
-          aria-labelledby="attention-heading"
-          className="overflow-hidden border-y border-border"
-        >
-          <div className="flex min-h-14 items-center justify-between gap-4 border-b border-border px-3 sm:px-4">
-            <h2 id="attention-heading" className="font-serif text-xl text-foreground">
-              For your attention
-            </h2>
-            <Link
-              to="/search"
-              className="inline-flex min-h-11 items-center gap-2 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              Search Archive <ArrowRight size={16} aria-hidden="true" />
-            </Link>
-          </div>
-          <div className="divide-y divide-border">
-            {model.attentionItems.map((item) => (
-              <div key={item.record.id}>
-                <RecordRow r={item.record} showType />
-                <p className="px-3 pb-3 text-xs text-muted-foreground sm:px-4">
-                  Needs attention: {item.status}
-                </p>
-              </div>
-            ))}
+        {model.attentionItems.length ? (
+          <section
+            aria-labelledby="attention-heading"
+            className="overflow-hidden border-y border-border"
+          >
+            <div className="flex min-h-14 items-center justify-between gap-4 border-b border-border px-3 sm:px-4">
+              <h2 id="attention-heading" className="font-serif text-xl text-foreground">
+                For your attention
+              </h2>
+              <Link
+                to="/search"
+                className="inline-flex min-h-11 items-center gap-2 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                Search Archive <ArrowRight size={16} aria-hidden="true" />
+              </Link>
+            </div>
+            <div className="divide-y divide-border">
+              {model.attentionItems.map((item) => (
+                <div key={item.record.id}>
+                  <RecordRow r={item.record} showType />
+                  <p className="px-3 pb-3 text-xs text-muted-foreground sm:px-4">
+                    Needs attention: {item.status}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        <section aria-labelledby="next-actions-heading">
+          <h2 id="next-actions-heading" className="font-serif text-xl text-foreground">
+            What would you like to do?
+          </h2>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <HomeAction to="/cases" icon={Question} title="Ask a question">
+              Start an Investigation
+            </HomeAction>
+            <HomeAction to="/search" icon={MagnifyingGlass} title="Search Archive">
+              Find a record or piece of material
+            </HomeAction>
+            <div className="min-h-28 border border-border bg-card p-4">
+              <CaptureMenu online={online} label="Add material" />
+              <p className="mt-2 text-sm text-muted-foreground">Choose a supported capture path</p>
+            </div>
           </div>
         </section>
-      ) : null}
-
-      <section aria-labelledby="next-actions-heading">
-        <h2 id="next-actions-heading" className="font-serif text-xl text-foreground">
-          What would you like to do?
-        </h2>
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <HomeAction to="/cases" icon={Question} title="Ask a question">
-            Start an Investigation
-          </HomeAction>
-          <HomeAction to="/search" icon={MagnifyingGlass} title="Search Archive">
-            Find a record or piece of material
-          </HomeAction>
-          <div className="min-h-28 border border-border bg-card p-4">
-            <CaptureMenu online={online} label="Add material" />
-            <p className="mt-2 text-sm text-muted-foreground">Choose a supported capture path</p>
-          </div>
-        </div>
-      </section>
+      </div>
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { CustodianFigure } from "./custodian-figure";
 import { Link } from "@tanstack/react-router";
 import {
   ArrowUpRight,
@@ -138,10 +139,13 @@ export function CaseListSurface({
       {error ? <ArchiveErrorState error={error} /> : null}
       {!error && (loading || cases === undefined) ? <LoadingMark /> : null}
       {!loading && cases?.length === 0 ? (
-        <EmptyArchiveState
-          title="No Investigations yet."
-          hint="Start an Investigation when material needs a question and a bounded archive scope."
-        />
+        <div className="grid items-center gap-6 lg:grid-cols-[minmax(0,1fr)_10rem]">
+          <EmptyArchiveState
+            title="No Investigations yet."
+            hint="Start an Investigation when material needs a question and a bounded archive scope."
+          />
+          <CustodianFigure className="w-40" />
+        </div>
       ) : null}
       {cases?.length ? (
         <Section
@@ -332,6 +336,7 @@ export function CaseDetailSurface({
         />
         <CaseCollection
           title="Findings"
+          aside={findings.length ? <CustodianFigure className="w-36" /> : undefined}
           icon={CheckCircle}
           empty="No Custodian Findings yet. Findings are interpretations from analysis — not Owner Judgment."
           items={findings.map((finding) => ({
@@ -603,11 +608,14 @@ function CaseField({
 
 function CaseCollection({
   title,
+  aside,
   icon: Icon,
   empty,
   items,
 }: {
   title: string;
+  /** Optional decorative column shown beside the list on wide screens. */
+  aside?: ReactNode;
   icon: typeof MagnifyingGlass;
   empty: string;
   items: readonly {
@@ -621,34 +629,37 @@ function CaseCollection({
   return (
     <Section title={title}>
       {items.length ? (
-        <ul className="divide-y divide-luminous-gold/15">
-          {items.map((item) => (
-            <li key={item.id} className="flex items-start gap-3 px-4 py-3">
-              <Icon size={17} className="mt-0.5 shrink-0 text-luminous-gold" aria-hidden="true" />
-              <span className="min-w-0">
-                {item.sourceRecord ? (
-                  <Link
-                    to={recordHref(item.sourceRecord)}
-                    className="flex min-h-11 items-center text-sm text-white-gold underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold"
-                  >
-                    {item.title}
-                  </Link>
-                ) : (
-                  <span className="block text-sm text-white-gold">{item.title}</span>
-                )}
-                <span className="mt-1 block font-mono text-[10px] text-muted-foreground">
-                  {item.meta}
-                </span>
-                {item.sourceRecord ? (
-                  <span className="mt-1 block text-[10px] text-muted-foreground">
-                    Source record: {item.sourceRecord.title}
+        <div className={aside ? "lg:grid lg:grid-cols-[minmax(0,1fr)_11rem] lg:items-start" : ""}>
+          <ul className="divide-y divide-luminous-gold/15">
+            {items.map((item) => (
+              <li key={item.id} className="flex items-start gap-3 px-4 py-3">
+                <Icon size={17} className="mt-0.5 shrink-0 text-luminous-gold" aria-hidden="true" />
+                <span className="min-w-0">
+                  {item.sourceRecord ? (
+                    <Link
+                      to={recordHref(item.sourceRecord)}
+                      className="flex min-h-11 items-center text-sm text-white-gold underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold"
+                    >
+                      {item.title}
+                    </Link>
+                  ) : (
+                    <span className="block text-sm text-white-gold">{item.title}</span>
+                  )}
+                  <span className="mt-1 block font-mono text-[10px] text-muted-foreground">
+                    {item.meta}
                   </span>
-                ) : null}
-                {item.details ? <div className="mt-3">{item.details}</div> : null}
-              </span>
-            </li>
-          ))}
-        </ul>
+                  {item.sourceRecord ? (
+                    <span className="mt-1 block text-[10px] text-muted-foreground">
+                      Source record: {item.sourceRecord.title}
+                    </span>
+                  ) : null}
+                  {item.details ? <div className="mt-3">{item.details}</div> : null}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {aside ? <div className="p-4">{aside}</div> : null}
+        </div>
       ) : (
         <p className="p-5 text-sm text-muted-foreground">{empty}</p>
       )}
