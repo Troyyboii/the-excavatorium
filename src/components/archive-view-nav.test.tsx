@@ -16,6 +16,10 @@ afterEach(cleanup);
 
 describe("Archive view navigation", () => {
   test("keeps Browse, Connections, Timeline, and Search within the Archive", async () => {
+    const noScroll = () => undefined;
+    window.scrollTo = noScroll;
+    globalThis.scrollTo = noScroll;
+
     const root = createRootRoute({
       component: () => (
         <>
