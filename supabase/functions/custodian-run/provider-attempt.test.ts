@@ -2232,12 +2232,34 @@ Deno.test("provider HTTP failures keep distinct codes and an unknown hold", asyn
   assertEquals(invalidOutput.reservation?.actualTokens, 1_250);
   assertEquals(typeof invalidOutput.reservation?.actualCostUsd, "number");
   assertEquals(invalidOutput.steps.at(-1)?.output?.errorCode, "openai_invalid_output");
+  assertEquals(invalidOutput.steps.at(-1)?.output?.validationReason, "invalid_synthesis_schema");
   assertEquals(invalid.body.reason, "openai_invalid_output");
   assertNoProviderLeak(invalidOutput.settlePayloads[0]);
   assertNoProviderLeak(invalidOutput.steps.at(-1)?.output);
   assertNoProviderLeak(invalid);
   await advance(invalidOutput, "invocation-2");
   assertEquals(invalidOutput.fetches, 1);
+
+  // The live failure class: HTTP 200, known usage, schema-valid JSON that
+  // breaks a local semantic rule. Usage is still settled, the run fails with a
+  // bounded reason, nothing is materialized, and no second request is made.
+  const semantic = world();
+  semantic.fetchImpl = () =>
+    Promise.resolve(Response.json(providerResponse(synthesis([finding("finding", evidenceId)]))));
+  semantic.run.input_snapshot = { ...semantic.run.input_snapshot, citable_evidence_ids: [] };
+  await advance(semantic);
+  assertEquals(semantic.fetches, 1);
+  assertEquals(semantic.reservation?.status, "settled_known");
+  assertEquals(semantic.reservation?.usageKnowledge, "known");
+  assertEquals(semantic.reservation?.actualTokens, 1_250);
+  assertEquals(semantic.steps.at(-1)?.output, {
+    errorCode: "openai_invalid_output",
+    usage_knowledge: "known",
+    validationReason: "evidence_id_outside_snapshot",
+  });
+  assertNoProviderLeak(semantic.steps.at(-1)?.output);
+  await advance(semantic, "invocation-2");
+  assertEquals(semantic.fetches, 1);
 
   const success = world();
   const advanced = await advance(success);

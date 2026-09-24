@@ -40,8 +40,11 @@ function params(maxOutputTokens = 512) {
     systemPrompt: `Apply the owner policy. ${PROMPT_SENTINEL}`,
     untrustedEvidence: { objective: "bounded", evidence: { note: EVIDENCE_SENTINEL } },
     maxOutputTokens,
+    citableEvidenceIds: [EVIDENCE_ID],
   });
 }
+
+const EVIDENCE_ID = "123e4567-e89b-42d3-a456-426614174000";
 
 type Transport = { fetch: ProviderFetch; calls: Array<{ url: string; init: RequestInit }> };
 
@@ -193,7 +196,7 @@ Deno.test("the Edge test run has no network permission, so no test can contact O
 });
 
 Deno.test("the generated Structured Outputs format is strict, fixed, and authority-free", () => {
-  const format = synthesisTextFormat();
+  const format = synthesisTextFormat([EVIDENCE_ID]);
   assertEquals(Object.keys(format), ["type", "name", "strict", "schema"], "format keys");
   assertEquals(format.type, "json_schema");
   assertEquals(format.name, "custodian_synthesis");
@@ -206,25 +209,29 @@ Deno.test("the generated Structured Outputs format is strict, fixed, and authori
     "root required",
   );
   const findings = (schema.properties as Record<string, SchemaNode>).findings;
-  assertEquals(
-    (findings.items as SchemaNode).required,
-    [
-      "outcome",
-      "title",
-      "conclusion",
-      "analysis_mode",
-      "confidence",
-      "supporting_evidence_ids",
-      "contrary_evidence_ids",
-      "uncertainties",
-      "assumptions",
-      "scope_limits",
-      "evidence_gaps",
-      "what_would_change_mind",
-      "revisit_condition",
-    ],
-    "finding required",
-  );
+  const variants = (findings.items as SchemaNode).anyOf as SchemaNode[];
+  assertEquals(variants.length, 4, "one variant per outcome");
+  for (const variant of variants) {
+    assertEquals(
+      variant.required,
+      [
+        "outcome",
+        "title",
+        "conclusion",
+        "analysis_mode",
+        "confidence",
+        "supporting_evidence_ids",
+        "contrary_evidence_ids",
+        "uncertainties",
+        "assumptions",
+        "scope_limits",
+        "evidence_gaps",
+        "what_would_change_mind",
+        "revisit_condition",
+      ],
+      "finding required",
+    );
+  }
   assertEquals(
     ((schema.properties as Record<string, SchemaNode>).approvalKind as SchemaNode).enum,
     [...APPROVAL_KINDS],
@@ -378,7 +385,10 @@ Deno.test("synthesis params are stored-off, bounded, and carry the Zod format", 
   assertEquals(request.model, "gpt-5.6-luna");
   assertEquals(request.store, false);
   assertEquals(request.max_output_tokens, 4096);
-  assertEquals(JSON.stringify(request.text), JSON.stringify({ format: synthesisTextFormat() }));
+  assertEquals(
+    JSON.stringify(request.text),
+    JSON.stringify({ format: synthesisTextFormat([EVIDENCE_ID]) }),
+  );
   for (const key of ["background", "reasoning", "stream", "tools", "previous_response_id"]) {
     if (key in request) throw new Error(`unexpected ${key}`);
   }
@@ -404,6 +414,7 @@ Deno.test("synthesis params are stored-off, bounded, and carry the Zod format", 
         systemPrompt: bad,
         untrustedEvidence: {},
         maxOutputTokens: 64,
+        citableEvidenceIds: [],
       });
     } catch {
       rejected = true;
@@ -453,7 +464,10 @@ Deno.test("the SDK sends exactly the counted request body to the Responses endpo
   const sent = JSON.parse(body);
   assertEquals(sent.store, false);
   assertEquals(sent.max_output_tokens, 512);
-  assertEquals(sent.text, JSON.parse(JSON.stringify({ format: synthesisTextFormat() })));
+  assertEquals(
+    sent.text,
+    JSON.parse(JSON.stringify({ format: synthesisTextFormat([EVIDENCE_ID]) })),
+  );
   assertEquals(exchange.kind, "response");
   if (exchange.kind !== "response") return;
   assertEquals(exchange.diagnostic, { httpStatus: 200, requestId: "req_success01" });
@@ -842,4 +856,19 @@ Deno.test("output classification separates refusal, incomplete, malformed, and J
   assertEquals(interpretSynthesisResponse("plain text body"), { kind: "unreadable" });
   const noUsage = interpretSynthesisResponse({ ...successBody(), usage: undefined });
   assertEquals(noUsage.kind === "read" && noUsage.usage, null);
+});
+
+Deno.test("an empty snapshot tells the model a Finding is unavailable", () => {
+  const request = buildSynthesisParams({
+    model: "gpt-5.6-luna",
+    systemPrompt: "Apply the owner policy.",
+    untrustedEvidence: { objective: "bounded", evidence: {} },
+    maxOutputTokens: 512,
+    citableEvidenceIds: [],
+  });
+  const text = JSON.stringify(request.input);
+  if (!text.includes("no citable evidence")) throw new Error("missing empty-snapshot guidance");
+  if (JSON.stringify(params().input).includes("no citable evidence")) {
+    throw new Error("guidance must only appear for an empty snapshot");
+  }
 });
