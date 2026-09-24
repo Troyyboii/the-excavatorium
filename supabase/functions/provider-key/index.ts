@@ -2,6 +2,7 @@ import {
   allowedOrigin,
   authenticatedSupabase,
   jsonResponse,
+  logDiagnostic,
   responseHeaders,
   trustedRuntimeSupabase,
   type AuthenticatedSupabase,
@@ -148,11 +149,21 @@ export function createProviderKeyHandler(
     try {
       wrapping = loadWrappingKeys(dependencies.getEnv);
     } catch {
-      return jsonResponse({ error: "Key storage is not configured on this server." }, 503, origin);
+      logDiagnostic("provider-key", "encryption_key_config_invalid", { status: 503 });
+      return jsonResponse(
+        { error: "Key storage is not configured on this server.", code: "encryption_config" },
+        503,
+        origin,
+      );
     }
     const trusted = dependencies.trustedClient();
     if (!trusted) {
-      return jsonResponse({ error: "Key storage is not configured on this server." }, 503, origin);
+      logDiagnostic("provider-key", "trusted_client_unavailable", { status: 503 });
+      return jsonResponse(
+        { error: "Key storage is not configured on this server.", code: "trusted_client" },
+        503,
+        origin,
+      );
     }
 
     try {
@@ -163,7 +174,14 @@ export function createProviderKeyHandler(
         key_version: sealed.keyVersion,
         key_last4: sealed.last4,
       });
-      if (error) return jsonResponse({ error: "The key could not be saved." }, 503, origin);
+      if (error) {
+        logDiagnostic("provider-key", "store_rpc_failed", { status: 503 });
+        return jsonResponse(
+          { error: "The key could not be saved.", code: "store_failed" },
+          503,
+          origin,
+        );
+      }
       return jsonResponse(
         { configured: true, last4: sealed.last4, keyVersion: sealed.keyVersion },
         200,
@@ -173,7 +191,12 @@ export function createProviderKeyHandler(
       if (error instanceof ProviderKeyCryptoError && error.code === "invalid_key_format") {
         return jsonResponse({ error: "That does not look like an OpenAI API key." }, 400, origin);
       }
-      return jsonResponse({ error: "The key could not be saved." }, 503, origin);
+      logDiagnostic("provider-key", "encrypt_or_store_failed", { status: 503 });
+      return jsonResponse(
+        { error: "The key could not be saved.", code: "store_failed" },
+        503,
+        origin,
+      );
     }
   };
 }
