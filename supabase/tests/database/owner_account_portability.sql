@@ -1,7 +1,7 @@
--- Wave 2: owner account export + purge boundaries.
+-- Wave 2: owner account export + purge boundaries (hardened for RESTRICT graphs).
 begin;
 
-select plan(9);
+select plan(11);
 
 set local role postgres;
 
@@ -53,6 +53,57 @@ insert into public.evidence_items (
 insert into public.owner_provider_settings (owner_id, provider, model_name) values
   ('a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1', 'openai', 'gpt-5.6-sol');
 
+-- Populated Custodian graph that previously broke cases-first purge (D1):
+-- analysis findings RESTRICT runs/steps; runs RESTRICT tool_policies.
+insert into public.tool_policies (
+  id, owner_id, case_id, policy_name, status, allowed_model_tiers, allowed_tools,
+  per_run_token_budget, per_run_cost_usd, per_run_latency_ms,
+  created_by, updated_by
+) values (
+  'aaaaaaaa-1111-4111-8111-111111111111', 'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1',
+  'e5e5e5e5-e5e5-4e5e-8e5e-e5e5e5e5e5e5', 'Owner A policy', 'active',
+  array['luna', 'terra']::text[], array['safe_read']::text[],
+  100, 1, 1000,
+  'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1', 'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1'
+);
+
+insert into public.agent_runs (
+  id, owner_id, case_id, tool_policy_id, idempotency_key, request_hash, objective,
+  input_snapshot, input_snapshot_hash, prompt_version, model_tier, status,
+  created_by, updated_by
+) values (
+  'bbbbbbbb-1111-4111-8111-111111111111', 'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1',
+  'e5e5e5e5-e5e5-4e5e-8e5e-e5e5e5e5e5e5', 'aaaaaaaa-1111-4111-8111-111111111111',
+  'portability-restrict', repeat('a', 32), 'Populated purge fixture',
+  '{}', repeat('b', 32), 'portability-v1', 'luna', 'completed',
+  'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1', 'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1'
+);
+
+insert into public.agent_steps (
+  id, owner_id, case_id, run_id, sequence_no, step_kind, status, idempotency_key,
+  model_tier, prompt_version, input_payload, output_payload, completed_at,
+  created_by, updated_by
+) values (
+  'cccccccc-1111-4111-8111-111111111111', 'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1',
+  'e5e5e5e5-e5e5-4e5e-8e5e-e5e5e5e5e5e5', 'bbbbbbbb-1111-4111-8111-111111111111',
+  1, 'synthesize', 'completed', 'portability-restrict-step',
+  'luna', 'portability-v1', '{}'::jsonb, '{"summary":"fixture"}'::jsonb, now(),
+  'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1', 'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1'
+);
+
+insert into public.custodian_findings (
+  id, owner_id, case_id, analysis_mode, title, finding, origin_kind,
+  analysis_outcome, origin_run_id, origin_step_id, candidate_index, analysis_result_hash,
+  created_by, updated_by
+) values (
+  'dddddddd-1111-4111-8111-111111111111', 'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1',
+  'e5e5e5e5-e5e5-4e5e-8e5e-e5e5e5e5e5e5', 'synthesis', 'Restrict fixture finding',
+  'Analysis finding that RESTRICTs run/step deletion.', 'analysis',
+  'finding', 'bbbbbbbb-1111-4111-8111-111111111111', 'cccccccc-1111-4111-8111-111111111111',
+  0, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1', 'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1'
+);
+
 select has_function(
   'public',
   'export_user_account_snapshot',
@@ -63,8 +114,8 @@ select has_function(
 select has_function(
   'public',
   'purge_owner_account_data',
-  array[]::text[],
-  'purge_owner_account_data exists'
+  array['uuid']::text[],
+  'purge_owner_account_data(runtime_owner_id) exists'
 );
 
 select ok(
@@ -76,11 +127,16 @@ select ok(
 );
 
 select ok(
-  not pg_catalog.has_function_privilege('anon', 'public.purge_owner_account_data()', 'EXECUTE')
+  not pg_catalog.has_function_privilege(
+    'anon', 'public.purge_owner_account_data(uuid)', 'EXECUTE'
+  )
+  and not pg_catalog.has_function_privilege(
+    'authenticated', 'public.purge_owner_account_data(uuid)', 'EXECUTE'
+  )
   and pg_catalog.has_function_privilege(
-    'authenticated', 'public.purge_owner_account_data()', 'EXECUTE'
+    'service_role', 'public.purge_owner_account_data(uuid)', 'EXECUTE'
   ),
-  'account purge is authenticated-only'
+  'account purge is service_role-only'
 );
 
 set local role authenticated;
@@ -109,13 +165,22 @@ select ok(
   'owner B cannot see owner A cases, evidence, or preferences via export'
 );
 
-select set_config('request.jwt.claim.sub', 'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1', true);
+-- D3: authenticated must not be able to call the destructive purge RPC.
+select throws_ok(
+  $$select public.purge_owner_account_data('a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1')$$,
+  '42501',
+  null,
+  'authenticated cannot invoke purge_owner_account_data'
+);
 
--- Purge as owner A, then verify isolation as postgres. Checking B's remaining
--- rows while still JWT-as-A fails closed under owner SELECT RLS (false negative).
+-- D1 + D3: trusted path purges a populated RESTRICT graph for owner A only.
+set local role postgres;
+select set_config('request.jwt.claim.role', 'service_role', true);
+set local role service_role;
+
 select ok(
-  (public.purge_owner_account_data() ->> 'purged')::boolean,
-  'purge_owner_account_data reports purged for the caller'
+  (public.purge_owner_account_data('a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1') ->> 'purged')::boolean,
+  'service_role purge succeeds for a populated analysis+policy account'
 );
 
 set local role postgres;
@@ -131,13 +196,25 @@ select ok(
     select 1 from public.owner_provider_settings
      where owner_id = 'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1'
   )
+  and not exists (
+    select 1 from public.custodian_findings
+     where owner_id = 'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1'
+  )
+  and not exists (
+    select 1 from public.agent_runs
+     where owner_id = 'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1'
+  )
+  and not exists (
+    select 1 from public.tool_policies
+     where owner_id = 'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1'
+  )
   and exists (
     select 1 from public.cases where owner_id = 'b2b2b2b2-b2b2-4b2b-8b2b-b2b2b2b2b2b2'
   )
   and exists (
     select 1 from public.records where user_id = 'b2b2b2b2-b2b2-4b2b-8b2b-b2b2b2b2b2b2'
   ),
-  'purge removes only the caller owner rows'
+  'purge removes only the target owner rows including RESTRICT graph'
 );
 
 set local role authenticated;
@@ -147,6 +224,18 @@ select set_config('request.jwt.claim.role', 'authenticated', true);
 select ok(
   jsonb_array_length(public.export_user_account_snapshot() -> 'cases') = 1,
   'owner B remains intact after owner A purge'
+);
+
+-- Cross-owner guard: service_role cannot invent a missing owner id without failing closed.
+set local role postgres;
+select set_config('request.jwt.claim.role', 'service_role', true);
+set local role service_role;
+
+select throws_ok(
+  $$select public.purge_owner_account_data('99999999-9999-4999-8999-999999999999')$$,
+  'P0002',
+  'owner does not exist',
+  'purge fails closed for unknown owner ids'
 );
 
 select * from finish();

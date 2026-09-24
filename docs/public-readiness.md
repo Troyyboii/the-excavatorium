@@ -236,14 +236,16 @@ false` — JSON does **not** contain `document-files` uploads. Ciphertext, wrapp
 keys, plaintext API keys, and service-role secrets are never exported.
 
 **Account deletion** is implemented as Edge Function `account-delete`
-(`verify_jwt` on) with typed confirmation `DELETE MY ACCOUNT`:
+(`verify_jwt` on) with typed confirmation `DELETE MY ACCOUNT` **and password
+re-authentication** (email login via `signInWithPassword`):
 
-1. Authenticated owner only (JWT user id).
-2. Purge `document-files/<user_id>/` Storage objects (Storage does not cascade
+1. Authenticated owner only (JWT user id) + password step-up.
+2. `purge_owner_account_data(runtime_owner_id)` via the trusted **service_role**
+   client only (authenticated EXECUTE revoked). Delete order breaks ON DELETE
+   RESTRICT graphs (analysis findings ↔ runs/steps; runs ↔ tool_policies)
+   before removing cases.
+3. Purge `document-files/<user_id>/` Storage objects (Storage does not cascade
    from `auth.users`).
-3. `purge_owner_account_data()` SECURITY DEFINER deletes structured owner rows
-   (including tables with `created_by`/`updated_by` NO ACTION FKs) so a later
-   auth delete is not blocked.
 4. `auth.admin.deleteUser` via the trusted service-role boundary.
 
 `reset_user_archive` remains an archive-only reset and is **not** account
@@ -282,7 +284,8 @@ the actual Auth dashboard behavior.
       `20260923120000_custodian_provider_diagnostics.sql` before applying new ones;
       new migrations sort after both. Operator procedure only:
       [`migration-reconcile-diagnostics.md`](./migration-reconcile-diagnostics.md).
-- [ ] Apply migrations `20260924100000`, `…110000`, `…120000`, `…130000` (staging first).
+- [ ] Apply migrations `20260924100000`, `…110000`, `…120000`, `…130000`,
+      `…140000` (staging first).
 - [ ] Set `PROVIDER_KEY_ENCRYPTION_KEYS`, `PROVIDER_KEY_ACTIVE_VERSION`, and
       `CUSTODIAN_MODEL_PRICING_JSON` (six models) as Edge secrets.
 - [ ] Deploy `provider-key`, updated `custodian-run`, extract functions, and

@@ -47,13 +47,17 @@ export async function exportAccountSnapshot(): Promise<AccountExport> {
 
 export async function deleteOwnerAccount(
   confirmation: string,
+  password: string,
   client: FunctionsClient = supabase,
 ): Promise<void> {
   if (confirmation !== ACCOUNT_DELETE_CONFIRMATION) {
     throw new Error(`Type ${ACCOUNT_DELETE_CONFIRMATION} to confirm permanent deletion.`);
   }
+  if (typeof password !== "string" || password.length === 0) {
+    throw new Error("Re-enter your password to permanently delete this account.");
+  }
   const { data, error } = await client.functions.invoke("account-delete", {
-    body: { confirmation: ACCOUNT_DELETE_CONFIRMATION },
+    body: { confirmation: ACCOUNT_DELETE_CONFIRMATION, password },
   });
   if (error) {
     throw new Error(await functionErrorMessage(error, "Account deletion failed."));

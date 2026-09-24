@@ -601,6 +601,7 @@ function DeleteAccountSection({
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [confirmText, setConfirmText] = useState("");
+  const [password, setPassword] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [exportingFirst, setExportingFirst] = useState(false);
 
@@ -630,7 +631,7 @@ function DeleteAccountSection({
     setError(null);
     setDeleting(true);
     try {
-      await deleteOwnerAccount(confirmText);
+      await deleteOwnerAccount(confirmText, password);
       await qc.cancelQueries();
       qc.removeQueries();
       await supabase.auth.signOut();
@@ -639,6 +640,7 @@ function DeleteAccountSection({
       setError(e instanceof Error ? e.message : "Account deletion failed.");
     } finally {
       setDeleting(false);
+      setPassword("");
     }
   }
 
@@ -662,8 +664,8 @@ function DeleteAccountSection({
       ) : (
         <div className="space-y-3">
           <p className="text-sm text-foreground">
-            Type <span className="font-mono">{ACCOUNT_DELETE_CONFIRMATION}</span> to confirm
-            permanent deletion.
+            Type <span className="font-mono">{ACCOUNT_DELETE_CONFIRMATION}</span> and re-enter your
+            password to confirm permanent deletion.
           </p>
           <input
             value={confirmText}
@@ -671,6 +673,14 @@ function DeleteAccountSection({
             className="w-full min-h-11 rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-ring"
             placeholder={ACCOUNT_DELETE_CONFIRMATION}
             autoComplete="off"
+          />
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full min-h-11 rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-ring"
+            placeholder="Current password"
+            autoComplete="current-password"
           />
           <div className="flex flex-wrap gap-2">
             <button
@@ -684,7 +694,11 @@ function DeleteAccountSection({
             <button
               type="button"
               disabled={
-                !online || confirmText !== ACCOUNT_DELETE_CONFIRMATION || deleting || exportingFirst
+                !online ||
+                confirmText !== ACCOUNT_DELETE_CONFIRMATION ||
+                password.length === 0 ||
+                deleting ||
+                exportingFirst
               }
               onClick={() => void onConfirmDelete()}
               className="inline-flex min-h-11 items-center rounded-md bg-[color:var(--destructive)] px-3 py-2 text-sm font-medium text-[color:var(--destructive-foreground)] disabled:opacity-60"
@@ -696,6 +710,7 @@ function DeleteAccountSection({
               onClick={() => {
                 setOpen(false);
                 setConfirmText("");
+                setPassword("");
               }}
               disabled={deleting}
               className="inline-flex min-h-11 items-center rounded-md px-3 py-2 text-sm text-muted-foreground"
