@@ -124,7 +124,9 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
       if (!d.confidence) return ["Confidence is required."];
       if (d.supersedesDecisionId && d.supersedesDecisionId === existing?.id)
         return ["Supersedes cannot reference the current record."];
-    } else {
+    } else if (recordType === "conversation") {
+      // Title is the only required field; project route is optional (null when blank).
+    } else if (recordType === "document") {
       const d = data as DocumentData;
       const result = documentDataSchema.safeParse(d);
       if (!result.success) return formatDocumentValidationIssues(result.error.issues);
