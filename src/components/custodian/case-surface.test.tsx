@@ -1,7 +1,7 @@
 // Bun supplies this module at test runtime; it is not part of the app's type surface.
 // @ts-expect-error -- Bun's runner provides the test module at runtime.
 import { describe, expect, test } from "bun:test";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import type {
   CustodianFinding,
   CustodianFindingEvidence,
@@ -112,11 +112,16 @@ describe("Case Finding details", () => {
     render(<FindingDetails finding={finding} evidence={evidence} evidenceLinks={evidenceLinks} />);
 
     expect(screen.getByText(/The bounded evidence supports the conclusion/)).not.toBeNull();
-    expect(screen.getByText(/Run run-1 · synthesis step step-1 · candidate 0/)).not.toBeNull();
     expect(screen.getByText(/Supporting evidence:/)).not.toBeNull();
-    expect(screen.getByText(/Contrary evidence:/)).not.toBeNull();
+    expect(screen.getByText(/Tensions and alternatives:/)).not.toBeNull();
     expect(screen.getByText(/Only bounded evidence was reviewed/)).not.toBeNull();
     expect(screen.getByText(/A newer primary record/)).not.toBeNull();
     expect(screen.getByText(/When the Case scope changes/)).not.toBeNull();
+    const analysisDetails = screen.getByText("Analysis details").closest("details");
+    expect(analysisDetails?.hasAttribute("open")).toBe(false);
+    fireEvent.click(screen.getByText("Analysis details"));
+    expect(analysisDetails?.hasAttribute("open")).toBe(true);
+    expect(screen.getByText(/Run run-1 · synthesis step step-1 · candidate 0/)).not.toBeNull();
+    expect(screen.getByText(/Numeric confidence:/)).not.toBeNull();
   });
 });

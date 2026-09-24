@@ -19,6 +19,7 @@ import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as GraphRouteImport } from './routes/graph'
 import { Route as ArchiveRouteImport } from './routes/archive'
 import { Route as ApprovalsRouteImport } from './routes/approvals'
+import { Route as AdvancedRouteImport } from './routes/advanced'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ToolsIndexRouteImport } from './routes/tools.index'
 import { Route as RepositoriesIndexRouteImport } from './routes/repositories.index'
@@ -96,6 +97,11 @@ const ArchiveRoute = ArchiveRouteImport.update({
 const ApprovalsRoute = ApprovalsRouteImport.update({
   id: '/approvals',
   path: '/approvals',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdvancedRoute = AdvancedRouteImport.update({
+  id: '/advanced',
+  path: '/advanced',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -244,6 +250,7 @@ const DotlovableOauthConsentRoute = DotlovableOauthConsentRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/advanced': typeof AdvancedRoute
   '/approvals': typeof ApprovalsRoute
   '/archive': typeof ArchiveRoute
   '/graph': typeof GraphRoute
@@ -284,6 +291,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/advanced': typeof AdvancedRoute
   '/approvals': typeof ApprovalsRoute
   '/archive': typeof ArchiveRoute
   '/graph': typeof GraphRoute
@@ -325,6 +333,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/advanced': typeof AdvancedRoute
   '/approvals': typeof ApprovalsRoute
   '/archive': typeof ArchiveRoute
   '/graph': typeof GraphRoute
@@ -367,6 +376,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/advanced'
     | '/approvals'
     | '/archive'
     | '/graph'
@@ -407,6 +417,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/advanced'
     | '/approvals'
     | '/archive'
     | '/graph'
@@ -447,6 +458,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/advanced'
     | '/approvals'
     | '/archive'
     | '/graph'
@@ -488,6 +500,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdvancedRoute: typeof AdvancedRoute
   ApprovalsRoute: typeof ApprovalsRoute
   ArchiveRoute: typeof ArchiveRoute
   GraphRoute: typeof GraphRoute
@@ -597,6 +610,13 @@ declare module '@tanstack/react-router' {
       path: '/approvals'
       fullPath: '/approvals'
       preLoaderRoute: typeof ApprovalsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/advanced': {
+      id: '/advanced'
+      path: '/advanced'
+      fullPath: '/advanced'
+      preLoaderRoute: typeof AdvancedRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -800,6 +820,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdvancedRoute: AdvancedRoute,
   ApprovalsRoute: ApprovalsRoute,
   ArchiveRoute: ArchiveRoute,
   GraphRoute: GraphRoute,

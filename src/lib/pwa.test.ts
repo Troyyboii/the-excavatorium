@@ -9,6 +9,8 @@ describe("service worker privacy boundary", () => {
     expect(source).toContain('"/rest/"');
     expect(source).toContain('"/rpc/"');
     expect(source).toContain('"/storage/"');
+    expect(source).toContain('"/brand/excavatorium-lantern.png"');
+    expect(source).toContain('"/brand/excavatorium-lantern-app-icon.png"');
     expect(source).toContain("no-store");
     expect(source).toContain("private");
   });

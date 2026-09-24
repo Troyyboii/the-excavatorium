@@ -68,8 +68,8 @@ function CasesPage() {
   const items = cases.data;
   return (
     <CustodianPage
-      title="Cases"
-      description="A persisted judgment surface for claims, sources, evidence, findings, and actions."
+      title="Investigations"
+      description="Start from a question, choose archive evidence, and examine the material within a clear scope."
       status={
         <CustodianStatus
           online={online}

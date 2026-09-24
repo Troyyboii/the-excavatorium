@@ -96,7 +96,7 @@ export function CaseListSurface({
           className="inline-flex min-h-11 items-center gap-2 border border-luminous-gold/55 bg-primary px-4 text-sm text-primary-foreground transition-colors hover:border-white-gold disabled:cursor-not-allowed disabled:opacity-50"
         >
           {creating ? <X size={17} /> : <Plus size={17} weight="bold" />}
-          {creating ? "Close case form" : "Create case"}
+          {creating ? "Close Investigation form" : "Start an Investigation"}
         </button>
       </div>
 
@@ -118,7 +118,7 @@ export function CaseListSurface({
           archiveRecords={archiveRecords}
           archiveReady={archiveReady}
           archiveLoading={archiveLoading}
-          submitLabel="Create case"
+          submitLabel="Create Investigation"
           onSubmit={async (value) => {
             await onCreate(value);
             setCreating(false);
@@ -135,13 +135,13 @@ export function CaseListSurface({
       {!error && (loading || cases === undefined) ? <LoadingMark /> : null}
       {!loading && cases?.length === 0 ? (
         <EmptyArchiveState
-          title="No cases yet."
-          hint="Create a case when material needs an objective, current question, and a bounded archive scope."
+          title="No Investigations yet."
+          hint="Start an Investigation when material needs a question and a bounded archive scope."
         />
       ) : null}
       {cases?.length ? (
         <Section
-          title="Persisted cases"
+          title="Investigations"
           description="Objectives, current questions, lifecycle, and bounded archive scope stored in Supabase."
         >
           <div className="divide-y divide-luminous-gold/15">
@@ -216,8 +216,8 @@ export function CaseDetailSurface({
   if (!item)
     return (
       <EmptyArchiveState
-        title="Case not found."
-        hint={`No persisted case exists for ${caseId}. Nothing was inferred from the identifier.`}
+        title="Investigation not found."
+        hint={`No persisted Investigation exists for ${caseId}. Nothing was inferred from the identifier.`}
       />
     );
 
@@ -232,7 +232,7 @@ export function CaseDetailSurface({
           className="inline-flex min-h-11 items-center gap-2 border border-luminous-gold/40 px-4 text-sm text-white-gold transition-colors hover:bg-burgundy-muted/45 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {editing ? <X size={17} /> : <PencilSimple size={17} />}
-          {editing ? "Cancel editing" : "Edit case"}
+          {editing ? "Cancel editing" : "Edit Investigation"}
         </button>
       </div>
 
@@ -242,7 +242,7 @@ export function CaseDetailSurface({
           archiveRecords={archiveRecords}
           archiveReady={archiveReady}
           archiveLoading={archiveLoading}
-          submitLabel="Save case"
+          submitLabel="Save Investigation"
           onSubmit={async (value) => {
             await onUpdate(value);
             setEditing(false);
@@ -250,7 +250,7 @@ export function CaseDetailSurface({
         />
       ) : null}
 
-      <Section title={item.title} description={`Case ${item.id}`}>
+      <Section title={item.title} description="Investigation">
         <dl className="grid gap-4 p-4 sm:grid-cols-2 lg:grid-cols-5">
           <CaseDetail label="Objective" value={item.objective} />
           <CaseDetail label="Current question" value={item.currentQuestion} />
@@ -259,7 +259,7 @@ export function CaseDetailSurface({
             label="Owner context"
             value={item.archiveScope.freeTextContext.trim() ? "Recorded" : "Not recorded"}
           />
-          <CaseDetail label="Case status" value={item.status} />
+          <CaseDetail label="Status" value={item.status} />
         </dl>
         <p className="border-t border-luminous-gold/20 px-4 py-3 text-xs text-muted-foreground">
           Last updated {formatRecordDate(item.updatedAt)}
@@ -464,7 +464,7 @@ function CaseEditor({
   }
 
   return (
-    <Section title={initial ? "Edit case" : "New case"}>
+    <Section title={initial ? "Edit Investigation" : "New Investigation"}>
       <form onSubmit={submit} className="grid gap-4 p-4 lg:grid-cols-2">
         <CaseField label="Title" required>
           <input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={300} />
@@ -640,7 +640,7 @@ export function FindingDetails({
     ["Uncertainty", finding.uncertainties],
     ["Assumptions", finding.assumptions],
     ["Scope limits", finding.scopeLimits],
-    ["Evidence gaps", finding.evidenceGaps],
+    ["Missing evidence", finding.evidenceGaps],
   ] as const;
   const evidenceTitles = (links: readonly CustodianFindingEvidence[]) =>
     links
@@ -648,22 +648,10 @@ export function FindingDetails({
       .join(", ");
 
   return (
-    <div className="space-y-2 border-l border-luminous-gold/30 pl-3 text-xs text-muted-foreground">
+    <div className="space-y-3 border-l border-luminous-gold/30 pl-3 text-sm leading-6 text-muted-foreground">
       <p className="break-words whitespace-pre-wrap">
         <span className="font-medium text-foreground">Conclusion:</span> {finding.finding}
       </p>
-      <p>
-        <span className="font-medium text-foreground">Confidence:</span> {finding.confidence}% ·{" "}
-        <span className="font-medium text-foreground">Origin:</span> {finding.originKind}
-        {finding.analysisOutcome ? ` · ${finding.analysisOutcome}` : ""}
-      </p>
-      {finding.originKind === "analysis" ? (
-        <p className="break-words font-mono text-[10px]">
-          Run {finding.originRunId ?? "unavailable"} · synthesis step{" "}
-          {finding.originStepId ?? "unavailable"} · candidate{" "}
-          {finding.candidateIndex ?? "unavailable"}
-        </p>
-      ) : null}
       {supporting.length ? (
         <p className="break-words">
           <span className="font-medium text-foreground">Supporting evidence:</span>{" "}
@@ -672,7 +660,7 @@ export function FindingDetails({
       ) : null}
       {contrary.length ? (
         <p className="break-words">
-          <span className="font-medium text-foreground">Contrary evidence:</span>{" "}
+          <span className="font-medium text-foreground">Tensions and alternatives:</span>{" "}
           {evidenceTitles(contrary)}
         </p>
       ) : null}
@@ -685,15 +673,38 @@ export function FindingDetails({
       )}
       {finding.whatWouldChangeMind ? (
         <p className="break-words whitespace-pre-wrap">
-          <span className="font-medium text-foreground">What would change the conclusion:</span>{" "}
+          <span className="font-medium text-foreground">What would change this conclusion:</span>{" "}
           {finding.whatWouldChangeMind}
         </p>
       ) : null}
       {finding.revisitCondition ? (
         <p className="break-words whitespace-pre-wrap">
-          <span className="font-medium text-foreground">Revisit:</span> {finding.revisitCondition}
+          <span className="font-medium text-foreground">Revisit condition:</span>{" "}
+          {finding.revisitCondition}
         </p>
       ) : null}
+      <details className="border-t border-border/70 pt-2">
+        <summary className="min-h-11 cursor-pointer font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          Analysis details
+        </summary>
+        <div className="space-y-2 break-words pb-2 pt-1 text-xs">
+          <p>
+            <span className="font-medium text-foreground">Numeric confidence:</span>{" "}
+            {finding.confidence}% (not a calibrated probability)
+          </p>
+          <p>
+            <span className="font-medium text-foreground">Origin:</span> {finding.originKind}
+            {finding.analysisOutcome ? ` · ${finding.analysisOutcome}` : ""}
+          </p>
+          {finding.originKind === "analysis" ? (
+            <p className="font-mono text-[10px]">
+              Run {finding.originRunId ?? "unavailable"} · synthesis step{" "}
+              {finding.originStepId ?? "unavailable"} · candidate{" "}
+              {finding.candidateIndex ?? "unavailable"}
+            </p>
+          ) : null}
+        </div>
+      </details>
     </div>
   );
 }

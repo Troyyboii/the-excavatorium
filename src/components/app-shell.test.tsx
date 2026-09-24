@@ -8,44 +8,36 @@ import {
   createMemoryHistory,
   createRootRoute,
   createRoute,
-  createRouter,
   Outlet,
   RouterProvider,
+  createRouter,
 } from "@tanstack/react-router";
 import { AppShell } from "./app-shell";
 
 const DESTINATIONS = [
   "/",
-  "/inbox",
-  "/cases",
-  "/run-room",
   "/archive",
-  "/conversations",
-  "/documents",
-  "/repositories",
-  "/decisions",
-  "/graph",
-  "/timeline",
-  "/tools",
-  "/search",
+  "/cases",
+  "/approvals",
+  "/advanced",
+  "/run-room",
   "/settings",
+  "/search",
   "/conversations/new",
   "/tools/new",
   "/repositories/new",
   "/decisions/new",
   "/documents/new",
 ] as const;
-
 afterEach(() => {
   Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
   cleanup();
 });
-
 async function renderShell() {
-  Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
-  const scrollTo = () => undefined;
-  window.scrollTo = scrollTo;
-  globalThis.scrollTo = scrollTo;
+  Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+  const noScroll = () => undefined;
+  window.scrollTo = noScroll;
+  globalThis.scrollTo = noScroll;
   const rootRoute = createRootRoute({
     component: () => (
       <AppShell email="owner@example.test">
@@ -58,7 +50,7 @@ async function renderShell() {
       createRoute({
         getParentRoute: () => rootRoute,
         path,
-        component: () => <div>Archive content</div>,
+        component: () => <div>Route content</div>,
       }),
     ),
   );
@@ -67,45 +59,81 @@ async function renderShell() {
     history: createMemoryHistory({ initialEntries: ["/"] }),
   });
   await router.load();
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
   render(
-    <QueryClientProvider client={queryClient}>
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
       <RouterProvider router={router} />
     </QueryClientProvider>,
   );
-  await waitFor(() => {
-    expect(screen.getByRole("navigation", { name: "Primary" })).toBeTruthy();
-  });
+  await waitFor(() => expect(screen.getByRole("navigation", { name: "Primary" })).toBeTruthy());
 }
 
-describe("primary navigation", () => {
-  test("places Run Room in the desktop Work section and the mobile More menu", async () => {
+describe("Excavatorium shell", () => {
+  test("uses canonical desktop destinations and keeps secondary routes under More", async () => {
     const user = userEvent.setup();
     await renderShell();
-
     const primary = screen.getByRole("navigation", { name: "Primary" });
-    const workLinks = within(primary)
-      .getAllByRole("link")
-      .slice(0, 4)
-      .map((link) => ({
-        label: link.textContent,
-        href: link.getAttribute("href"),
-      }));
-    expect(workLinks).toEqual([
-      { label: "Custodian Desk", href: "/" },
-      { label: "Inbox", href: "/inbox" },
-      { label: "Cases", href: "/cases" },
-      { label: "Run Room", href: "/run-room" },
+    expect(
+      within(primary)
+        .getAllByRole("link")
+        .map((link) => [link.textContent, link.getAttribute("href")]),
+    ).toEqual([
+      ["Home", "/"],
+      ["Archive", "/archive"],
+      ["Investigations", "/cases"],
+      ["Review", "/approvals"],
     ]);
-    expect(screen.getAllByRole("link", { name: "Run Room" })).toHaveLength(1);
-
-    await user.click(screen.getByRole("button", { name: "More" }));
-
-    const mobileNav = screen.getByRole("dialog", { name: "Browse archive" });
-    const mobileRunRoom = within(mobileNav).getByRole("link", { name: "Run Room" });
-    expect(mobileRunRoom.getAttribute("href")).toBe("/run-room");
-    expect(screen.getAllByRole("link", { name: "Run Room" })).toHaveLength(2);
+    expect(screen.getByRole("link", { name: "Search Archive" }).getAttribute("href")).toBe(
+      "/search",
+    );
+    await user.click(within(primary).getByRole("button", { name: "More destinations" }));
+    const more = screen.getByRole("menu", { name: "More destinations" });
+    expect(
+      within(more)
+        .getByRole("menuitem", { name: /Settings/ })
+        .getAttribute("href"),
+    ).toBe("/settings");
+    expect(
+      within(more)
+        .getByRole("menuitem", { name: /Advanced/ })
+        .getAttribute("href"),
+    ).toBe("/advanced");
+    expect(within(more).getByRole("button", { name: /Sign out/ })).toBeTruthy();
+  });
+  test("keeps the mobile bar to Home, Archive, Add, Investigations, and Review", async () => {
+    await renderShell();
+    const mobile = screen.getByRole("navigation", { name: "Mobile primary" });
+    expect(within(mobile).getByRole("link", { name: "Home" }).getAttribute("href")).toBe("/");
+    expect(within(mobile).getByRole("link", { name: "Archive" }).getAttribute("href")).toBe(
+      "/archive",
+    );
+    expect(within(mobile).getByRole("button", { name: "Add or capture material" })).toBeTruthy();
+    expect(within(mobile).getByRole("link", { name: "Investigations" }).getAttribute("href")).toBe(
+      "/cases",
+    );
+    expect(within(mobile).getByRole("link", { name: "Review" }).getAttribute("href")).toBe(
+      "/approvals",
+    );
+  });
+  test("opens a non-mutating Capture first choice and closes it with Escape", async () => {
+    const user = userEvent.setup();
+    await renderShell();
+    await user.click(screen.getAllByRole("button", { name: "Add or capture material" })[0]);
+    const dialog = screen.getByRole("dialog", { name: "Choose an action" });
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Close capture");
+    expect(within(dialog).getByRole("button", { name: /Capture material/ })).toBeTruthy();
+    expect(
+      within(dialog)
+        .getByRole("link", { name: /Start an Investigation/ })
+        .getAttribute("href"),
+    ).toBe("/cases");
+    expect(screen.getByText("Route content")).toBeTruthy();
+    await user.keyboard("{Shift>}{Tab}{/Shift}");
+    expect(document.activeElement?.textContent).toContain("Start an Investigation");
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Choose an action" })).toBeNull(),
+    );
   });
 });

@@ -32,8 +32,8 @@ function ApprovalsPage() {
 
   return (
     <CustodianPage
-      title="Approvals"
-      description="Owner-scoped inspection and decision for persisted proposals. Approval records an exact-action decision and does not execute unsupported work."
+      title="Review"
+      description="Review persisted requests and decision matters. Recording an approval is an exact-action decision; it does not execute unsupported work."
       status={
         <CustodianStatus
           online={online}

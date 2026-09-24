@@ -1,8 +1,10 @@
-const SHELL_CACHE = "excavatorium-static-v2-lantern";
+const SHELL_CACHE = "excavatorium-static-v3-ossuary";
 const SHELL_URLS = [
   "/",
   "/offline.html",
   "/lantern.webmanifest",
+  "/brand/excavatorium-lantern.png",
+  "/brand/excavatorium-lantern-app-icon.png",
   "/lantern-favicon.ico",
   "/lantern-icon-192.png",
   "/lantern-icon-512.png",
@@ -42,11 +44,13 @@ function isStaticAsset(request, url) {
     url.pathname.startsWith("/_build/") ||
     [
       "/lantern-apple-touch-icon.png",
+      "/brand/excavatorium-lantern-app-icon.png",
       "/lantern-favicon.ico",
       "/lantern-icon-192-maskable.png",
       "/lantern-icon-192.png",
       "/lantern-icon-512-maskable.png",
       "/lantern-icon-512.png",
+      "/brand/excavatorium-lantern.png",
     ].includes(url.pathname)
   );
 }
