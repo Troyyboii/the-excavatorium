@@ -1,7 +1,7 @@
 -- Wave 2: owner account export + purge boundaries.
 begin;
 
-select plan(8);
+select plan(9);
 
 set local role postgres;
 
@@ -111,9 +111,17 @@ select ok(
 
 select set_config('request.jwt.claim.sub', 'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1', true);
 
+-- Purge as owner A, then verify isolation as postgres. Checking B's remaining
+-- rows while still JWT-as-A fails closed under owner SELECT RLS (false negative).
 select ok(
-  (public.purge_owner_account_data() ->> 'purged')::boolean
-  and not exists (
+  (public.purge_owner_account_data() ->> 'purged')::boolean,
+  'purge_owner_account_data reports purged for the caller'
+);
+
+set local role postgres;
+
+select ok(
+  not exists (
     select 1 from public.cases where owner_id = 'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1'
   )
   and not exists (
@@ -132,7 +140,9 @@ select ok(
   'purge removes only the caller owner rows'
 );
 
+set local role authenticated;
 select set_config('request.jwt.claim.sub', 'b2b2b2b2-b2b2-4b2b-8b2b-b2b2b2b2b2b2', true);
+select set_config('request.jwt.claim.role', 'authenticated', true);
 
 select ok(
   jsonb_array_length(public.export_user_account_snapshot() -> 'cases') = 1,
