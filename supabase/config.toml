@@ -15,3 +15,6 @@ verify_jwt = true
 
 [functions.provider-key]
 verify_jwt = true
+
+[functions.account-delete]
+verify_jwt = true

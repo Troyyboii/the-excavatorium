@@ -19,6 +19,13 @@ import {
   validateBackup,
   type BackupCounts,
 } from "@/lib/format";
+import {
+  ACCOUNT_DELETE_CONFIRMATION,
+  ACCOUNT_EXPORT_LIMITATIONS,
+  accountExportContainsSecretMaterial,
+  accountExportFilename,
+} from "@/lib/account-export";
+import { deleteOwnerAccount, exportAccountSnapshot } from "@/lib/account-portability";
 import { supabase, SUPABASE_URL } from "@/lib/supabase";
 import { useOnlineStatus } from "@/hooks/use-online";
 
@@ -59,6 +66,7 @@ function Page() {
         <BackupSection q={q} online={online} setToast={setToast} setError={setError} />
         <StorageSection />
         <DestructiveSection setToast={setToast} setError={setError} />
+        <DeleteAccountSection online={online} setToast={setToast} setError={setError} />
         <DiagnosticsSection
           email={email}
           meta={meta.data ?? null}
@@ -248,7 +256,8 @@ function BackupSection({
     payload: ReturnType<typeof buildBackup>;
   } | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
-  const [exporting, setExporting] = useState(false);
+  const [exportingArchive, setExportingArchive] = useState(false);
+  const [exportingAccount, setExportingAccount] = useState(false);
 
   // Import and restore need a complete locally loaded archive for their
   // destructive confirmation boundary. Export uses a separate fresh RPC.
@@ -261,9 +270,9 @@ function BackupSection({
       : String(q.error)
     : null;
 
-  async function onExport() {
+  async function onExportArchive() {
     setError(null);
-    setExporting(true);
+    setExportingArchive(true);
     try {
       const snapshot = await exportArchiveSnapshot();
       // buildBackup intentionally detaches private document Storage paths;
@@ -276,11 +285,33 @@ function BackupSection({
         return;
       }
       download(backupFilename(), JSON.stringify(data, null, 2), "application/json;charset=utf-8");
-      setToast("Backup downloaded");
+      setToast("Restorable archive backup downloaded");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Export failed.");
     } finally {
-      setExporting(false);
+      setExportingArchive(false);
+    }
+  }
+
+  async function onExportAll() {
+    setError(null);
+    setExportingAccount(true);
+    try {
+      const data = await exportAccountSnapshot();
+      if (accountExportContainsSecretMaterial(data)) {
+        setError("Account export aborted: unexpected secret-shaped material was detected.");
+        return;
+      }
+      download(
+        accountExportFilename(),
+        JSON.stringify(data, null, 2),
+        "application/json;charset=utf-8",
+      );
+      setToast("Full account export downloaded");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Account export failed.");
+    } finally {
+      setExportingAccount(false);
     }
   }
 
@@ -294,6 +325,19 @@ function BackupSection({
         parsed = JSON.parse(text);
       } catch {
         setParseError("File is not valid JSON.");
+        return;
+      }
+      // Restore accepts schemaVersion 1 archive backups only (records+links).
+      // Account exports (schemaVersion 2) are for portability, not in-app restore.
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        !Array.isArray(parsed) &&
+        (parsed as { exportKind?: unknown }).exportKind === "account"
+      ) {
+        setParseError(
+          "This is a full account export. Import restore accepts only a restorable archive backup (records and links).",
+        );
         return;
       }
       const res = validateBackup(parsed);
@@ -349,18 +393,33 @@ function BackupSection({
         </p>
       ) : null}
       <p className="text-sm text-muted-foreground">
-        The JSON backup contains your archive records and the links between them. It does not
-        include uploaded document files, Investigations, Findings, approvals, Custodian run history,
-        or your provider API key.
+        <span className="font-medium text-foreground">Export all account data</span> downloads a
+        structured JSON snapshot of your archive, Investigations (cases), evidence, findings,
+        approvals/judgments, Custodian run history metadata, decision-review state, and non-secret
+        provider preferences. It never includes plaintext API keys, encryption wrapping keys, or
+        service-role secrets.
+      </p>
+      <p className="text-sm text-muted-foreground">{ACCOUNT_EXPORT_LIMITATIONS.storageNote}</p>
+      <p className="text-sm text-muted-foreground">
+        <span className="font-medium text-foreground">Export restorable archive</span> is
+        records-and-links only (schema version 1) and is what Import restore accepts.
       </p>
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          onClick={() => void onExport()}
-          disabled={!online || exporting}
+          onClick={() => void onExportAll()}
+          disabled={!online || exportingAccount}
+          className="inline-flex min-h-11 items-center rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {exportingAccount ? "Exporting…" : "Export all account data"}
+        </button>
+        <button
+          type="button"
+          onClick={() => void onExportArchive()}
+          disabled={!online || exportingArchive}
           className="inline-flex min-h-11 items-center rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground hover:bg-[color:var(--record-hover)] disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {exporting ? "Exporting…" : "Export JSON backup"}
+          {exportingArchive ? "Exporting…" : "Export restorable archive"}
         </button>
         <label
           className={`inline-flex min-h-11 items-center rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground hover:bg-[color:var(--record-hover)] ${
@@ -394,7 +453,8 @@ function BackupSection({
           </div>
           <p className="mt-1 text-muted-foreground">
             This deletes every current record and link and installs the imported archive atomically.
-            It is strongly recommended to Export JSON backup first.
+            It is strongly recommended to Export restorable archive first. Investigations, Findings,
+            Custodian history, and Storage files are not restored from this file.
           </p>
           <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
             <dt className="text-muted-foreground">Schema version</dt>
@@ -417,11 +477,11 @@ function BackupSection({
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => void onExport()}
-              disabled={!online || exporting}
+              onClick={() => void onExportArchive()}
+              disabled={!online || exportingArchive}
               className="inline-flex min-h-11 items-center rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Download current backup first
+              Download current archive first
             </button>
             <button
               type="button"
@@ -454,7 +514,8 @@ function StorageSection() {
         where you sign in.
       </p>
       <p className="text-sm text-muted-foreground">
-        The archive is not public. Export JSON backups for independent recovery and portability.
+        The archive is not public. Use Export all account data before leaving, and remember that
+        uploaded document binaries live in private Storage and are not inside the JSON export.
       </p>
     </Card>
   );
@@ -471,19 +532,20 @@ function DestructiveSection({
   const [confirmText, setConfirmText] = useState("");
   const [open, setOpen] = useState(false);
   return (
-    <Card title="Destructive action" tone="destructive">
+    <Card title="Reset archive data" tone="destructive">
       {!open ? (
         <button
           type="button"
           onClick={() => setOpen(true)}
           className="inline-flex min-h-11 items-center rounded-md border border-destructive bg-card px-3 py-2 text-sm font-medium text-destructive hover:bg-destructive hover:text-destructive-foreground"
         >
-          Reset all data
+          Reset all archive data
         </button>
       ) : (
         <div className="space-y-3">
           <p className="text-sm text-foreground">
-            This deletes every record and link owned by your account. Type{" "}
+            This deletes every record and link owned by your account. It does not delete your login,
+            Investigations, Custodian history, provider settings, or Storage uploads. Type{" "}
             <span className="font-mono">DELETE</span> to confirm.
           </p>
           <input
@@ -516,6 +578,126 @@ function DestructiveSection({
                 setOpen(false);
                 setConfirmText("");
               }}
+              className="inline-flex min-h-11 items-center rounded-md px-3 py-2 text-sm text-muted-foreground"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function DeleteAccountSection({
+  online,
+  setToast,
+  setError,
+}: {
+  online: boolean;
+  setToast: (m: string) => void;
+  setError: (m: string | null) => void;
+}) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [exportingFirst, setExportingFirst] = useState(false);
+
+  async function onExportFirst() {
+    setError(null);
+    setExportingFirst(true);
+    try {
+      const data = await exportAccountSnapshot();
+      if (accountExportContainsSecretMaterial(data)) {
+        setError("Account export aborted: unexpected secret-shaped material was detected.");
+        return;
+      }
+      download(
+        accountExportFilename(),
+        JSON.stringify(data, null, 2),
+        "application/json;charset=utf-8",
+      );
+      setToast("Full account export downloaded");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Account export failed.");
+    } finally {
+      setExportingFirst(false);
+    }
+  }
+
+  async function onConfirmDelete() {
+    setError(null);
+    setDeleting(true);
+    try {
+      await deleteOwnerAccount(confirmText);
+      await qc.cancelQueries();
+      qc.removeQueries();
+      await supabase.auth.signOut();
+      setToast("Account deleted");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Account deletion failed.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <Card title="Delete account" tone="destructive">
+      <p className="text-sm text-foreground">
+        Permanently deletes your login, archive, Investigations, evidence, findings, approvals,
+        Custodian runs, provider credentials and preferences, and uploaded document files in
+        Storage. This cannot be undone. Export all account data first if you want a copy — the JSON
+        still will not contain Storage binaries.
+      </p>
+      {!open ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          disabled={!online}
+          className="inline-flex min-h-11 items-center rounded-md border border-destructive bg-card px-3 py-2 text-sm font-medium text-destructive hover:bg-destructive hover:text-destructive-foreground disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Delete account
+        </button>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-sm text-foreground">
+            Type <span className="font-mono">{ACCOUNT_DELETE_CONFIRMATION}</span> to confirm
+            permanent deletion.
+          </p>
+          <input
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value)}
+            className="w-full min-h-11 rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-ring"
+            placeholder={ACCOUNT_DELETE_CONFIRMATION}
+            autoComplete="off"
+          />
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void onExportFirst()}
+              disabled={!online || exportingFirst || deleting}
+              className="inline-flex min-h-11 items-center rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {exportingFirst ? "Exporting…" : "Export all account data first"}
+            </button>
+            <button
+              type="button"
+              disabled={
+                !online || confirmText !== ACCOUNT_DELETE_CONFIRMATION || deleting || exportingFirst
+              }
+              onClick={() => void onConfirmDelete()}
+              className="inline-flex min-h-11 items-center rounded-md bg-[color:var(--destructive)] px-3 py-2 text-sm font-medium text-[color:var(--destructive-foreground)] disabled:opacity-60"
+            >
+              {deleting ? "Deleting…" : "Permanently delete account"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                setConfirmText("");
+              }}
+              disabled={deleting}
               className="inline-flex min-h-11 items-center rounded-md px-3 py-2 text-sm text-muted-foreground"
             >
               Cancel

@@ -221,31 +221,37 @@ functions. See §8.
 
 ## 6. Data export and deletion scope
 
-**What the JSON backup contains** (`export_user_archive_snapshot` →
-`buildBackup`): archive records and the links between them. Uploaded document
+**Restorable archive backup** (`export_user_archive_snapshot` → `buildBackup`,
+schemaVersion 1): archive records and the links between them. Uploaded document
 files are detached (`storagePath`, `extractedContentPath`, `contentHash` are
-nulled).
+nulled). This is what Import restore accepts.
 
-**What it does not contain:** private Storage objects (`document-files`),
-Investigations/cases, evidence, claims, Findings, approvals and proposals,
-Custodian runs, steps, reservations and diagnostics, inbox items, record
-revisions, audit events, and provider credentials or preferences. Settings now
-says so.
+**Full account export** (`export_user_account_snapshot` → `buildAccountExport`,
+schemaVersion 2 / `exportKind: "account"`): the archive slice above plus
+Investigations/cases, evidence, claims, Findings (and finding–evidence links),
+approvals/judgments, decision-review state, Custodian run history **metadata**
+(not full forensic step payloads), and non-secret provider preferences /
+key-status last4. The payload documents `limitations.storageBinariesIncluded:
+false` — JSON does **not** contain `document-files` uploads. Ciphertext, wrapping
+keys, plaintext API keys, and service-role secrets are never exported.
 
-**Account deletion is not implemented, and no owner-delete RPC exists.**
-`reset_user_archive` only empties records and links. To ship real deletion:
+**Account deletion** is implemented as Edge Function `account-delete`
+(`verify_jwt` on) with typed confirmation `DELETE MY ACCOUNT`:
 
-1. A server-side flow (Edge Function, service role, re-authenticated owner) that
-   removes the owner's `document-files/<user_id>/` Storage objects, since Storage
-   does not cascade from `auth.users`.
-2. Then `auth.admin.deleteUser`. 37 owner references cascade; 19
-   `created_by`/`updated_by` references are `NO ACTION`. They point at rows that
-   the owner cascade also deletes, so this should work, but it **must be tested**
-   on a populated account before relying on it.
-3. Also purge or anonymize anything not keyed by `auth.users` (none found), and
-   define the retention statement for OpenAI's own logs (out of our control).
-4. Offer a full export first, which needs the export to grow to cover the data in
-   the previous list.
+1. Authenticated owner only (JWT user id).
+2. Purge `document-files/<user_id>/` Storage objects (Storage does not cascade
+   from `auth.users`).
+3. `purge_owner_account_data()` SECURITY DEFINER deletes structured owner rows
+   (including tables with `created_by`/`updated_by` NO ACTION FKs) so a later
+   auth delete is not blocked.
+4. `auth.admin.deleteUser` via the trusted service-role boundary.
+
+`reset_user_archive` remains an archive-only reset and is **not** account
+deletion. Deletion must be tested on a local/ephemeral populated account before
+hosted reliance — not on production forensic data.
+
+OpenAI-side retention remains outside app control (`store: false` on excavate
+paths does not bind provider abuse-monitoring policies).
 
 ## 7. Cross-owner isolation: what is proven and what is not
 
@@ -275,11 +281,13 @@ the actual Auth dashboard behavior.
 - [ ] Reconcile migration `20260923113236` (applied) with source
       `20260923120000_custodian_provider_diagnostics.sql` before applying new ones;
       new migrations sort after both.
-- [ ] Apply migrations `20260924100000`, `…110000`, `…120000` (staging first).
+- [ ] Apply migrations `20260924100000`, `…110000`, `…120000`, `…130000` (staging first).
 - [ ] Set `PROVIDER_KEY_ENCRYPTION_KEYS`, `PROVIDER_KEY_ACTIVE_VERSION`, and
       `CUSTODIAN_MODEL_PRICING_JSON` (six models) as Edge secrets.
-- [ ] Deploy `provider-key` and the updated `custodian-run` (JWT verification on).
+- [ ] Deploy `provider-key`, updated `custodian-run`, extract functions, and
+      `account-delete` (JWT verification on).
 - [ ] Verify and set hosted Auth settings (§1).
 - [ ] Two-account isolation run on staging (§7).
-- [ ] Decide account deletion and expanded export (§6).
+- [x] Account deletion and expanded export implemented in source (§6); hosted
+      deploy + ephemeral populated-account proof still required.
 - [ ] Lovable publication and release.

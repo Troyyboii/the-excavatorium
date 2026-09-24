@@ -99,10 +99,12 @@ Function do not persist extraction requests or generated drafts; a draft only
 becomes archive data when the user reviews, applies, and saves it. Standard
 OpenAI API abuse-monitoring retention policies may still apply.
 
-Markdown record exports and full JSON backups keep the archive portable and
-give the owner an independent recovery path. JSON backups preserve Document
-metadata and conclusions but not private Storage objects; restored file-backed
-Documents are detached until a file is selected and saved again.
+Markdown record exports, restorable archive JSON backups (records and links), and
+full account JSON exports keep the archive portable. Account exports also include
+Investigations, evidence, findings, approvals, Custodian run metadata, review
+state, and non-secret provider preferences. JSON never contains private Storage
+objects or plaintext API keys; restored file-backed Documents remain detached
+until a file is selected and saved again.
 
 ## Technology
 
@@ -112,7 +114,7 @@ Documents are detached until a file is selected and saved again.
 - Direct Supabase for authentication, PostgreSQL storage, Row Level Security,
   and approved write RPCs
 - Supabase Edge Functions for authenticated Conversation and File Excavation
-  with `gpt-5.6-terra`
+  using the owner's encrypted key and Settings model preference (BYOK)
 - Lovable deployment; no Lovable Cloud backend and no second backend
 
 ## Local development
