@@ -25,6 +25,7 @@ import { archiveRecordHref } from "@/components/custodian/custodian-format";
 import { FoundationState } from "@/components/custodian/custodian-ui";
 import { useOnlineStatus } from "@/hooks/use-online";
 import { cn } from "@/lib/utils";
+import { ArchiveViewNav } from "@/components/archive-view-nav";
 import {
   getGraphLinkReadState,
   graphLinkEvidenceLabel,
@@ -165,9 +166,9 @@ function GraphPage() {
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-brass">
-              Persisted topology
+              Archive connections
             </p>
-            <h1 className="mt-1 text-3xl md:text-4xl">Archive graph</h1>
+            <h1 className="mt-1 text-3xl md:text-4xl">Connections</h1>
             <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
               Records and saved links only. No inferred relationships, weights, or activity.
             </p>
@@ -189,6 +190,10 @@ function GraphPage() {
           </div>
         </div>
       </header>
+
+      <div className="px-4 md:px-7">
+        <ArchiveViewNav active="connections" />
+      </div>
 
       <div className="grid min-w-0 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 border-strong-border xl:border-r">

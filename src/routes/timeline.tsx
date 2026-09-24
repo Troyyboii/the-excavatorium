@@ -12,6 +12,7 @@ import {
 } from "@/components/custodian/custodian-ui";
 import { archiveRecordHref } from "@/components/custodian/custodian-format";
 import { useOnlineStatus } from "@/hooks/use-online";
+import { ArchiveViewNav } from "@/components/archive-view-nav";
 import {
   buildTimeline,
   filterTimelineEvents,
@@ -39,7 +40,7 @@ function TimelinePage() {
 
   return (
     <CustodianPage
-      title="Timeline"
+      title="Archive timeline"
       description="Created and updated events from persisted records, grouped by date. This is not an inferred activity feed."
       status={
         <CustodianStatus
@@ -50,6 +51,7 @@ function TimelinePage() {
         />
       }
     >
+      <ArchiveViewNav active="timeline" />
       {!query.data ? (
         <FoundationState
           title={query.isPending ? "Retrieving record events" : "Timeline retrieval blocked"}

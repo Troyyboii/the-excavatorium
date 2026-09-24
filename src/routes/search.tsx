@@ -5,6 +5,7 @@ import { Banner, PageHeader } from "@/components/page-parts";
 import { RecordList } from "@/components/record-list";
 import type { ArchiveRecord, RecordType } from "@/lib/types";
 import { RECORD_TYPES, RECORD_TYPE_PLURAL } from "@/lib/types";
+import { ArchiveViewNav } from "@/components/archive-view-nav";
 
 export const Route = createFileRoute("/search")({ component: Page, ssr: false });
 
@@ -116,9 +117,12 @@ function Page() {
   return (
     <div>
       <PageHeader
-        title="Search"
+        title="Search Archive"
         description="Case-insensitive partial text across every user-entered field."
       />
+      <div className="mb-6">
+        <ArchiveViewNav active="search" />
+      </div>
       {q.recordsError ? (
         <div className="mb-4">
           <Banner kind="warning" title="Showing cached search data">
@@ -145,7 +149,7 @@ function Page() {
             return (
               <section key={t}>
                 <h2 className="mb-2 font-serif text-lg text-foreground">
-                  {RECORD_TYPE_PLURAL[t]}{" "}
+                  {t === "repository" ? "Code repositories" : RECORD_TYPE_PLURAL[t]}{" "}
                   <span className="text-xs text-muted-foreground">({items.length})</span>
                 </h2>
                 <RecordList items={items} />

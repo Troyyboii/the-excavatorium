@@ -6,11 +6,7 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/*
- * The Excavatorium — light archive shell.
- * The default surface is warm ivory; the dark values remain available behind
- * .dark for inverse interpretation, security, and future optional dark mode.
- */
+/* The Excavatorium — Ossuary Ledger foundation. */
 
 @theme inline {
   --radius-sm: 4px;
@@ -68,116 +64,94 @@
 
 :root {
   --radius: 8px;
+  --obsidian: #111412;
+  --charcoal-stone: #1b211e;
+  --bone: #f0e7d2;
+  --aged-parchment: #dccbaa;
+  --ink: #1e211e;
+  --ash-ink: #c9c0ae;
+  --brass: #b38a4a;
+  --ember-amber: #d59a4b;
+  --grave-moss: #5f7954;
+  --deep-moss: #263a2a;
+  --oxblood: #7b2f2a;
+  --quiet-violet: #756b83;
 
-  /* One burgundy family drives actions, selection, risk, and destructive UI. */
-  --burgundy: #781f3b;
-  --burgundy-muted: #e3bdc8;
+  --burgundy: var(--oxblood);
+  --burgundy-muted: #e5c7c2;
+  --background: var(--bone);
+  --foreground: var(--ink);
+  --card: #f8f0df;
+  --card-foreground: var(--ink);
+  --popover: var(--bone);
+  --popover-foreground: var(--ink);
+  --primary: var(--deep-moss);
+  --primary-foreground: var(--bone);
+  --secondary: var(--aged-parchment);
+  --secondary-foreground: var(--ink);
+  --muted: #e7dcc5;
+  --muted-foreground: #5d5b51;
+  --accent: var(--aged-parchment);
+  --accent-foreground: var(--ink);
+  --destructive: var(--oxblood);
+  --destructive-foreground: var(--bone);
+  --border: #bbaa86;
+  --input: #826f50;
+  --ring: var(--brass);
 
-  --background: #f3eee3;
-  --foreground: #2c2721;
+  --sidebar: var(--obsidian);
+  --sidebar-foreground: var(--bone);
+  --sidebar-primary: var(--deep-moss);
+  --sidebar-primary-foreground: var(--bone);
+  --sidebar-accent: var(--charcoal-stone);
+  --sidebar-accent-foreground: var(--bone);
+  --sidebar-border: #4c5146;
+  --sidebar-ring: var(--brass);
 
-  --card: #fffdf8;
-  --card-foreground: #2c2721;
-  --popover: #fffdf8;
-  --popover-foreground: #2c2721;
-
-  --primary: var(--burgundy);
-  --primary-foreground: #fff9e8;
-
-  --secondary: #e8dfd1;
-  --secondary-foreground: #40372e;
-
-  --muted: #ece5da;
-  --muted-foreground: #6e665d;
-
-  --accent: #e8dfd1;
-  --accent-foreground: #40372e;
-
-  --destructive: var(--burgundy);
-  --destructive-foreground: #fff9e8;
-
-  --border: #d4c7b5;
-  --input: #8f7655;
-  --ring: #9a7437;
-
-  --sidebar: #13110f;
-  --sidebar-foreground: #f7ebc8;
-  --sidebar-primary: var(--burgundy);
-  --sidebar-primary-foreground: #fff9e8;
-  --sidebar-accent: #29231c;
-  --sidebar-accent-foreground: #f7ebc8;
-  --sidebar-border: #5b4c38;
-  --sidebar-ring: #e2c477;
-
-  --record: #fffdf8;
-  --record-hover: #eee4d4;
-  --white-gold: #2c2721;
-  --luminous-gold: #795a28;
-  --intelligence: #2c2721;
-  --verified: #4f7b60;
-  --risk: var(--burgundy);
-  --brass: #9a7437;
-  --brass-muted: #9b8669;
-  --strong-border: #b9a27d;
-  --success: #4f7b60;
-  --warning: #9a672f;
-  --canvas: #eee7da;
-  --graph-conversation: var(--burgundy);
-  --graph-document: #9a7437;
-  --graph-decision: #4f7b60;
-  --graph-repository: #6f5d91;
-  --graph-tool: #315f6b;
+  --record: var(--card);
+  --record-hover: #eadcc4;
+  --white-gold: var(--ink);
+  --luminous-gold: #765626;
+  --intelligence: var(--ink);
+  --verified: var(--grave-moss);
+  --risk: var(--oxblood);
+  --brass-muted: #8d7958;
+  --strong-border: #a78b5c;
+  --success: var(--grave-moss);
+  --warning: #8a5f27;
+  --canvas: #e8dcc5;
+  --graph-conversation: var(--oxblood);
+  --graph-document: var(--brass);
+  --graph-decision: var(--grave-moss);
+  --graph-repository: var(--quiet-violet);
+  --graph-tool: var(--deep-moss);
 }
 
 .dark {
-  --burgundy: #c65373;
-  --burgundy-muted: #552536;
-
-  --background: #100f0d;
-  --foreground: #faf6ea;
-
-  --card: #191714;
-  --card-foreground: #faf6ea;
-  --popover: #191714;
-  --popover-foreground: #faf6ea;
-
-  --primary: var(--burgundy);
-  --primary-foreground: #fff9e8;
-
-  --secondary: #29231c;
-  --secondary-foreground: #f7ebc8;
-
-  --muted: #211d18;
-  --muted-foreground: #bdb2a1;
-
-  --accent: #29231c;
-  --accent-foreground: #f7ebc8;
-
-  --destructive: var(--burgundy);
-  --destructive-foreground: #fff9e8;
-
-  --border: #5b4c38;
-  --input: #5b4c38;
-  --ring: #e2c477;
-
-  --record: #1f1b16;
-  --record-hover: #30281d;
-  --white-gold: #f7ebc8;
-  --luminous-gold: #e2c477;
-  --intelligence: #f7ebc8;
-  --verified: #e2c477;
-  --risk: var(--burgundy);
-  --brass: #e2c477;
-  --brass-muted: #8a724c;
-  --strong-border: #76613f;
-  --success: #739579;
-  --warning: #bb8748;
-  --canvas: #211d18;
-  --graph-conversation: var(--burgundy);
-  --graph-document: #e2c477;
-  --graph-decision: #739579;
-  --graph-repository: #9d88bd;
-  --graph-tool: #6798a4;
+  --background: var(--obsidian);
+  --foreground: var(--bone);
+  --card: var(--charcoal-stone);
+  --card-foreground: var(--bone);
+  --popover: var(--charcoal-stone);
+  --popover-foreground: var(--bone);
+  --secondary: #30382f;
+  --secondary-foreground: var(--bone);
+  --muted: #202721;
+  --muted-foreground: var(--ash-ink);
+  --accent: #30382f;
+  --accent-foreground: var(--bone);
+  --border: #4c5146;
+  --input: #4c5146;
+  --record: var(--charcoal-stone);
+  --record-hover: #293229;
+  --white-gold: var(--bone);
+  --luminous-gold: #d8b97a;
+  --intelligence: var(--bone);
+  --brass-muted: #8d7958;
+  --strong-border: #75623e;
+  --success: #83a277;
+  --warning: var(--ember-amber);
+  --canvas: #202721;
 }
 
 @layer base {
@@ -239,6 +213,21 @@
     *::after {
       animation-duration: 0.001ms !important;
       transition-duration: 0.001ms !important;
+    }
+  }
+  @media (forced-colors: active) {
+    :focus-visible {
+      outline: 2px solid Highlight;
+      outline-offset: 3px;
+    }
+    button,
+    a,
+    input,
+    select,
+    textarea,
+    [role="menu"],
+    [role="dialog"] {
+      box-shadow: none !important;
     }
   }
 }

@@ -12,7 +12,7 @@ export const RECORD_TYPES: RecordType[] = [
 
 export const RECORD_TYPE_LABEL: Record<RecordType, string> = {
   tool: "Tool",
-  repository: "Repository",
+  repository: "Code repository",
   conversation: "Conversation",
   decision: "Decision",
   document: "Document",
@@ -20,7 +20,7 @@ export const RECORD_TYPE_LABEL: Record<RecordType, string> = {
 
 export const RECORD_TYPE_PLURAL: Record<RecordType, string> = {
   tool: "Tools",
-  repository: "Repositories",
+  repository: "Code repositories",
   conversation: "Conversations",
   decision: "Decisions",
   document: "Documents",

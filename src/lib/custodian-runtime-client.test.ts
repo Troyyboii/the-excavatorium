@@ -195,7 +195,9 @@ describe("Custodian run read contract", () => {
   });
 
   test("Run Room route keeps provider invocation behind the explicit runtime client boundary", async () => {
-    const source = await Bun.file(new URL("../routes/run-room.tsx", import.meta.url)).text();
+    const source = await Bun.file(
+      new URL("../components/custodian/run-room-page.tsx", import.meta.url),
+    ).text();
     expect(source).toContain("CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER");
     expect(source).toContain("useCustodianRuns");
     expect(source).not.toContain("invokeCustodianRun");
