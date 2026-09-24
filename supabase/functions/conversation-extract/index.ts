@@ -26,7 +26,6 @@ const corsHeaders = {
   Vary: "Origin",
 };
 
-
 type CandidateRecord = { id: string; title: string; recordType: string };
 type QuotaDecision = { allowed: boolean; remaining: number; retryAfterSeconds: number };
 
