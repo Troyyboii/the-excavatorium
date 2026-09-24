@@ -265,7 +265,7 @@ describe("Run Room surface", () => {
 
     await fillOwnerInput(user);
     await user.click(screen.getByRole("button", { name: "Start analysis" }));
-    expect(screen.getByText(/stopped at completed/)).not.toBeNull();
+    expect(screen.getByText(/Analysis completed successfully/)).not.toBeNull();
     expect(screen.queryByText(/streaming|thinking|typing/i)).toBeNull();
     expect(drive.policies).toBe(1);
     expect(drive.runs).toBe(1);
@@ -514,7 +514,7 @@ describe("Run Room surface", () => {
     await act(async () => {
       release();
     });
-    expect(await screen.findByText(/stopped at completed/)).not.toBeNull();
+    expect(await screen.findByText(/Analysis completed successfully/)).not.toBeNull();
     expect(policies).toBe(1);
   });
 
@@ -535,7 +535,7 @@ describe("Run Room surface", () => {
     render(enabledRoom(ports, [terminalRun("blocked", null)]));
     await fillOwnerInput(user);
     await user.click(screen.getByRole("button", { name: "Start analysis" }));
-    expect(await screen.findByText(/stopped at completed/)).not.toBeNull();
+    expect(await screen.findByText(/Analysis completed successfully/)).not.toBeNull();
     expect(creates).toBe(1);
   });
 

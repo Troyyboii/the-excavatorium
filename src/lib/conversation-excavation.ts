@@ -4,20 +4,12 @@ import { z } from "zod";
 
 export const MAX_CONVERSATION_TRANSCRIPT_CHARS = 24_000;
 
-const PROJECT_ROUTES = [
-  "The Forge",
-  "The Chamber",
-  "The Book",
-  "General",
-  "Do not preserve",
-] as const;
-
 const ConversationExtractionSchema = z
   .object({
     title: z.string().max(240),
     summary: z.string().max(2_000),
     tags: z.array(z.string().max(48)).max(12),
-    projectRoute: z.enum(PROJECT_ROUTES),
+    projectRoute: z.string().trim().min(1).max(120).nullable(),
     highSignalFindings: z.string().max(5_000),
     decisionsMade: z.string().max(5_000),
     openLoops: z.string().max(5_000),
@@ -31,7 +23,7 @@ const ConversationExtractionSchema = z
   .strict();
 
 export type ConversationExtraction = z.infer<typeof ConversationExtractionSchema> & {
-  projectRoute: ProjectRoute;
+  projectRoute: ProjectRoute | null;
 };
 
 type CandidateRecord = Pick<ArchiveRecord, "id" | "title" | "recordType">;

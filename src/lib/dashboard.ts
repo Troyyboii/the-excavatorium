@@ -55,7 +55,9 @@ function contextFor(record: ArchiveRecord): string {
 function statusFor(record: ArchiveRecord): string {
   switch (record.recordType) {
     case "conversation":
-      return record.recordData.openLoops.trim() ? "Open loop" : record.recordData.projectRoute;
+      return record.recordData.openLoops.trim()
+        ? "Open loop"
+        : (record.recordData.projectRoute ?? "Conversation");
     case "repository":
       return record.recordData.recommendedAction ?? "Awaiting verdict";
     case "tool":

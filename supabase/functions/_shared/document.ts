@@ -16,13 +16,8 @@ const SOURCE_REFERENCE_RE = /^ref_[0-9a-f]{8}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const STORAGE_PATH_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/documents\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/(original|extracted)\/[A-Za-z0-9][A-Za-z0-9._-]{0,254}$/i;
-const PROJECT_ROUTES = [
-  "The Forge",
-  "The Chamber",
-  "The Book",
-  "General",
-  "Do not preserve",
-] as const;
+/** Project route is optional, owner-defined metadata: null or a bounded non-blank string. */
+export const PROJECT_ROUTE_MAX_LENGTH = 120;
 const EXTENSIONS = [".pdf", ".md", ".txt"] as const;
 const MIME_TYPES = new Set(["application/pdf", "text/markdown", "text/plain"]);
 
@@ -64,7 +59,7 @@ export type DocumentRecordData = {
   contradictions: DocumentInsight[];
   uncertainties: DocumentInsight[];
   sourceReferences: Array<{ id: string; locator: string; label: string; note: string }>;
-  projectRoute: (typeof PROJECT_ROUTES)[number] | null;
+  projectRoute: string | null;
 };
 
 export type DocumentRecordPayload = {
@@ -548,7 +543,9 @@ export function validateDocumentRecordData(value: unknown): value is DocumentRec
   if (data.storagePath !== null && data.contentHash === null) return false;
   if (
     data.projectRoute !== null &&
-    !PROJECT_ROUTES.includes(data.projectRoute as (typeof PROJECT_ROUTES)[number])
+    (typeof data.projectRoute !== "string" ||
+      data.projectRoute.trim().length === 0 ||
+      data.projectRoute.length > PROJECT_ROUTE_MAX_LENGTH)
   )
     return false;
   if (!Array.isArray(data.sourceReferences) || data.sourceReferences.length > 64) return false;
@@ -620,10 +617,6 @@ export function pathIsOwnerScoped(path: unknown, userId: string): path is string
     !path.includes("..") &&
     !path.includes("\\")
   );
-}
-
-export function projectRoutes(): readonly string[] {
-  return PROJECT_ROUTES;
 }
 
 export function supportedExtensions(): readonly string[] {

@@ -5,13 +5,6 @@ export const DOCUMENT_MAX_FILE_BYTES = 10_000_000;
 export const DOCUMENT_MAX_REQUEST_BYTES = 12_000_000;
 export const DOCUMENT_MAX_PAGE_COUNT = 1_000;
 export const DOCUMENT_EXTENSIONS = [".pdf", ".md", ".txt"] as const;
-const DOCUMENT_PROJECT_ROUTES = [
-  "The Forge",
-  "The Chamber",
-  "The Book",
-  "General",
-  "Do not preserve",
-] as const;
 
 function isValidDocumentDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -58,7 +51,7 @@ export const documentDataSchema = z
     contradictions: z.array(insightSchema).max(12),
     uncertainties: z.array(insightSchema).max(12),
     sourceReferences: z.array(sourceReferenceSchema).max(64),
-    projectRoute: z.enum(DOCUMENT_PROJECT_ROUTES).nullable(),
+    projectRoute: z.string().trim().min(1).max(120).nullable(),
   })
   .strict()
   .superRefine(validateSourceReferenceLinks);

@@ -99,19 +99,12 @@ export type RepositoryData = {
   lastReviewed: string | null;
 };
 
-export type ProjectRoute = "The Forge" | "The Chamber" | "The Book" | "General" | "Do not preserve";
-
-export const PROJECT_ROUTES: ProjectRoute[] = [
-  "The Forge",
-  "The Chamber",
-  "The Book",
-  "General",
-  "Do not preserve",
-];
+/** Optional, owner-defined text. There is no global list of routes. */
+export type ProjectRoute = string;
 
 export type ConversationData = {
   conversationDate: string | null;
-  projectRoute: ProjectRoute;
+  projectRoute: ProjectRoute | null;
   highSignalFindings: string;
   decisionsMade: string;
   openLoops: string;
@@ -265,7 +258,7 @@ export const emptyRepositoryData: RepositoryData = {
 
 export const emptyConversationData: ConversationData = {
   conversationDate: null,
-  projectRoute: "General",
+  projectRoute: null,
   highSignalFindings: "",
   decisionsMade: "",
   openLoops: "",

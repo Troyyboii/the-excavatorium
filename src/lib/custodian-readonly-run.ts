@@ -430,6 +430,10 @@ export function describeReadonlyAnalysisResult(result: ReadonlyAnalysisStartResu
   }
   const failure = result.failureCode ? ` Failure ${result.failureCode}.` : "";
   const usage = result.usageUnclaimed ? " Recorded usage is not claimed." : "";
+  // Plain language for the ordinary success; run ids stay in Advanced / Run Room.
+  if (result.status === "completed" && !result.failureCode) {
+    return `Analysis completed successfully.${usage}`;
+  }
   return `Persisted run ${result.runId} stopped at ${result.status}.${failure}${usage}`;
 }
 

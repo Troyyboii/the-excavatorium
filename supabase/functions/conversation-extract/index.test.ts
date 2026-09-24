@@ -119,7 +119,7 @@ Deno.test("uses the owner's key and model with store:false when funded", async (
                       title: "Draft",
                       summary: "Summary",
                       tags: [],
-                      projectRoute: "General",
+                      projectRoute: null,
                       highSignalFindings: "",
                       decisionsMade: "",
                       openLoops: "",
@@ -141,4 +141,10 @@ Deno.test("uses the owner's key and model with store:false when funded", async (
   assert(captured.authorization === `Bearer ${apiKey}`, "must use the owner key");
   assert(captured.body.model === "gpt-5.6-sol", "must use the owner model preference");
   assert(captured.body.store === false, "must keep store:false");
+  const draft = await response.json();
+  assert(JSON.stringify(draft).includes('"projectRoute":null'), "an unsupported route stays null");
+  const format = JSON.stringify((captured.body.text as Record<string, unknown>) ?? {});
+  for (const historical of ["The Forge", "The Chamber", "The Book", "Do not preserve"]) {
+    assert(!format.includes(historical), "provider schema must not carry a global route list");
+  }
 });

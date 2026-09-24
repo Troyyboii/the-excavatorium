@@ -38,7 +38,7 @@ function toSearchableText(r: ArchiveRecord): string {
     );
   } else if (r.recordType === "conversation") {
     parts.push(
-      r.recordData.projectRoute,
+      r.recordData.projectRoute ?? "",
       r.recordData.highSignalFindings,
       r.recordData.decisionsMade,
       r.recordData.openLoops,

@@ -1243,3 +1243,18 @@ function countingDrive() {
     },
   };
 }
+
+describe("completed-run copy", () => {
+  test("an ordinary successful completion reads as plain language without run ids", () => {
+    const text = describeReadonlyAnalysisResult({
+      ok: true,
+      stop: "terminal",
+      runId: "fa2fd07c-59f2-4fdc-aa39-9dfd18aa433e",
+      status: "completed",
+      holdResolved: true,
+      usageUnclaimed: false,
+    } as never);
+    expect(text).toBe("Analysis completed successfully.");
+    expect(text).not.toContain("fa2fd07c");
+  });
+});
