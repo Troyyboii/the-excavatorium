@@ -11,9 +11,13 @@ import {
 /**
  * Owner self-delete. Authenticated ownership only. Order:
  *   1. Require deliberate confirmation phrase + password re-auth
- *   2. purge_owner_account_data(runtime_owner_id) via service_role (RESTRICT-safe)
- *   3. Purge document-files/<uid>/ Storage objects (does not cascade from auth.users)
+ *   2. Purge document-files/<uid>/ Storage objects (does not cascade from auth.users)
+ *   3. purge_owner_account_data(runtime_owner_id) via service_role (RESTRICT-safe table order)
  *   4. auth.admin.deleteUser via trusted service-role boundary
+ *
+ * Storage must succeed before any DB wipe so a Storage failure cannot leave a
+ * login whose structured rows/credentials are already gone. Abort on Storage
+ * failure before calling the purge RPC.
  *
  * Never exports or logs API keys, ciphertext, or wrapping keys. No provider calls.
  */
@@ -26,10 +30,14 @@ export const MAX_PASSWORD_CHARS = 256;
 export type AccountDeleteDependencies = {
   authenticate: (request: Request) => Promise<AuthenticatedSupabase | null>;
   trustedClient: () => AuthenticatedSupabase["client"] | null;
-  verifyPassword: (email: string, password: string) => Promise<boolean>;
+  verifyPassword: (email: string, password: string, expectedOwnerId: string) => Promise<boolean>;
 };
 
-async function defaultVerifyPassword(email: string, password: string): Promise<boolean> {
+async function defaultVerifyPassword(
+  email: string,
+  password: string,
+  expectedOwnerId: string,
+): Promise<boolean> {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
   if (!supabaseUrl || !supabaseAnonKey) return false;
@@ -37,7 +45,14 @@ async function defaultVerifyPassword(email: string, password: string): Promise<b
     auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
   });
   const { data, error } = await client.auth.signInWithPassword({ email, password });
-  return !error && Boolean(data.user?.id);
+  const matched = !error && data.user?.id === expectedOwnerId;
+  // Drop the ephemeral GoTrue session created by step-up verification.
+  try {
+    await client.auth.signOut();
+  } catch {
+    // Verification outcome must not depend on cleanup succeeding.
+  }
+  return matched;
 }
 
 const defaultDependencies: AccountDeleteDependencies = {
@@ -218,7 +233,7 @@ export function createAccountDeleteHandler(
 
     let passwordOk = false;
     try {
-      passwordOk = await dependencies.verifyPassword(email, password);
+      passwordOk = await dependencies.verifyPassword(email, password, auth.user.id);
     } catch {
       return jsonResponse(
         { error: "Password re-authentication is temporarily unavailable." },
@@ -236,15 +251,7 @@ export function createAccountDeleteHandler(
       return jsonResponse({ error: "Account deletion is temporarily unavailable." }, 503, origin);
     }
 
-    // Structured purge first (service_role only). Avoids Storage-first leave if
-    // a populated RESTRICT graph used to fail the RPC after objects were gone.
-    const { data: purgeData, error: purgeError } = await trusted.rpc("purge_owner_account_data", {
-      runtime_owner_id: ownerId,
-    });
-    if (purgeError) {
-      return jsonResponse({ error: "Account data could not be purged." }, 503, origin);
-    }
-
+    // Storage first so a Storage failure aborts before wiping structured rows.
     let storageRemoved = 0;
     try {
       storageRemoved = await purgeOwnerDocumentFiles(
@@ -260,6 +267,14 @@ export function createAccountDeleteHandler(
       } catch {
         return jsonResponse({ error: "Document Storage could not be purged." }, 503, origin);
       }
+    }
+
+    // service_role only; table order breaks ON DELETE RESTRICT graphs (D1).
+    const { data: purgeData, error: purgeError } = await trusted.rpc("purge_owner_account_data", {
+      runtime_owner_id: ownerId,
+    });
+    if (purgeError) {
+      return jsonResponse({ error: "Account data could not be purged." }, 503, origin);
     }
 
     const { error: deleteError } = await trusted.auth.admin.deleteUser(ownerId);

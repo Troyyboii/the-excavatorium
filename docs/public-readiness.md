@@ -239,14 +239,17 @@ keys, plaintext API keys, and service-role secrets are never exported.
 (`verify_jwt` on) with typed confirmation `DELETE MY ACCOUNT` **and password
 re-authentication** (email login via `signInWithPassword`):
 
-1. Authenticated owner only (JWT user id) + password step-up.
-2. `purge_owner_account_data(runtime_owner_id)` via the trusted **service_role**
+1. Authenticated owner only (JWT user id) + password step-up (verified user id
+   must match the JWT subject; ephemeral verify session is signed out).
+2. Purge `document-files/<user_id>/` Storage objects (Storage does not cascade
+   from `auth.users`). Abort the leave path on Storage failure **before** any
+   structured DB wipe.
+3. `purge_owner_account_data(runtime_owner_id)` via the trusted **service_role**
    client only (authenticated EXECUTE revoked). Delete order breaks ON DELETE
    RESTRICT graphs (analysis findings ↔ runs/steps; runs ↔ tool_policies)
    before removing cases.
-3. Purge `document-files/<user_id>/` Storage objects (Storage does not cascade
-   from `auth.users`).
-4. `auth.admin.deleteUser` via the trusted service-role boundary.
+4. `auth.admin.deleteUser` via the trusted service-role boundary (only after
+   Storage and DB purge both succeed).
 
 `reset_user_archive` remains an archive-only reset and is **not** account
 deletion. Deletion must be tested on a local/ephemeral populated account before

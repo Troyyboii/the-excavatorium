@@ -20,10 +20,9 @@ type Call = { kind: string; detail?: unknown };
 function harness(
   options: {
     signedIn?: boolean;
-    confirmation?: string;
-    password?: string;
     email?: string | null;
     purgeError?: boolean;
+    storageError?: boolean;
     deleteError?: boolean;
     trusted?: boolean;
     passwordOk?: boolean;
@@ -54,11 +53,14 @@ function harness(
     storage: {
       from(_bucket: string) {
         return {
-          list(path = "", options?: { limit?: number; offset?: number }) {
-            calls.push({ kind: "storage.list", detail: { path, options } });
+          list(path = "", listOptions?: { limit?: number; offset?: number }) {
+            calls.push({ kind: "storage.list", detail: { path, options: listOptions } });
+            if (options.storageError) {
+              return Promise.resolve({ data: null, error: { message: "list failed" } });
+            }
             const all = storageObjects.get(path) ?? [];
-            const offset = options?.offset ?? 0;
-            const limit = options?.limit ?? 100;
+            const offset = listOptions?.offset ?? 0;
+            const limit = listOptions?.limit ?? 100;
             return Promise.resolve({ data: all.slice(offset, offset + limit), error: null });
           },
           remove(paths: string[]) {
@@ -121,9 +123,12 @@ function harness(
       options.trusted === false
         ? null
         : (trustedClient as unknown as AuthenticatedSupabase["client"]),
-    verifyPassword: (email, password) => {
-      calls.push({ kind: "verifyPassword", detail: { email, passwordLength: password.length } });
-      return Promise.resolve(options.passwordOk !== false);
+    verifyPassword: (email, password, expectedOwnerId) => {
+      calls.push({
+        kind: "verifyPassword",
+        detail: { email, passwordLength: password.length, expectedOwnerId },
+      });
+      return Promise.resolve(options.passwordOk !== false && expectedOwnerId === ownerId);
     },
   };
 
@@ -181,13 +186,13 @@ Deno.test("rejects accounts without an email login for password re-auth", async 
   const response = await handler(post(validBody()));
   assertEquals(response.status, 400);
   assertEquals(
-    calls.some((c) => c.kind === "trusted.rpc"),
+    calls.some((c) => c.kind === "trusted.rpc" || c.kind === "storage.remove"),
     false,
   );
 });
 
 Deno.test(
-  "re-auths, purges structured rows via service_role, then Storage, then auth.users",
+  "re-auths, purges Storage, then structured rows via service_role, then auth.users",
   async () => {
     const { calls, handler } = harness();
     const response = await handler(post(validBody()));
@@ -199,6 +204,8 @@ Deno.test(
       calls.some((c) => c.kind === "verifyPassword"),
       true,
     );
+    const verify = calls.find((c) => c.kind === "verifyPassword");
+    assertEquals((verify?.detail as { expectedOwnerId: string }).expectedOwnerId, ownerId);
     const trustedPurge = calls.find(
       (c) =>
         c.kind === "trusted.rpc" && (c.detail as { fn: string }).fn === "purge_owner_account_data",
@@ -212,10 +219,10 @@ Deno.test(
       false,
     );
     const kinds = calls.map((c) => c.kind);
-    const purgeIdx = kinds.indexOf("trusted.rpc");
     const storageIdx = kinds.indexOf("storage.remove");
+    const purgeIdx = kinds.indexOf("trusted.rpc");
     const deleteIdx = kinds.indexOf("auth.admin.deleteUser");
-    assertEquals(purgeIdx >= 0 && storageIdx > purgeIdx && deleteIdx > storageIdx, true);
+    assertEquals(storageIdx >= 0 && purgeIdx > storageIdx && deleteIdx > purgeIdx, true);
     assertEquals(
       calls.some((c) => c.kind === "auth.admin.deleteUser" && c.detail === ownerId),
       true,
@@ -223,12 +230,30 @@ Deno.test(
   },
 );
 
-Deno.test("does not delete auth identity when structured purge fails", async () => {
+Deno.test("aborts before DB purge when Storage fails", async () => {
+  const { calls, handler } = harness({ storageError: true });
+  const response = await handler(post(validBody()));
+  assertEquals(response.status, 503);
+  assertEquals(
+    calls.some((c) => c.kind === "trusted.rpc" || c.kind === "auth.admin.deleteUser"),
+    false,
+  );
+});
+
+Deno.test("does not delete auth identity when structured purge fails after Storage", async () => {
   const { calls, handler } = harness({ purgeError: true });
   const response = await handler(post(validBody()));
   assertEquals(response.status, 503);
   assertEquals(
-    calls.some((c) => c.kind === "auth.admin.deleteUser" || c.kind === "storage.remove"),
+    calls.some((c) => c.kind === "storage.remove"),
+    true,
+  );
+  assertEquals(
+    calls.some((c) => c.kind === "trusted.rpc"),
+    true,
+  );
+  assertEquals(
+    calls.some((c) => c.kind === "auth.admin.deleteUser"),
     false,
   );
 });
