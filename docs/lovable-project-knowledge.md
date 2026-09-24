@@ -24,7 +24,8 @@ Use this as the durable project context when working on The Excavatorium in Lova
 
 ## Secrets and extraction
 
-- `OPENAI_API_KEY` belongs only in Supabase project secrets. Never copy it into Lovable knowledge, prompts, client environment variables, browser code, GitHub, logs, or screenshots.
+- Never copy service-role keys, wrapping keys (`PROVIDER_KEY_*`), owner API keys, SMTP/OAuth secrets, or real credentials into Lovable knowledge, prompts, client `VITE_*` variables, browser code, GitHub, logs, or screenshots.
+- Custodian, Conversation Excavation, and File Excavation use **owner BYOK** (encrypted server-side). Do not set a shared operator `OPENAI_API_KEY` to fund those production paths for registered users.
 - Conversation extraction runs only in the Supabase Edge Function, uses the existing authenticated and rate-limited contract, and returns an editable draft. It never auto-saves.
 - Saving remains exclusively through the protected existing record-and-links RPC.
 

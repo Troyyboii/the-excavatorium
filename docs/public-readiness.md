@@ -280,7 +280,8 @@ the actual Auth dashboard behavior.
 
 - [ ] Reconcile migration `20260923113236` (applied) with source
       `20260923120000_custodian_provider_diagnostics.sql` before applying new ones;
-      new migrations sort after both.
+      new migrations sort after both. Operator procedure only:
+      [`migration-reconcile-diagnostics.md`](./migration-reconcile-diagnostics.md).
 - [ ] Apply migrations `20260924100000`, `…110000`, `…120000`, `…130000` (staging first).
 - [ ] Set `PROVIDER_KEY_ENCRYPTION_KEYS`, `PROVIDER_KEY_ACTIVE_VERSION`, and
       `CUSTODIAN_MODEL_PRICING_JSON` (six models) as Edge secrets.
