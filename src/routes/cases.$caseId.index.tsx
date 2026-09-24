@@ -16,6 +16,13 @@ import {
   updateCustodianCase,
   useCustodianCases,
 } from "@/lib/custodian";
+import { productionReadonlyAnalysisPorts } from "@/lib/custodian-readonly-run";
+import {
+  CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER,
+  custodianRunsKey,
+  useCustodianRuns,
+} from "@/lib/custodian-runtime";
+import { useModelPreference, useProviderKeyStatus } from "@/lib/provider-key";
 import { useCurrentUserId } from "@/lib/session";
 
 export const Route = createFileRoute("/cases/$caseId/")({ component: CaseDetailPage, ssr: false });
@@ -27,6 +34,9 @@ function CaseDetailPage() {
   const queryClient = useQueryClient();
   const cases = useCustodianCases(online);
   const archive = useArchive(online);
+  const runs = useCustodianRuns(online);
+  const providerKeyStatus = useProviderKeyStatus();
+  const modelPreference = useModelPreference();
   const queryOptions = { enabled: online && userId !== null, staleTime: 30_000, retry: 1 };
   const members = useQuery({
     ...queryOptions,
@@ -97,6 +107,27 @@ function CaseDetailPage() {
         loading={cases.isLoading || detailQueries.some((query) => query.isLoading)}
         error={error}
         online={online && !foundationPending}
+        analysisPorts={
+          CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER
+            ? productionReadonlyAnalysisPorts({
+                ownerId: userId,
+                refreshRuns: async () => {
+                  await queryClient.invalidateQueries({ queryKey: custodianRunsKey(userId) });
+                  await queryClient.invalidateQueries({
+                    queryKey: ["custodian", "findings", userId],
+                  });
+                  await queryClient.invalidateQueries({
+                    queryKey: ["custodian", "finding-evidence", userId],
+                  });
+                },
+              })
+            : null
+        }
+        analysisRuns={runs.data?.runs ?? []}
+        providerHoldProjection={runs.data?.providerHoldProjection ?? "available"}
+        providerKeyStatus={providerKeyStatus.data ?? null}
+        modelPreference={modelPreference.data ?? null}
+        settingsLoading={providerKeyStatus.isLoading || modelPreference.isLoading}
         onUpdate={async (value) => {
           await updateCustodianCase(caseId, value);
           await queryClient.invalidateQueries({ queryKey: custodianCasesKey(userId) });

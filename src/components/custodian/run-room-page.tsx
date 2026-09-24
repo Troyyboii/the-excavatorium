@@ -9,7 +9,7 @@ import {
   useCustodianRuns,
 } from "@/lib/custodian-runtime";
 import { openAiModelTier } from "@/lib/openai-models";
-import { useModelPreference } from "@/lib/provider-key";
+import { useModelPreference, useProviderKeyStatus } from "@/lib/provider-key";
 import { useCurrentUserId } from "@/lib/session";
 
 export function RunRoomPage() {
@@ -18,6 +18,7 @@ export function RunRoomPage() {
   const queryClient = useQueryClient();
   const runs = useCustodianRuns(online);
   const modelPreference = useModelPreference();
+  const providerKeyStatus = useProviderKeyStatus();
   const preferredModelTier = modelPreference.data ? openAiModelTier(modelPreference.data) : null;
   const foundationPending = Boolean(runs.error && isCustodianFoundationMissing(runs.error));
   const error = !online
@@ -38,6 +39,9 @@ export function RunRoomPage() {
       ownerPresent={Boolean(userId)}
       surfaceEnabled={CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER}
       preferredModelTier={preferredModelTier}
+      providerKeyConfigured={providerKeyStatus.data?.configured === true}
+      modelPreferenceSelected={Boolean(modelPreference.data)}
+      settingsLoading={providerKeyStatus.isLoading || modelPreference.isLoading}
       ports={productionReadonlyAnalysisPorts({
         ownerId: userId,
         refreshRuns: async () => {

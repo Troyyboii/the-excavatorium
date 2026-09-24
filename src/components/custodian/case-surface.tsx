@@ -35,6 +35,10 @@ import { ArchiveErrorState, EmptyArchiveState, LoadingMark, Section } from "./cu
 import { formatRecordDate, valueOrNotRecorded } from "./custodian-format";
 import { CaseReadingSurface } from "./case-reading";
 import { CaseScopePicker } from "./case-scope-picker";
+import { InvestigationAnalysisPanel } from "./investigation-analysis";
+import type { ReadonlyAnalysisPorts } from "@/lib/custodian-readonly-run";
+import type { CustodianRun, CustodianRunRead } from "@/lib/custodian-runtime";
+import type { ProviderKeyStatus } from "@/lib/provider-key";
 
 export type CustodianCaseView = {
   id: string;
@@ -191,6 +195,12 @@ export function CaseDetailSurface({
   error,
   online = true,
   onUpdate,
+  analysisPorts = null,
+  analysisRuns = [],
+  providerHoldProjection = "available",
+  providerKeyStatus = null,
+  modelPreference = null,
+  settingsLoading = false,
 }: {
   caseId: string;
   item?: CustodianCaseView;
@@ -209,6 +219,12 @@ export function CaseDetailSurface({
   error?: string | null;
   online?: boolean;
   onUpdate: (value: CaseEditorValue) => Promise<void>;
+  analysisPorts?: ReadonlyAnalysisPorts | null;
+  analysisRuns?: readonly CustodianRun[];
+  providerHoldProjection?: CustodianRunRead["providerHoldProjection"];
+  providerKeyStatus?: ProviderKeyStatus | null;
+  modelPreference?: string | null;
+  settingsLoading?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   if (error) return <ArchiveErrorState error={error} />;
@@ -275,6 +291,19 @@ export function CaseDetailSurface({
         archiveStale={archiveStale}
       />
 
+      <InvestigationAnalysisPanel
+        caseId={caseId}
+        objective={item.objective}
+        currentQuestion={item.currentQuestion}
+        online={online}
+        ports={analysisPorts}
+        runs={analysisRuns}
+        providerHoldProjection={providerHoldProjection}
+        providerKeyStatus={providerKeyStatus}
+        modelPreference={modelPreference}
+        settingsLoading={settingsLoading}
+      />
+
       <div className="grid gap-6 xl:grid-cols-2">
         <CaseCollection
           title="Claims"
@@ -301,7 +330,7 @@ export function CaseDetailSurface({
         <CaseCollection
           title="Findings"
           icon={CheckCircle}
-          empty="No findings are attached to this case."
+          empty="No Custodian Findings yet. Findings are interpretations from analysis — not Owner Judgment."
           items={findings.map((finding) => ({
             id: finding.id,
             title: finding.title,
@@ -649,6 +678,9 @@ export function FindingDetails({
 
   return (
     <div className="space-y-3 border-l border-luminous-gold/30 pl-3 text-sm leading-6 text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
+        Custodian Finding — an attributable interpretation. This is not Owner Judgment (Review).
+      </p>
       <p className="break-words whitespace-pre-wrap">
         <span className="font-medium text-foreground">Conclusion:</span> {finding.finding}
       </p>

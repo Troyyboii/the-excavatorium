@@ -291,6 +291,27 @@ describe("Run Room surface", () => {
     expect(tierSelect.value).toBe("terra");
   });
 
+  test("keeps the technical form visible but blocks Start when the provider key is missing", () => {
+    const drive = scriptedPorts([observed("completed", "settled_known", "known")]);
+    render(
+      <RunRoomSurface
+        runs={[]}
+        providerHoldProjection="available"
+        online
+        loading={false}
+        error={null}
+        ownerPresent
+        surfaceEnabled
+        ports={drive.ports}
+        providerKeyConfigured={false}
+        modelPreferenceSelected
+      />,
+    );
+    expect(screen.getByLabelText("case_id")).not.toBeNull();
+    expect(screen.getByText(/OpenAI API key is saved in Settings/)).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Start analysis" })).toHaveProperty("disabled", true);
+  });
+
   test("enabled start reports approval, hold, and invocation failure without another call", async () => {
     const user = userEvent.setup();
     const approval = scriptedPorts([

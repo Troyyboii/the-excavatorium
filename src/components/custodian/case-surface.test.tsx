@@ -112,6 +112,7 @@ describe("Case Finding details", () => {
     render(<FindingDetails finding={finding} evidence={evidence} evidenceLinks={evidenceLinks} />);
 
     expect(screen.getByText(/The bounded evidence supports the conclusion/)).not.toBeNull();
+    expect(screen.getByText(/not Owner Judgment/)).not.toBeNull();
     expect(screen.getByText(/Supporting evidence:/)).not.toBeNull();
     expect(screen.getByText(/Tensions and alternatives:/)).not.toBeNull();
     expect(screen.getByText(/Only bounded evidence was reviewed/)).not.toBeNull();
