@@ -45,6 +45,7 @@ export function RunRoomSurface({
   providerKeyConfigured = true,
   modelPreferenceSelected = true,
   settingsLoading = false,
+  settingsUnavailable = false,
 }: {
   runs: CustodianRun[];
   providerHoldProjection: CustodianRunRead["providerHoldProjection"];
@@ -60,6 +61,8 @@ export function RunRoomSurface({
   providerKeyConfigured?: boolean;
   modelPreferenceSelected?: boolean;
   settingsLoading?: boolean;
+  /** Settings queries failed — distinct from key not configured. */
+  settingsUnavailable?: boolean;
 }) {
   const foundationBlock = readonlyFoundationBlock({
     online,
@@ -73,6 +76,7 @@ export function RunRoomSurface({
     providerKeyConfigured,
     modelPreferenceSelected,
     settingsLoading,
+    settingsUnavailable,
   });
   const startBlock = foundationBlock ?? readinessBlock;
   const formAvailable = foundationBlock === null && ports !== null;
@@ -404,6 +408,7 @@ type ReadonlyStartBlock =
   | "ports_unavailable"
   | "gate_closed"
   | "settings_loading"
+  | "settings_unavailable"
   | "provider_key_missing"
   | "model_not_selected";
 
@@ -431,8 +436,10 @@ function readonlyReadinessBlock(input: {
   providerKeyConfigured: boolean;
   modelPreferenceSelected: boolean;
   settingsLoading: boolean;
+  settingsUnavailable: boolean;
 }): ReadonlyStartBlock | null {
   if (input.settingsLoading) return "settings_loading";
+  if (input.settingsUnavailable) return "settings_unavailable";
   if (!input.providerKeyConfigured) return "provider_key_missing";
   if (!input.modelPreferenceSelected) return "model_not_selected";
   return null;
@@ -456,6 +463,9 @@ function readonlyStartReason(block: ReadonlyStartBlock | null): string {
   }
   if (block === "settings_loading") {
     return "Start analysis is waiting for Settings key and model preference to load. No policy, run, or Edge call is made.";
+  }
+  if (block === "settings_unavailable") {
+    return "Start analysis is unavailable because Settings could not be read. Key and model status are unknown. No policy, run, or Edge call is made.";
   }
   if (block === "provider_key_missing") {
     return "Start analysis is unavailable until an OpenAI API key is saved in Settings. The Excavatorium does not use a shared operator key for Custodian work.";

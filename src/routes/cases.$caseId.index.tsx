@@ -128,6 +128,11 @@ function CaseDetailPage() {
         providerKeyStatus={providerKeyStatus.data ?? null}
         modelPreference={modelPreference.data ?? null}
         settingsLoading={providerKeyStatus.isLoading || modelPreference.isLoading}
+        settingsUnavailable={
+          !providerKeyStatus.isLoading &&
+          !modelPreference.isLoading &&
+          (providerKeyStatus.isError || modelPreference.isError)
+        }
         onUpdate={async (value) => {
           await updateCustodianCase(caseId, value);
           await queryClient.invalidateQueries({ queryKey: custodianCasesKey(userId) });

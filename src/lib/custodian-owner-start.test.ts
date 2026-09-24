@@ -3,9 +3,9 @@ import { describe, expect, test } from "bun:test";
 import {
   assessOwnerAnalysisReadiness,
   buildOwnerReadonlyAnalysisInput,
+  INVESTIGATION_READONLY_POLICY_NAME,
+  INVESTIGATION_READONLY_PROMPT_VERSION,
   OWNER_READONLY_CEILINGS,
-  OWNER_READONLY_POLICY_NAME,
-  OWNER_READONLY_PROMPT_VERSION,
   ownerAnalysisObjective,
 } from "./custodian-owner-start";
 import { parseReadonlyAnalysisDraft, emptyReadonlyAnalysisDraft } from "./custodian-readonly-run";
@@ -42,7 +42,22 @@ describe("owner Investigation analysis start", () => {
     ).toBe("model_selection_invalid");
   });
 
-  test("derives model_tier from Settings preference without requiring typed ceilings", () => {
+  test("treats Settings fetch failure as unavailable, not key missing", () => {
+    const readiness = assessOwnerAnalysisReadiness({
+      caseId: CASE_ID,
+      objective: "What does the archive support?",
+      providerKeyStatus: null,
+      modelPreference: null,
+      settingsUnavailable: true,
+    });
+    expect(readiness.ok).toBe(false);
+    if (readiness.ok) throw new Error("expected blocked");
+    expect(readiness.reason).toBe("provider_settings_unavailable");
+    expect(readiness.message).toMatch(/Settings could not be read/i);
+    expect(readiness.message).not.toMatch(/Add your OpenAI API key/i);
+  });
+
+  test("uses an Investigation-only policy name that cannot collide with Advanced owner-readonly", () => {
     const ready = assessOwnerAnalysisReadiness({
       caseId: CASE_ID,
       objective: "What does the archive support?",
@@ -58,8 +73,9 @@ describe("owner Investigation analysis start", () => {
       objective: "What does the archive support?",
       modelTier: ready.modelTier,
     });
-    expect(input.policyName).toBe(OWNER_READONLY_POLICY_NAME);
-    expect(input.promptVersion).toBe(OWNER_READONLY_PROMPT_VERSION);
+    expect(input.policyName).toBe(INVESTIGATION_READONLY_POLICY_NAME);
+    expect(input.policyName).not.toBe("owner-readonly");
+    expect(input.promptVersion).toBe(INVESTIGATION_READONLY_PROMPT_VERSION);
     expect(input.modelTier).toBe("luna");
     expect(input.caseId).toBe(CASE_ID);
     expect(input.perRunTokenBudget).toBe(OWNER_READONLY_CEILINGS.perRunTokenBudget);

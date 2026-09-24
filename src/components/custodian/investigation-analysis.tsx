@@ -30,6 +30,7 @@ export function InvestigationAnalysisPanel({
   providerKeyStatus = null,
   modelPreference = null,
   settingsLoading = false,
+  settingsUnavailable = false,
   settingsHref = "/settings",
   advancedHref = "/advanced",
 }: {
@@ -44,6 +45,8 @@ export function InvestigationAnalysisPanel({
   providerKeyStatus?: ProviderKeyStatus | null;
   modelPreference?: string | null;
   settingsLoading?: boolean;
+  /** Settings queries failed — distinct from key not configured. */
+  settingsUnavailable?: boolean;
   settingsHref?: string;
   advancedHref?: string;
 }) {
@@ -60,6 +63,7 @@ export function InvestigationAnalysisPanel({
         objective: analysisObjective,
         providerKeyStatus,
         modelPreference,
+        settingsUnavailable,
       });
   const gateOpen = surfaceEnabled && ports?.surfaceEnabled === true;
   const caseRuns = runs.filter((run) => run.caseId === caseId);
@@ -114,6 +118,7 @@ export function InvestigationAnalysisPanel({
     readiness !== null &&
     readiness.ok === false &&
     (readiness.reason === "provider_key_missing" ||
+      readiness.reason === "provider_settings_unavailable" ||
       readiness.reason === "model_not_selected" ||
       readiness.reason === "model_selection_invalid");
 
@@ -138,9 +143,11 @@ export function InvestigationAnalysisPanel({
           <dd className="mt-1 text-foreground">
             {settingsLoading
               ? "Checking…"
-              : providerKeyStatus?.configured
-                ? `Configured (…${providerKeyStatus.last4})`
-                : "Not configured"}
+              : settingsUnavailable
+                ? "Unavailable"
+                : providerKeyStatus?.configured
+                  ? `Configured (…${providerKeyStatus.last4})`
+                  : "Not configured"}
           </dd>
         </div>
         <div>
@@ -148,9 +155,11 @@ export function InvestigationAnalysisPanel({
           <dd className="mt-1 text-foreground">
             {settingsLoading
               ? "Checking…"
-              : readiness?.ok
-                ? `${readiness.modelId} · tier ${readiness.modelTier}`
-                : modelPreference || "Not selected"}
+              : settingsUnavailable
+                ? "Unavailable"
+                : readiness?.ok
+                  ? `${readiness.modelId} · tier ${readiness.modelTier}`
+                  : modelPreference || "Not selected"}
           </dd>
         </div>
         <div className="sm:col-span-2">

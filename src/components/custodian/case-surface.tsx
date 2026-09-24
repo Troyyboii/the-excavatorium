@@ -201,6 +201,7 @@ export function CaseDetailSurface({
   providerKeyStatus = null,
   modelPreference = null,
   settingsLoading = false,
+  settingsUnavailable = false,
 }: {
   caseId: string;
   item?: CustodianCaseView;
@@ -225,6 +226,7 @@ export function CaseDetailSurface({
   providerKeyStatus?: ProviderKeyStatus | null;
   modelPreference?: string | null;
   settingsLoading?: boolean;
+  settingsUnavailable?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   if (error) return <ArchiveErrorState error={error} />;
@@ -302,6 +304,7 @@ export function CaseDetailSurface({
         providerKeyStatus={providerKeyStatus}
         modelPreference={modelPreference}
         settingsLoading={settingsLoading}
+        settingsUnavailable={settingsUnavailable}
       />
 
       <div className="grid gap-6 xl:grid-cols-2">

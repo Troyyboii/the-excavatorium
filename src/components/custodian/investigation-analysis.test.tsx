@@ -73,7 +73,7 @@ describe("InvestigationAnalysisPanel", () => {
     expect(analysisPorts.ensurePolicy).toHaveBeenCalled();
     const ensureMock = analysisPorts.ensurePolicy as ReturnType<typeof mock>;
     const policyArg = ensureMock.mock.calls[0]?.[1] as { policy_name?: string };
-    expect(policyArg?.policy_name).toBe("owner-readonly");
+    expect(policyArg?.policy_name).toBe("investigation-readonly");
     expect(analysisPorts.createRun).toHaveBeenCalled();
     const createMock = analysisPorts.createRun as ReturnType<typeof mock>;
     const runArg = createMock.mock.calls[0]?.[2] as {
@@ -81,7 +81,23 @@ describe("InvestigationAnalysisPanel", () => {
       prompt_version?: string;
     };
     expect(runArg?.model_tier).toBe("luna");
-    expect(runArg?.prompt_version).toBe("owner-readonly-v1");
+    expect(runArg?.prompt_version).toBe("investigation-readonly-v1");
+  });
+
+  test("does not treat Settings fetch failure as a missing key", () => {
+    render(
+      <InvestigationAnalysisPanel
+        caseId={CASE_ID}
+        objective="What does the archive support?"
+        currentQuestion=""
+        ports={ports()}
+        providerKeyStatus={null}
+        modelPreference={null}
+        settingsUnavailable
+      />,
+    );
+    expect(screen.getByText(/Settings could not be read/i)).not.toBeNull();
+    expect(screen.queryByText(/Add your OpenAI API key/i)).toBeNull();
   });
 
   test("states that Findings are not overwritten and are not Owner Judgment", () => {

@@ -42,6 +42,11 @@ export function RunRoomPage() {
       providerKeyConfigured={providerKeyStatus.data?.configured === true}
       modelPreferenceSelected={Boolean(modelPreference.data)}
       settingsLoading={providerKeyStatus.isLoading || modelPreference.isLoading}
+      settingsUnavailable={
+        !providerKeyStatus.isLoading &&
+        !modelPreference.isLoading &&
+        (providerKeyStatus.isError || modelPreference.isError)
+      }
       ports={productionReadonlyAnalysisPorts({
         ownerId: userId,
         refreshRuns: async () => {

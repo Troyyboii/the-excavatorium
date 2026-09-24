@@ -7,6 +7,10 @@
  *
  * Ceilings remain real owner-visible budgets (not removed). Preference-derived
  * tier still must match the server BYOK preference or the run fails closed.
+ *
+ * Policy identity is deliberately distinct from Advanced's common
+ * `owner-readonly` draft name so stale Advanced ceilings/tiers cannot
+ * 23505-collide with Investigation Start Analysis.
  */
 import { MODEL_ALLOWLIST, type ModelTier } from "./custodian-runtime-types";
 import type { ReadonlyAnalysisStartInput } from "./custodian-readonly-run";
@@ -16,11 +20,21 @@ import type { ProviderKeyStatus } from "./provider-key";
 
 const MODEL_TIERS = Object.keys(MODEL_ALLOWLIST) as ModelTier[];
 
-/** Stable policy identity for the product Investigation start path. */
-export const OWNER_READONLY_POLICY_NAME = "owner-readonly";
+/**
+ * Dedicated policy identity for Investigation Start Analysis.
+ * Must not equal the Advanced/Run Room draft name owners commonly type
+ * (`owner-readonly`), or ensure-policy fails closed on parameter mismatch.
+ */
+export const INVESTIGATION_READONLY_POLICY_NAME = "investigation-readonly";
+
+/** @deprecated Alias kept for local imports that still name the constant OWNER_*. */
+export const OWNER_READONLY_POLICY_NAME = INVESTIGATION_READONLY_POLICY_NAME;
 
 /** Prompt identity persisted on the run for the product Investigation path. */
-export const OWNER_READONLY_PROMPT_VERSION = "owner-readonly-v1";
+export const INVESTIGATION_READONLY_PROMPT_VERSION = "investigation-readonly-v1";
+
+/** @deprecated Prefer INVESTIGATION_READONLY_PROMPT_VERSION. */
+export const OWNER_READONLY_PROMPT_VERSION = INVESTIGATION_READONLY_PROMPT_VERSION;
 
 /**
  * Explicit reservation ceilings for normal Investigation start.
@@ -44,6 +58,7 @@ export type OwnerAnalysisReadiness =
       ok: false;
       reason:
         | "provider_key_missing"
+        | "provider_settings_unavailable"
         | "model_not_selected"
         | "model_selection_invalid"
         | "objective_missing"
@@ -58,6 +73,8 @@ export function assessOwnerAnalysisReadiness(input: {
   objective: string;
   providerKeyStatus: ProviderKeyStatus | null | undefined;
   modelPreference: string | null | undefined;
+  /** True when Settings key/model queries failed (distinct from “not configured”). */
+  settingsUnavailable?: boolean;
 }): OwnerAnalysisReadiness {
   if (!UUID_PATTERN.test(input.caseId.trim())) {
     return {
@@ -71,6 +88,14 @@ export function assessOwnerAnalysisReadiness(input: {
       ok: false,
       reason: "objective_missing",
       message: "Add an Investigation objective or current question before starting analysis.",
+    };
+  }
+  if (input.settingsUnavailable) {
+    return {
+      ok: false,
+      reason: "provider_settings_unavailable",
+      message:
+        "Settings could not be read, so key and model status are unknown. Refresh or open Settings, then try again. Analysis was not started.",
     };
   }
   if (!input.providerKeyStatus || input.providerKeyStatus.configured !== true) {
@@ -107,6 +132,10 @@ export function assessOwnerAnalysisReadiness(input: {
 /**
  * Builds the closed readonly start input for a normal Investigation run.
  * Call only after {@link assessOwnerAnalysisReadiness} returns ok.
+ *
+ * Always uses {@link INVESTIGATION_READONLY_POLICY_NAME} and fixed product
+ * ceilings so Advanced drafts named `owner-readonly` with different params
+ * cannot collide.
  */
 export function buildOwnerReadonlyAnalysisInput(input: {
   caseId: string;
@@ -115,10 +144,11 @@ export function buildOwnerReadonlyAnalysisInput(input: {
 }): ReadonlyAnalysisStartInput {
   return {
     caseId: input.caseId.trim().toLowerCase(),
-    policyName: OWNER_READONLY_POLICY_NAME,
-    // Allow the full catalog so a later Settings preference change does not
-    // collide with an existing owner-readonly policy row. The run still uses
-    // exactly the preference-derived tier; the server rejects mismatches.
+    policyName: INVESTIGATION_READONLY_POLICY_NAME,
+    // Full catalog on this Investigation-only policy so a later Settings
+    // preference change does not 23505 against the same investigation-readonly
+    // row. The run still uses exactly the preference-derived tier; the server
+    // rejects mismatches. Advanced `owner-readonly` drafts are a different name.
     allowedModelTiers: [...MODEL_TIERS],
     perRunTokenBudget: OWNER_READONLY_CEILINGS.perRunTokenBudget,
     perRunCostUsd: OWNER_READONLY_CEILINGS.perRunCostUsd,
@@ -129,7 +159,7 @@ export function buildOwnerReadonlyAnalysisInput(input: {
     dailyCostUsd: OWNER_READONLY_CEILINGS.dailyCostUsd,
     monthlyCostUsd: OWNER_READONLY_CEILINGS.monthlyCostUsd,
     modelTier: input.modelTier,
-    promptVersion: OWNER_READONLY_PROMPT_VERSION,
+    promptVersion: INVESTIGATION_READONLY_PROMPT_VERSION,
     objective: input.objective.trim(),
   };
 }
