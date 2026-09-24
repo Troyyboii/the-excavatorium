@@ -1,3 +1,4 @@
+import { createClient } from "npm:@supabase/supabase-js@2";
 import {
   allowedOrigin,
   authenticatedSupabase,
@@ -9,26 +10,40 @@ import {
 
 /**
  * Owner self-delete. Authenticated ownership only. Order:
- *   1. Require deliberate confirmation phrase
- *   2. Purge document-files/<uid>/ Storage objects (does not cascade from auth.users)
- *   3. purge_owner_account_data() for structured owner rows (clears NO ACTION FKs)
+ *   1. Require deliberate confirmation phrase + password re-auth
+ *   2. purge_owner_account_data(runtime_owner_id) via service_role (RESTRICT-safe)
+ *   3. Purge document-files/<uid>/ Storage objects (does not cascade from auth.users)
  *   4. auth.admin.deleteUser via trusted service-role boundary
  *
  * Never exports or logs API keys, ciphertext, or wrapping keys. No provider calls.
  */
 
-export const MAX_REQUEST_BYTES = 512;
+export const MAX_REQUEST_BYTES = 1024;
 export const CONFIRMATION_PHRASE = "DELETE MY ACCOUNT";
 export const STORAGE_BUCKET = "document-files";
+export const MAX_PASSWORD_CHARS = 256;
 
 export type AccountDeleteDependencies = {
   authenticate: (request: Request) => Promise<AuthenticatedSupabase | null>;
   trustedClient: () => AuthenticatedSupabase["client"] | null;
+  verifyPassword: (email: string, password: string) => Promise<boolean>;
 };
+
+async function defaultVerifyPassword(email: string, password: string): Promise<boolean> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+  if (!supabaseUrl || !supabaseAnonKey) return false;
+  const client = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
+  });
+  const { data, error } = await client.auth.signInWithPassword({ email, password });
+  return !error && Boolean(data.user?.id);
+}
 
 const defaultDependencies: AccountDeleteDependencies = {
   authenticate: authenticatedSupabase,
   trustedClient: trustedRuntimeSupabase,
+  verifyPassword: defaultVerifyPassword,
 };
 
 type JsonRecord = Record<string, unknown>;
@@ -166,14 +181,53 @@ export function createAccountDeleteHandler(
     if (body.tooLarge) return jsonResponse({ error: "Request is too large." }, 413, origin);
     const payload = body.value;
     if (!payload) return jsonResponse({ error: "Request must be valid JSON." }, 400, origin);
-    if (Object.keys(payload).length !== 1 || payload.confirmation !== CONFIRMATION_PHRASE) {
+
+    const keys = Object.keys(payload).sort();
+    if (
+      keys.length !== 2 ||
+      keys[0] !== "confirmation" ||
+      keys[1] !== "password" ||
+      payload.confirmation !== CONFIRMATION_PHRASE
+    ) {
       return jsonResponse(
         {
-          error: `Type ${CONFIRMATION_PHRASE} exactly to permanently delete this account.`,
+          error: `Type ${CONFIRMATION_PHRASE} exactly and re-enter your password to permanently delete this account.`,
         },
         400,
         origin,
       );
+    }
+
+    const password = payload.password;
+    if (
+      typeof password !== "string" ||
+      password.length === 0 ||
+      password.length > MAX_PASSWORD_CHARS
+    ) {
+      return jsonResponse({ error: "Password re-authentication is required." }, 400, origin);
+    }
+
+    const email = auth.user.email;
+    if (!email || typeof email !== "string") {
+      return jsonResponse(
+        { error: "Password re-authentication requires an email login on this account." },
+        400,
+        origin,
+      );
+    }
+
+    let passwordOk = false;
+    try {
+      passwordOk = await dependencies.verifyPassword(email, password);
+    } catch {
+      return jsonResponse(
+        { error: "Password re-authentication is temporarily unavailable." },
+        503,
+        origin,
+      );
+    }
+    if (!passwordOk) {
+      return jsonResponse({ error: "Password is incorrect." }, 401, origin);
     }
 
     const ownerId = auth.user.id;
@@ -182,9 +236,17 @@ export function createAccountDeleteHandler(
       return jsonResponse({ error: "Account deletion is temporarily unavailable." }, 503, origin);
     }
 
+    // Structured purge first (service_role only). Avoids Storage-first leave if
+    // a populated RESTRICT graph used to fail the RPC after objects were gone.
+    const { data: purgeData, error: purgeError } = await trusted.rpc("purge_owner_account_data", {
+      runtime_owner_id: ownerId,
+    });
+    if (purgeError) {
+      return jsonResponse({ error: "Account data could not be purged." }, 503, origin);
+    }
+
     let storageRemoved = 0;
     try {
-      // Prefer the caller's Storage policies; fall back to trusted for orphans.
       storageRemoved = await purgeOwnerDocumentFiles(
         auth.client as unknown as StorageClient,
         ownerId,
@@ -198,13 +260,6 @@ export function createAccountDeleteHandler(
       } catch {
         return jsonResponse({ error: "Document Storage could not be purged." }, 503, origin);
       }
-    }
-
-    const { data: purgeData, error: purgeError } = await auth.client.rpc(
-      "purge_owner_account_data",
-    );
-    if (purgeError) {
-      return jsonResponse({ error: "Account data could not be purged." }, 503, origin);
     }
 
     const { error: deleteError } = await trusted.auth.admin.deleteUser(ownerId);

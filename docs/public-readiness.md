@@ -236,14 +236,16 @@ false` — JSON does **not** contain `document-files` uploads. Ciphertext, wrapp
 keys, plaintext API keys, and service-role secrets are never exported.
 
 **Account deletion** is implemented as Edge Function `account-delete`
-(`verify_jwt` on) with typed confirmation `DELETE MY ACCOUNT`:
+(`verify_jwt` on) with typed confirmation `DELETE MY ACCOUNT` **and password
+re-authentication** (email login via `signInWithPassword`):
 
-1. Authenticated owner only (JWT user id).
-2. Purge `document-files/<user_id>/` Storage objects (Storage does not cascade
+1. Authenticated owner only (JWT user id) + password step-up.
+2. `purge_owner_account_data(runtime_owner_id)` via the trusted **service_role**
+   client only (authenticated EXECUTE revoked). Delete order breaks ON DELETE
+   RESTRICT graphs (analysis findings ↔ runs/steps; runs ↔ tool_policies)
+   before removing cases.
+3. Purge `document-files/<user_id>/` Storage objects (Storage does not cascade
    from `auth.users`).
-3. `purge_owner_account_data()` SECURITY DEFINER deletes structured owner rows
-   (including tables with `created_by`/`updated_by` NO ACTION FKs) so a later
-   auth delete is not blocked.
 4. `auth.admin.deleteUser` via the trusted service-role boundary.
 
 `reset_user_archive` remains an archive-only reset and is **not** account
