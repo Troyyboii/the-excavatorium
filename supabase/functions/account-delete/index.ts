@@ -114,7 +114,13 @@ type StorageClient = {
   };
 };
 
-/** Recursively lists then removes every object under document-files/<ownerId>/. */
+/**
+ * Recursively lists then removes every object under document-files/<ownerId>/.
+ *
+ * Pagination must re-list from offset 0 after each delete batch: advancing an
+ * offset while deleting from the same listing skips objects that shift into
+ * earlier pages (e.g. 150 objects → delete 0–99 → offset 100 sees nothing).
+ */
 export async function purgeOwnerDocumentFiles(
   client: StorageClient,
   ownerId: string,
@@ -126,30 +132,40 @@ export async function purgeOwnerDocumentFiles(
   let removed = 0;
 
   async function walk(prefix: string): Promise<void> {
-    let offset = 0;
     while (true) {
-      const { data, error } = await bucket.list(prefix, { limit: 100, offset });
+      // Always page from offset 0 after deletes so remaining objects surface.
+      const { data, error } = await bucket.list(prefix, { limit: 100, offset: 0 });
       if (error) throw new Error("Storage listing failed.");
       const entries = data ?? [];
       if (entries.length === 0) break;
 
       const files: string[] = [];
+      const folders: string[] = [];
       for (const entry of entries) {
         const path = prefix ? `${prefix}/${entry.name}` : entry.name;
         // Folders often have id === null in Supabase Storage listings.
         if (entry.id === null) {
-          await walk(path);
+          folders.push(path);
         } else {
           files.push(path);
         }
       }
+
+      for (const folder of folders) {
+        await walk(folder);
+      }
+
       if (files.length > 0) {
         const { error: removeError } = await bucket.remove(files);
         if (removeError) throw new Error("Storage purge failed.");
         removed += files.length;
+        // Re-list from offset 0; do not advance offset after deleting.
+        continue;
       }
-      if (entries.length < 100) break;
-      offset += entries.length;
+
+      // Only empty folder markers remain on this page (already walked). Stop
+      // so we do not loop forever on non-object folder placeholders.
+      break;
     }
   }
 

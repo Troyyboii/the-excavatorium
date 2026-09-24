@@ -1,10 +1,8 @@
--- Wave 2 follow-up: harden account purge against ON DELETE RESTRICT graphs,
--- and restrict the destructive RPC to the trusted Edge/service_role path.
---
--- D1: Never delete cases first. Analysis findings RESTRICT runs/steps;
---     agent_runs RESTRICT tool_policies. Delete/break those edges explicitly.
--- D3: Revoke authenticated EXECUTE; require service_role + runtime_owner_id
---     (same pattern as custodian_store/get_provider_credential).
+-- Wave 2 follow-up: idempotent hardening for account purge.
+-- The service_role-only, RESTRICT-safe purge already ships in
+-- 20260924130000_owner_account_portability.sql. This migration must NOT be
+-- required to close a dangerous authenticated EXECUTE gap — it only reasserts
+-- the same boundary and table order if an older intermediate ever existed.
 
 drop function if exists public.purge_owner_account_data();
 

@@ -1,7 +1,7 @@
 -- Wave 2: owner account export + purge boundaries (hardened for RESTRICT graphs).
 begin;
 
-select plan(11);
+select plan(12);
 
 set local role postgres;
 
@@ -118,6 +118,13 @@ select has_function(
   'purge_owner_account_data(runtime_owner_id) exists'
 );
 
+select hasnt_function(
+  'public',
+  'purge_owner_account_data',
+  array[]::text[],
+  'zero-arg purge_owner_account_data must not exist (no authenticated intermediate)'
+);
+
 select ok(
   not pg_catalog.has_function_privilege('anon', 'public.export_user_account_snapshot()', 'EXECUTE')
   and pg_catalog.has_function_privilege(
@@ -135,8 +142,21 @@ select ok(
   )
   and pg_catalog.has_function_privilege(
     'service_role', 'public.purge_owner_account_data(uuid)', 'EXECUTE'
+  )
+  and (
+    select p.prosecdef
+      and exists (
+        select 1
+          from unnest(coalesce(p.proconfig, array[]::text[])) as cfg(value)
+         where cfg.value like 'search_path=%'
+      )
+    from pg_catalog.pg_proc p
+    join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public'
+     and p.proname = 'purge_owner_account_data'
+     and pg_catalog.pg_get_function_identity_arguments(p.oid) = 'runtime_owner_id uuid'
   ),
-  'account purge is service_role-only'
+  'account purge is service_role-only with security definer and empty search_path'
 );
 
 set local role authenticated;
