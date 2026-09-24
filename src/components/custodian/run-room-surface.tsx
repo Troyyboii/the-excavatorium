@@ -62,7 +62,7 @@ export function RunRoomSurface({
   const canStart = startBlock === null && ports !== null;
   return (
     <CustodianPage
-      title="Run Room"
+      title="Analysis history"
       description={
         canStart
           ? "Owner-scoped readonly analysis. Start analysis sends explicit owner inputs through the readonly policy and run RPCs, then advances one persisted run. It does not stream model output."
