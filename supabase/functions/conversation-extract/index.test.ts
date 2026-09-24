@@ -100,9 +100,11 @@ Deno.test("uses the owner's key and model with store:false when funded", async (
       createUserClient: () => authClient("gpt-5.6-sol") as never,
       resolveFunding: async () => ({ ok: true, apiKey, model: "gpt-5.6-sol" }),
       fetchProvider: async (_url, init) => {
-        const headers = new Headers(init?.headers);
+        // Deno's fetch init type is a RequestInit union; narrow to the fields we assert.
+        const options = (init ?? {}) as { headers?: HeadersInit; body?: BodyInit | null };
+        const headers = new Headers(options.headers);
         captured.authorization = headers.get("Authorization");
-        captured.body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        captured.body = JSON.parse(String(options.body)) as Record<string, unknown>;
         return new Response(
           JSON.stringify({
             status: "completed",
