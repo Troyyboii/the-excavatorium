@@ -111,11 +111,11 @@ Deno.test("keeps stage defaults, honors Sol/pro overrides, and enforces allowed 
   });
   assertEquals(selectRuntimeModelWithPolicy("synthesize", "pro", ["luna", "terra", "pro"]), {
     tier: "pro",
-    model: "gpt-5.6-pro",
+    model: "gpt-6-astra",
   });
   assertEquals(selectRuntimeModel("synthesize", "pro", ["luna", "terra", "sol", "pro"]), {
     tier: "pro",
-    model: "gpt-5.6-pro",
+    model: "gpt-6-astra",
   });
   assertEquals(selectRuntimeModelWithPolicy("extract", "terra", ["terra"]), {
     tier: "terra",

@@ -1,11 +1,24 @@
-export const MODEL_ALLOWLIST = {
-  luna: "gpt-5.6-luna",
-  terra: "gpt-5.6-terra",
-  sol: "gpt-5.6-sol",
-  pro: "gpt-5.6-pro",
-} as const;
+import {
+  defaultModelForTier,
+  isOpenAiModelId,
+  openAiModelTier,
+  OPENAI_MODEL_IDS,
+  type OpenAiModelTier,
+} from "../_shared/openai-models.ts";
 
-export type ModelTier = keyof typeof MODEL_ALLOWLIST;
+export type ModelTier = OpenAiModelTier;
+
+/**
+ * Tier -> default catalog model. Derived from the central catalog in
+ * ../_shared/openai-models.ts; it is NOT how the provider path picks the model
+ * for an owner (that is resolveOwnerModel below).
+ */
+export const MODEL_ALLOWLIST: Record<ModelTier, string> = {
+  luna: defaultModelForTier("luna"),
+  terra: defaultModelForTier("terra"),
+  sol: defaultModelForTier("sol"),
+  pro: defaultModelForTier("pro"),
+};
 export type RunStage = "extract" | "synthesize";
 
 /** Source model names. Not an owner policy, and not a default for model selection. */
@@ -20,6 +33,29 @@ export const UNTRUSTED_EVIDENCE_SYSTEM_GUARD =
 
 function isModelTier(value: unknown): value is ModelTier {
   return typeof value === "string" && Object.hasOwn(MODEL_ALLOWLIST, value);
+}
+
+export type OwnerModelResolution =
+  | { ok: true; model: string }
+  | { ok: false; code: "model_not_selected" | "model_selection_invalid" | "model_tier_mismatch" };
+
+/**
+ * Resolves the model for a provider attempt from the OWNER's stored choice.
+ * There is no fallback: no choice, an off-catalog choice, or a choice whose
+ * policy tier differs from the run's persisted tier all stop the run before
+ * any reservation or provider contact. Nothing is silently substituted.
+ */
+export function resolveOwnerModel(
+  preferredModel: string | null | undefined,
+  runTier: ModelTier,
+): OwnerModelResolution {
+  if (preferredModel === null || preferredModel === undefined || preferredModel === "") {
+    return { ok: false, code: "model_not_selected" };
+  }
+  if (!isOpenAiModelId(preferredModel)) return { ok: false, code: "model_selection_invalid" };
+  if (openAiModelTier(preferredModel) !== runTier)
+    return { ok: false, code: "model_tier_mismatch" };
+  return { ok: true, model: preferredModel };
 }
 
 export function isAllowedModelTiers(value: unknown): value is readonly ModelTier[] {
@@ -84,10 +120,8 @@ export type ProviderUsage = {
 };
 
 const MAX_PRICE_USD_PER_MILLION = 100_000;
-const ALLOWLISTED_MODEL_NAMES = Object.values(MODEL_ALLOWLIST) as readonly string[];
-
 function isAllowlistedModelName(model: string): boolean {
-  return ALLOWLISTED_MODEL_NAMES.includes(model);
+  return OPENAI_MODEL_IDS.some((id) => id === model);
 }
 
 function nonNegativeInteger(value: unknown): number | null {

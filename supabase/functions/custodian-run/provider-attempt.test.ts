@@ -141,6 +141,10 @@ type World = {
   failApprovalRunRead: boolean;
   pricing: string | undefined;
   apiKey: string | undefined;
+  modelPreference: string | null;
+  ownerKeyStatus: "ok" | "missing" | "unreadable";
+  ownerLookups: string[];
+  reservePayloads: Record<string, unknown>[];
   allowedTiers: Array<"luna" | "terra" | "sol" | "pro">;
   policyError: boolean;
   trusted: boolean;
@@ -187,6 +191,10 @@ function world(status = "synthesizing"): World {
     failApprovalRunRead: false,
     pricing: pricingJson,
     apiKey,
+    modelPreference: "gpt-5.6-terra",
+    ownerKeyStatus: "ok",
+    ownerLookups: [],
+    reservePayloads: [],
     allowedTiers: ["luna", "terra"],
     policyError: false,
     trusted: true,
@@ -297,6 +305,7 @@ function ioFor(state: World): CustodianIo {
     },
     reserveProviderCall: (_runId, idempotencyKey, payload) => {
       state.reserveCalls += 1;
+      state.reservePayloads.push(payload);
       if (state.reserveResponse !== undefined) {
         const response =
           typeof state.reserveResponse === "function"
@@ -454,8 +463,19 @@ function ioFor(state: World): CustodianIo {
       }
       return Promise.resolve();
     },
+    getOwnerModelPreference: (ownerId) => {
+      state.ownerLookups.push(`model:${ownerId}`);
+      return Promise.resolve(state.modelPreference);
+    },
+    getOwnerProviderKey: (ownerId) => {
+      state.ownerLookups.push(`key:${ownerId}`);
+      if (state.ownerKeyStatus === "missing" || state.apiKey === undefined) {
+        return Promise.resolve({ status: "missing" });
+      }
+      if (state.ownerKeyStatus === "unreadable") return Promise.resolve({ status: "unreadable" });
+      return Promise.resolve({ status: "ok", apiKey: state.apiKey });
+    },
     getEnv: (name) => {
-      if (name === "OPENAI_API_KEY") return state.apiKey;
       if (name === "CUSTODIAN_MODEL_PRICING_JSON") return state.pricing;
       return undefined;
     },
@@ -2649,4 +2669,137 @@ Deno.test("malformed output with known usage settles the usage as known", async 
   check("actual tokens", state.reservation?.actualTokens, 15);
   check("step code", state.steps.at(-1)?.output?.errorCode, "openai_invalid_output");
   check("no materialization", state.materializeCalls, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Bring-your-own OpenAI key: the provider path uses the calling owner's key
+// and the owner's model choice, and stops (without reserving or fetching) when
+// either is unavailable. Nothing is substituted.
+// ---------------------------------------------------------------------------
+
+function pricingFor(...models: string[]): string {
+  return JSON.stringify(
+    Object.fromEntries(
+      models.map((model) => [
+        model,
+        {
+          version: "2026-09-24",
+          inputUsdPerMillion: 1.2,
+          cachedInputUsdPerMillion: 0.3,
+          outputUsdPerMillion: 4.8,
+        },
+      ]),
+    ),
+  );
+}
+
+function assertNoProviderContact(state: World, result: { body: Record<string, unknown> }) {
+  assertEquals(state.fetches, 0);
+  assertEquals(state.reserveCalls, 0);
+  assertEquals(state.reservation, null);
+  assertEquals(state.materializeCalls, 0);
+  assertEquals(result.body.state, "blocked");
+  assertEquals(usage(result as { body: Record<string, unknown> }).costAccounting, "none");
+  assertEquals(JSON.stringify(result).includes(apiKey), false);
+}
+
+Deno.test("BYOK: the request carries the owner's key and the owner's chosen model", async () => {
+  const state = world();
+  const seen: { authorization: string | null; model: unknown }[] = [];
+  state.fetchImpl = (_url, init) => {
+    seen.push({
+      authorization: new Headers(init?.headers).get("authorization"),
+      model: JSON.parse(String(init?.body)).model,
+    });
+    return Promise.resolve(Response.json(providerResponse(synthesis([finding("finding")]))));
+  };
+  await advance(state);
+  assertEquals(seen.length, 1);
+  assertEquals(seen[0]?.authorization, `Bearer ${apiKey}`);
+  assertEquals(seen[0]?.model, "gpt-5.6-terra");
+  assertEquals(state.ownerLookups, ["model:owner-1", "key:owner-1"]);
+});
+
+Deno.test(
+  "BYOK: a newer-generation model keeps exact attribution and its own pricing",
+  async () => {
+    const state = world();
+    state.run = { ...state.run, model_tier: "pro" };
+    state.allowedTiers = ["luna", "terra", "sol", "pro"];
+    state.modelPreference = "gpt-6-astra";
+    state.pricing = pricingFor("gpt-6-astra");
+    let sentModel: unknown = null;
+    state.fetchImpl = (_url, init) => {
+      sentModel = JSON.parse(String(init?.body)).model;
+      return Promise.resolve(Response.json(providerResponse(synthesis([finding("finding")]))));
+    };
+    await advance(state);
+    assertEquals(sentModel, "gpt-6-astra");
+    assertEquals(state.reservePayloads[0]?.model_name, "gpt-6-astra");
+    assertEquals(state.reservePayloads[0]?.model_tier, "pro");
+    assertEquals(state.fetches, 1);
+  },
+);
+
+Deno.test(
+  "BYOK: no stored key blocks before reservation and never falls back to a server key",
+  async () => {
+    const state = world();
+    state.ownerKeyStatus = "missing";
+    state.fetchImpl = () => Promise.reject(new Error("fetch_must_not_run"));
+    const result = await advance(state);
+    assertNoProviderContact(state, result);
+    assertEquals(result.body.reason, "provider_key_not_configured");
+    assertEquals(state.run.failure_code, "provider_key_not_configured");
+  },
+);
+
+Deno.test("BYOK: an unreadable stored key blocks before reservation", async () => {
+  const state = world();
+  state.ownerKeyStatus = "unreadable";
+  state.fetchImpl = () => Promise.reject(new Error("fetch_must_not_run"));
+  const result = await advance(state);
+  assertNoProviderContact(state, result);
+  assertEquals(result.body.reason, "provider_key_unreadable");
+});
+
+Deno.test("BYOK: no model choice blocks; no default model is substituted", async () => {
+  const state = world();
+  state.modelPreference = null;
+  state.fetchImpl = () => Promise.reject(new Error("fetch_must_not_run"));
+  const result = await advance(state);
+  assertNoProviderContact(state, result);
+  assertEquals(result.body.reason, "model_not_selected");
+  // The key is not even resolved once the model choice is missing.
+  assertEquals(state.ownerLookups, ["model:owner-1"]);
+});
+
+Deno.test(
+  "BYOK: a model outside the list or in another tier blocks with no substitution",
+  async () => {
+    for (const [choice, reason] of [
+      ["gpt-5.6-pro", "model_selection_invalid"],
+      ["gpt-4o", "model_selection_invalid"],
+      ["gpt-5.6-sol", "model_tier_mismatch"],
+      ["gpt-6-astra", "model_tier_mismatch"],
+    ] as const) {
+      const state = world();
+      state.modelPreference = choice;
+      state.fetchImpl = () => Promise.reject(new Error("fetch_must_not_run"));
+      const result = await advance(state);
+      assertNoProviderContact(state, result);
+      assertEquals(result.body.reason, reason);
+    }
+  },
+);
+
+Deno.test("BYOK: the owner lookups are keyed only by the authenticated owner", async () => {
+  const state = world();
+  state.fetchImpl = () =>
+    Promise.resolve(Response.json(providerResponse(synthesis([finding("finding")]))));
+  await advance(state);
+  assertEquals(
+    state.ownerLookups.every((lookup) => lookup.endsWith(":owner-1")),
+    true,
+  );
 });
