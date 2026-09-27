@@ -46,6 +46,7 @@ import {
 import { plural } from "./record-list";
 import { useOnlineStatus } from "@/hooks/use-online";
 import { excavateDocument } from "@/lib/document-excavation";
+import { CryptIcon, type CryptGlyph } from "./crypt-icon";
 
 function todayLocal(): string {
   const d = new Date();
@@ -279,64 +280,53 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
       ) : null}
 
       {recordType === "conversation" ? (
-        <div className="rounded-lg border border-border bg-card p-1">
-          <div
-            className="grid grid-cols-2 gap-1"
-            role="tablist"
-            aria-label="Conversation entry mode"
-          >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={conversationMode === "excavate"}
-              onClick={() => setConversationMode("excavate")}
-              className={`min-h-11 rounded-md px-3 py-2 text-sm ${
-                conversationMode === "excavate"
-                  ? "bg-[color:var(--burgundy-muted)] text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Excavate transcript
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={conversationMode === "manual"}
-              onClick={() => setConversationMode("manual")}
-              className={`min-h-11 rounded-md px-3 py-2 text-sm ${
-                conversationMode === "manual"
-                  ? "bg-[color:var(--burgundy-muted)] text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Write manually
-            </button>
-          </div>
+        <div
+          className="grid gap-3 sm:grid-cols-2"
+          role="tablist"
+          aria-label="Conversation entry mode"
+        >
+          <ModeCard
+            selected={conversationMode === "excavate"}
+            onSelect={() => setConversationMode("excavate")}
+            glyph="shovel"
+            title="Excavate a transcript"
+            detail="Paste it; the Custodian drafts the record"
+          />
+          <ModeCard
+            selected={conversationMode === "manual"}
+            onSelect={() => setConversationMode("manual")}
+            glyph="quill"
+            title="Write by hand"
+            detail="Fill in the record yourself"
+          />
         </div>
       ) : null}
 
       {recordType === "conversation" && conversationMode === "excavate" ? (
-        <Section title="Paste a conversation">
+        <div className="space-y-5">
           <Field
-            label="Raw conversation text"
-            hint={`${(data as ConversationData).rawConversationText.length.toLocaleString()} of ${MAX_CONVERSATION_TRANSCRIPT_CHARS.toLocaleString()} characters.`}
+            label="Conversation text"
+            htmlFor="raw-conversation-text"
+            hint={`${(data as ConversationData).rawConversationText.length.toLocaleString()} of ${MAX_CONVERSATION_TRANSCRIPT_CHARS.toLocaleString()} characters`}
           >
             <TextArea
+              id="raw-conversation-text"
               value={(data as ConversationData).rawConversationText}
               onChange={(event) =>
                 patch("rawConversationText" as never, event.target.value as never)
               }
-              className="min-h-[300px] font-mono text-xs"
-              placeholder="Paste the complete conversation here…"
+              className="min-h-[340px] md:min-h-[400px]"
+              placeholder="Paste the whole conversation here"
             />
           </Field>
+          <ExcavationFlow />
           <ConversationExcavationPanel
             rawConversationText={(data as ConversationData).rawConversationText}
             allRecords={allRecords}
             onApply={applyConversationExtraction}
             online={online}
           />
-        </Section>
+        </div>
       ) : null}
 
       {recordType === "document" ? (
@@ -1535,13 +1525,8 @@ function ConversationExcavationPanel({
     : [];
 
   return (
-    <div className="border-t border-border pt-5">
-      <h3 className="font-serif text-lg text-foreground">Excavate with GPT-5.6</h3>
-      <p className="text-sm text-muted-foreground">
-        Sends the pasted conversation to OpenAI only when you start an excavation. Nothing is saved
-        automatically.
-      </p>
-      <div className="mt-4 flex flex-wrap gap-2">
+    <div>
+      <div className="flex flex-wrap gap-2">
         <button
           type="button"
           onClick={start}
@@ -1551,8 +1536,9 @@ function ConversationExcavationPanel({
             rawConversationText.trim().length === 0 ||
             rawConversationText.length > MAX_CONVERSATION_TRANSCRIPT_CHARS
           }
-          className="inline-flex min-h-11 items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-[color:var(--primary)]/90 disabled:opacity-60"
+          className="inline-flex min-h-12 items-center gap-2.5 rounded-sm bg-[color:var(--candlelight)] px-5 py-2 text-base font-bold text-[color:var(--candle-ink)] transition-colors hover:bg-[color:var(--moonbone)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--moonbone)] focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-60"
         >
+          <CryptIcon glyph="shovel" size={20} />
           {isLoading ? "Excavating…" : "Create editable draft"}
         </button>
         {isLoading || activeExtraction ? (
@@ -1574,6 +1560,10 @@ function ConversationExcavationPanel({
           </button>
         ) : null}
       </div>
+      <p className="mt-3 text-sm text-muted-foreground">
+        Sends the pasted conversation to OpenAI only when you start an excavation. Nothing is saved
+        automatically.
+      </p>
       {!online ? (
         <div className="mt-3">
           <Banner kind="warning" title="Excavation unavailable offline">
@@ -1775,5 +1765,78 @@ function DecisionFields({
         </Select>
       </Field>
     </Section>
+  );
+}
+
+function ModeCard({
+  selected,
+  onSelect,
+  glyph,
+  title,
+  detail,
+}: {
+  selected: boolean;
+  onSelect: () => void;
+  glyph: CryptGlyph;
+  title: string;
+  detail: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={selected}
+      onClick={onSelect}
+      className={`flex min-h-[72px] items-center gap-4 rounded-sm border px-5 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--candlelight)] ${
+        selected
+          ? "border-[color:var(--candlelight)] bg-card"
+          : "border-[color:var(--mortar-strong)] hover:border-[color:var(--candlelight)]"
+      }`}
+    >
+      <CryptIcon
+        glyph={glyph}
+        size={26}
+        className={selected ? "text-[color:var(--candlelight)]" : "text-[color:var(--mist)]"}
+      />
+      <span>
+        <span className="block text-base font-bold text-foreground">{title}</span>
+        <span className="block text-[0.9375rem] text-muted-foreground">{detail}</span>
+      </span>
+    </button>
+  );
+}
+
+const EXCAVATION_STEPS: readonly { glyph: CryptGlyph; toneClass: string; label: string }[] = [
+  { glyph: "ghost", toneClass: "text-[color:var(--spectre)]", label: "You paste" },
+  {
+    glyph: "lantern",
+    toneClass: "text-[color:var(--candlelight)]",
+    label: "Custodian drafts, on your OpenAI key",
+  },
+  { glyph: "quill", toneClass: "text-[color:var(--mist)]", label: "You edit" },
+  { glyph: "crypt", toneClass: "text-[color:var(--mist)]", label: "You save to the Archive" },
+];
+
+function ExcavationFlow() {
+  return (
+    <ol
+      aria-label="How excavation works"
+      className="flex flex-col gap-3 text-[0.9375rem] text-foreground sm:flex-row sm:flex-wrap sm:items-center sm:gap-0"
+    >
+      {EXCAVATION_STEPS.map((step, index) => (
+        <li key={step.label} className="flex items-center">
+          {index > 0 ? (
+            <span
+              aria-hidden="true"
+              className="mx-4 hidden h-px w-10 bg-[color:var(--mortar-strong)] sm:block"
+            />
+          ) : null}
+          <span className="flex items-center gap-2">
+            <CryptIcon glyph={step.glyph} size={20} className={step.toneClass} />
+            {step.label}
+          </span>
+        </li>
+      ))}
+    </ol>
   );
 }

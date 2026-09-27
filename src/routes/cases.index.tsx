@@ -69,6 +69,7 @@ function CasesPage() {
   return (
     <CustodianPage
       title="Investigations"
+      glyph="key"
       description="Start from a question, choose archive evidence, and examine the material within a clear scope."
       status={
         <CustodianStatus

@@ -68,6 +68,42 @@ export function CustodianNiche({ width = 300, className }: { width?: number; cla
   );
 }
 
+/** The lantern panel under a stone arch (Capture). Decorative. */
+export function CustodianLanternArch({
+  width = 240,
+  className,
+}: {
+  width?: number;
+  className?: string;
+}) {
+  const radius = width / 2;
+  return (
+    <div
+      aria-hidden="true"
+      className={cn(
+        "box-border select-none border border-[color:var(--mortar-strong)] bg-[color:var(--vault-deep)] p-2",
+        className,
+      )}
+      style={{ width, borderRadius: `${radius}px ${radius}px 4px 4px` }}
+    >
+      <div
+        className="overflow-hidden border border-[color:var(--mortar)] bg-[#0c0e14]"
+        style={{ borderRadius: `${radius - 8}px ${radius - 8}px 2px 2px` }}
+      >
+        <img
+          src={CUSTODIAN_LANTERN_SRC}
+          alt=""
+          width={212}
+          height={350}
+          decoding="async"
+          draggable={false}
+          className="pointer-events-none block aspect-[212/350] w-full object-cover"
+        />
+      </div>
+    </div>
+  );
+}
+
 /** The hooded Custodian in a circle, shown wherever he speaks. Decorative. */
 export function CustodianPortrait({
   size = 56,

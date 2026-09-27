@@ -345,24 +345,3 @@
     ),
     #0c0e14;
 }
-
-/* Legacy Custodian crop: soften the crop edges so it never reads as a pasted
-   rectangle. Removed once the Night Crypt cut-out replaces it. */
-.custodian-figure {
-  aspect-ratio: 392 / 1024;
-  height: auto;
-  -webkit-mask-image:
-    linear-gradient(to right, transparent, #000 14%, #000 86%, transparent),
-    linear-gradient(to bottom, transparent, #000 10%, #000 88%, transparent);
-  -webkit-mask-composite: source-in;
-  mask-image:
-    linear-gradient(to right, transparent, #000 14%, #000 86%, transparent),
-    linear-gradient(to bottom, transparent, #000 10%, #000 88%, transparent);
-  mask-composite: intersect;
-}
-
-@media (forced-colors: active) {
-  .custodian-figure {
-    display: none;
-  }
-}

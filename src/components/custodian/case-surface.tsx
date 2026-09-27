@@ -1,4 +1,3 @@
-import { CustodianFigure } from "./custodian-figure";
 import { Link } from "@tanstack/react-router";
 import {
   ArrowUpRight,
@@ -7,7 +6,6 @@ import {
   FloppyDisk,
   Gavel,
   MagnifyingGlass,
-  PencilSimple,
   Plus,
   UsersThree,
   X,
@@ -37,6 +35,12 @@ import { formatRecordDate, valueOrNotRecorded } from "./custodian-format";
 import { CaseReadingSurface } from "./case-reading";
 import { CaseScopePicker } from "./case-scope-picker";
 import { InvestigationAnalysisPanel } from "./investigation-analysis";
+import { CustodianLine, CustodianNiche, CustodianPortrait } from "./custodian-presence";
+import { CryptIcon, type CryptGlyph } from "@/components/crypt-icon";
+import { investigationTrail, orderFindings, type TrailStep } from "@/lib/investigation-view";
+import { RECORD_KIND_SIGN, recordStanding } from "@/lib/record-standing";
+import { RECORD_TYPE_LABEL } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import type { ReadonlyAnalysisPorts } from "@/lib/custodian-readonly-run";
 import type { CustodianRun, CustodianRunRead } from "@/lib/custodian-runtime";
 import type { ProviderKeyStatus } from "@/lib/provider-key";
@@ -107,7 +111,7 @@ export function CaseListSurface({
 
       {creating && archiveError ? (
         <p
-          className="border border-[#b79b68]/45 bg-[#f5ead8] px-4 py-3 text-sm text-[#675c4f]"
+          className="border border-[color:var(--mortar-strong)]/45 bg-[color:var(--vault-deep)] px-4 py-3 text-sm text-muted-foreground"
           role="status"
         >
           {archiveStale
@@ -139,12 +143,12 @@ export function CaseListSurface({
       {error ? <ArchiveErrorState error={error} /> : null}
       {!error && (loading || cases === undefined) ? <LoadingMark /> : null}
       {!loading && cases?.length === 0 ? (
-        <div className="grid items-center gap-6 lg:grid-cols-[minmax(0,1fr)_10rem]">
+        <div className="grid items-center gap-8 lg:grid-cols-[minmax(0,1fr)_260px]">
           <EmptyArchiveState
             title="No Investigations yet."
             hint="Start an Investigation when material needs a question and a bounded archive scope."
           />
-          <CustodianFigure className="w-40" />
+          <CustodianNiche width={200} className="hidden lg:flex" />
         </div>
       ) : null}
       {cases?.length ? (
@@ -244,16 +248,48 @@ export function CaseDetailSurface({
     );
 
   const recordsById = new Map(archiveRecords.map((record) => [record.id, record]));
+  const ordered = orderFindings(findings);
+  const [featured, ...earlier] = ordered;
+  const trail = investigationTrail({
+    currentQuestion: item.currentQuestion,
+    evidenceCount: item.archiveScope.recordIds.length,
+    findingCount: findings.length,
+  });
+  const findingItem = (finding: CustodianFinding) => ({
+    id: finding.id,
+    title: finding.title,
+    meta: `${finding.analysisMode} · ${finding.status} · ${finding.originKind}${
+      findingEvidence.some(
+        (link) => link.findingId === finding.id && link.relationshipKind === "contrary",
+      )
+        ? " · contrary material"
+        : ""
+    }`,
+    sourceRecord: finding.sourceRecordId ? recordsById.get(finding.sourceRecordId) : undefined,
+    details: (
+      <FindingDetails
+        finding={finding}
+        evidence={evidence}
+        evidenceLinks={findingEvidence.filter((link) => link.findingId === finding.id)}
+      />
+    ),
+  });
+
   return (
-    <div className="space-y-6">
-      <div className="flex justify-end">
+    <div className="space-y-8">
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+        <InvestigationTrail steps={trail} />
         <button
           type="button"
           disabled={!online}
           onClick={() => setEditing((value) => !value)}
-          className="inline-flex min-h-11 items-center gap-2 border border-luminous-gold/40 px-4 text-sm text-white-gold transition-colors hover:bg-burgundy-muted/45 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex min-h-11 shrink-0 items-center gap-2 self-start rounded-sm border border-[color:var(--mortar-strong)] px-4 text-base text-foreground transition-colors hover:border-[color:var(--candlelight)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--candlelight)] disabled:cursor-not-allowed disabled:opacity-50 lg:self-auto"
         >
-          {editing ? <X size={17} /> : <PencilSimple size={17} />}
+          {editing ? (
+            <X size={17} aria-hidden="true" />
+          ) : (
+            <CryptIcon glyph="quill" size={18} className="text-[color:var(--mist)]" />
+          )}
           {editing ? "Cancel editing" : "Edit Investigation"}
         </button>
       </div>
@@ -272,179 +308,357 @@ export function CaseDetailSurface({
         />
       ) : null}
 
-      <Section title={item.title} description="Investigation">
-        <dl className="grid gap-4 p-4 sm:grid-cols-2 lg:grid-cols-5">
-          <CaseDetail label="Objective" value={item.objective} />
-          <CaseDetail label="Current question" value={item.currentQuestion} />
-          <CaseDetail label="Archive scope" value={item.archiveScope.recordIds.length} />
-          <CaseDetail
-            label="Owner context"
-            value={item.archiveScope.freeTextContext.trim() ? "Recorded" : "Not recorded"}
-          />
-          <CaseDetail label="Status" value={item.status} />
-        </dl>
-        <p className="border-t border-luminous-gold/20 px-4 py-3 text-xs text-muted-foreground">
-          Last updated {formatRecordDate(item.updatedAt)}
-        </p>
-      </Section>
+      <div className="grid min-w-0 gap-8 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-11">
+        <div className="min-w-0 space-y-8">
+          {featured ? (
+            <FeaturedFinding
+              finding={featured}
+              evidence={evidence}
+              evidenceLinks={findingEvidence.filter((link) => link.findingId === featured.id)}
+            />
+          ) : (
+            <section className="flex items-start gap-5 border border-[color:var(--mortar-strong)] bg-card p-6">
+              <CustodianPortrait size={68} />
+              <div>
+                <h2 className="font-serif text-[1.625rem] text-foreground">No Finding yet</h2>
+                <CustodianLine size="sm" className="mt-1">
+                  I have not yet read what you set before me.
+                </CustodianLine>
+                <p className="mt-3 text-base text-muted-foreground">
+                  No Custodian Findings yet. Findings are interpretations from analysis — not Owner
+                  Judgment.
+                </p>
+              </div>
+            </section>
+          )}
 
-      <CaseReadingSurface
-        scope={item.archiveScope}
-        archiveRecords={archiveRecords}
-        archiveReady={archiveReady}
-        archiveLoading={archiveLoading}
-        archiveError={archiveError}
-        archiveStale={archiveStale}
-      />
-
-      <InvestigationAnalysisPanel
-        caseId={caseId}
-        objective={item.objective}
-        currentQuestion={item.currentQuestion}
-        online={online}
-        ports={analysisPorts}
-        runs={analysisRuns}
-        providerHoldProjection={providerHoldProjection}
-        providerKeyStatus={providerKeyStatus}
-        modelPreference={modelPreference}
-        settingsLoading={settingsLoading}
-        settingsUnavailable={settingsUnavailable}
-      />
-
-      <div className="grid gap-6 xl:grid-cols-2">
-        <CaseCollection
-          title="Claims"
-          icon={MagnifyingGlass}
-          empty="No claims are attached to this case."
-          items={claims.map((claim) => ({
-            id: claim.id,
-            title: claim.statement,
-            meta: `${claim.status} · ${claim.confidence}% confidence`,
-            sourceRecord: claim.sourceRecordId ? recordsById.get(claim.sourceRecordId) : undefined,
-          }))}
-        />
-        <CaseCollection
-          title="Evidence"
-          icon={FileText}
-          empty="No evidence items are attached to this case."
-          items={evidence.map((entry) => ({
-            id: entry.id,
-            title: entry.title || "Untitled evidence",
-            meta: `${entry.sourceClassification} · captured ${formatRecordDate(entry.capturedAt)}`,
-            sourceRecord: entry.sourceRecordId ? recordsById.get(entry.sourceRecordId) : undefined,
-          }))}
-        />
-        <CaseCollection
-          title="Findings"
-          aside={findings.length ? <CustodianFigure className="w-36" /> : undefined}
-          icon={CheckCircle}
-          empty="No Custodian Findings yet. Findings are interpretations from analysis — not Owner Judgment."
-          items={findings.map((finding) => ({
-            id: finding.id,
-            title: finding.title,
-            meta: `${finding.analysisMode} · ${finding.status} · ${finding.originKind}${
-              findingEvidence.some(
-                (link) => link.findingId === finding.id && link.relationshipKind === "contrary",
-              )
-                ? " · contrary material"
-                : ""
-            }`,
-            sourceRecord: finding.sourceRecordId
-              ? recordsById.get(finding.sourceRecordId)
-              : undefined,
-            details: (
-              <FindingDetails
-                finding={finding}
-                evidence={evidence}
-                evidenceLinks={findingEvidence.filter((link) => link.findingId === finding.id)}
+          <section className="border border-border bg-card p-5">
+            <h2 className="font-serif text-[1.5rem] text-foreground">The question</h2>
+            <dl className="mt-3 grid gap-4 sm:grid-cols-2">
+              <CaseDetail label="Current question" value={item.currentQuestion} />
+              <CaseDetail label="Objective" value={item.objective} />
+              <CaseDetail label="Status" value={item.status} />
+              <CaseDetail
+                label="Owner context"
+                value={item.archiveScope.freeTextContext.trim() ? "Recorded" : "Not recorded"}
               />
-            ),
-          }))}
-        />
-        <CaseCollection
-          title="Actions"
-          icon={Gavel}
-          empty="No actions are attached to this case."
-          items={actions.map((action) => ({
-            id: action.id,
-            title: action.title,
-            meta: `${action.status} · priority ${action.priority}`,
-          }))}
-        />
+            </dl>
+            <p className="mt-4 text-sm text-muted-foreground">
+              Last updated {formatRecordDate(item.updatedAt)}
+            </p>
+          </section>
+
+          <CaseReadingSurface
+            scope={item.archiveScope}
+            archiveRecords={archiveRecords}
+            archiveReady={archiveReady}
+            archiveLoading={archiveLoading}
+            archiveError={archiveError}
+            archiveStale={archiveStale}
+          />
+
+          {earlier.length ? (
+            <CaseCollection
+              title="Earlier Findings"
+              icon={CheckCircle}
+              empty=""
+              items={earlier.map(findingItem)}
+            />
+          ) : null}
+        </div>
+
+        <div className="min-w-0 space-y-8">
+          <InvestigationAnalysisPanel
+            caseId={caseId}
+            objective={item.objective}
+            currentQuestion={item.currentQuestion}
+            online={online}
+            ports={analysisPorts}
+            runs={analysisRuns}
+            providerHoldProjection={providerHoldProjection}
+            providerKeyStatus={providerKeyStatus}
+            modelPreference={modelPreference}
+            settingsLoading={settingsLoading}
+            settingsUnavailable={settingsUnavailable}
+          />
+          <section aria-labelledby="evidence-laid-out">
+            <h2 id="evidence-laid-out" className="font-serif text-[1.5rem] text-foreground">
+              Evidence laid out
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Selected records only, in reading order. Maximum {CASE_ARCHIVE_SCOPE_MAX_RECORDS}.
+            </p>
+            {item.archiveScope.recordIds.length ? (
+              <ul className="mt-2">
+                {item.archiveScope.recordIds.map((recordId) => {
+                  const record = recordsById.get(recordId);
+                  if (!record) {
+                    return (
+                      <li
+                        key={recordId}
+                        className="break-words border-b border-border py-3 text-sm text-[color:var(--ember)]"
+                      >
+                        Unavailable in the current archive snapshot: {recordId}
+                      </li>
+                    );
+                  }
+                  const sign = RECORD_KIND_SIGN[record.recordType];
+                  return (
+                    <li key={recordId} className="border-b border-border">
+                      <Link
+                        to={recordHref(record)}
+                        className="flex min-h-14 items-center gap-3 py-2 text-foreground hover:text-[color:var(--candlelight)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--candlelight)]"
+                      >
+                        <CryptIcon glyph={sign.glyph} size={24} className={sign.toneClass} />
+                        <span className="min-w-0">
+                          <span className="block break-words text-base">{record.title}</span>
+                          <span className="block text-sm text-[color:var(--ash)]">
+                            {RECORD_TYPE_LABEL[record.recordType]},{" "}
+                            {recordStanding(record).label.toLowerCase()}
+                          </span>
+                        </span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="mt-3 text-base text-muted-foreground">No archive records selected.</p>
+            )}
+            <button
+              type="button"
+              disabled={!online}
+              onClick={() => setEditing(true)}
+              className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-sm px-1 text-base text-[color:var(--candlelight)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--candlelight)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <CryptIcon glyph="shovel" size={18} />
+              Add evidence
+            </button>
+          </section>
+        </div>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-2">
-        <CaseCollection
-          title="Actors and members"
-          icon={UsersThree}
-          empty="No actors or members are attached to this case."
-          items={members.map((member) => ({
-            id: member.id,
-            title: member.displayName,
-            meta: `${member.roleLabel || "Role not recorded"} · ${member.lifecycleStatus}`,
-          }))}
-        />
-        <Section
-          title="Archive scope"
-          description={`Selected canonical records only · maximum ${CASE_ARCHIVE_SCOPE_MAX_RECORDS}`}
-        >
-          {item.archiveScope.recordIds.length ? (
-            <ul className="divide-y divide-luminous-gold/15">
-              {item.archiveScope.recordIds.map((recordId) => {
-                const record = recordsById.get(recordId);
-                return (
-                  <li key={recordId} className="px-4 py-3 text-sm">
-                    {record ? (
-                      <Link to={recordHref(record)} className="text-white-gold hover:underline">
-                        {record.title}
-                      </Link>
-                    ) : (
-                      <span className="break-words text-risk">
-                        Unavailable in the current archive snapshot · {recordId}
-                      </span>
-                    )}
-                    <span className="mt-1 block font-mono text-[10px] text-muted-foreground">
-                      {record?.recordType ?? "record"} · {recordId}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
-            <p className="p-5 text-sm text-muted-foreground">No archive records selected.</p>
-          )}
-        </Section>
-        <Section
-          title="Owner context"
-          description="Free-text context supplied by the owner. It is not archive evidence and is not included as a record."
-        >
-          {item.archiveScope.freeTextContext.trim() ? (
-            <p className="whitespace-pre-wrap break-words p-4 text-sm text-foreground">
-              {item.archiveScope.freeTextContext}
-            </p>
-          ) : (
-            <p className="p-5 text-sm text-muted-foreground">No owner context recorded.</p>
-          )}
-        </Section>
-        {item.defaultWorkingSet.length ? (
+      <section aria-labelledby="case-record-heading" className="space-y-6">
+        <h2 id="case-record-heading" className="font-serif text-[1.75rem] text-foreground">
+          The case record
+        </h2>
+        <div className="grid gap-6 xl:grid-cols-2">
+          <CaseCollection
+            title="Claims"
+            icon={MagnifyingGlass}
+            empty="No claims are attached to this case."
+            items={claims.map((claim) => ({
+              id: claim.id,
+              title: claim.statement,
+              meta: `${claim.status} · ${claim.confidence}% confidence`,
+              sourceRecord: claim.sourceRecordId
+                ? recordsById.get(claim.sourceRecordId)
+                : undefined,
+            }))}
+          />
+          <CaseCollection
+            title="Evidence"
+            icon={FileText}
+            empty="No evidence items are attached to this case."
+            items={evidence.map((entry) => ({
+              id: entry.id,
+              title: entry.title || "Untitled evidence",
+              meta: `${entry.sourceClassification} · captured ${formatRecordDate(entry.capturedAt)}`,
+              sourceRecord: entry.sourceRecordId
+                ? recordsById.get(entry.sourceRecordId)
+                : undefined,
+            }))}
+          />
+          <CaseCollection
+            title="Actions"
+            icon={Gavel}
+            empty="No actions are attached to this case."
+            items={actions.map((action) => ({
+              id: action.id,
+              title: action.title,
+              meta: `${action.status} · priority ${action.priority}`,
+            }))}
+          />
+          <CaseCollection
+            title="Actors and members"
+            icon={UsersThree}
+            empty="No actors or members are attached to this case."
+            items={members.map((member) => ({
+              id: member.id,
+              title: member.displayName,
+              meta: `${member.roleLabel || "Role not recorded"} · ${member.lifecycleStatus}`,
+            }))}
+          />
           <Section
-            title="Legacy working set"
-            description="Preserved for compatibility; not used as archive evidence or Case Reading."
+            title="Owner context"
+            description="Free-text context supplied by the owner. It is not archive evidence and is not included as a record."
           >
-            <ul className="divide-y divide-luminous-gold/15">
-              {item.defaultWorkingSet.map((entry, index) => (
-                <li
-                  key={`${index}-${displayJson(entry)}`}
-                  className="break-words px-4 py-3 text-sm text-muted-foreground"
-                >
-                  {displayJson(entry)}
-                </li>
-              ))}
-            </ul>
+            {item.archiveScope.freeTextContext.trim() ? (
+              <p className="whitespace-pre-wrap break-words p-4 text-base text-foreground">
+                {item.archiveScope.freeTextContext}
+              </p>
+            ) : (
+              <p className="p-5 text-base text-muted-foreground">No owner context recorded.</p>
+            )}
           </Section>
-        ) : null}
-      </div>
+          {item.defaultWorkingSet.length ? (
+            <Section
+              title="Legacy working set"
+              description="Preserved for compatibility; not used as archive evidence or Case Reading."
+            >
+              <ul className="divide-y divide-border">
+                {item.defaultWorkingSet.map((entry, index) => (
+                  <li
+                    key={`${index}-${displayJson(entry)}`}
+                    className="break-words px-4 py-3 text-sm text-muted-foreground"
+                  >
+                    {displayJson(entry)}
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          ) : null}
+        </div>
+      </section>
     </div>
+  );
+}
+
+function InvestigationTrail({ steps }: { steps: readonly TrailStep[] }) {
+  const glyphs: Record<TrailStep["key"], CryptGlyph> = {
+    question: "key",
+    evidence: "chains",
+    examined: "hood",
+    judgment: "seal",
+  };
+  return (
+    <ol
+      aria-label="Investigation progress"
+      className="grid grid-cols-2 gap-4 sm:flex sm:flex-wrap sm:items-center sm:gap-0"
+    >
+      {steps.map((step, index) => (
+        <li key={step.key} className="flex items-center">
+          {index > 0 ? (
+            <span
+              aria-hidden="true"
+              className="mx-4 hidden h-px w-10 bg-[color:var(--mortar-strong)] sm:block xl:w-24"
+            />
+          ) : null}
+          <span className="flex items-center gap-3">
+            <span
+              className={cn(
+                "flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-[1.5px]",
+                step.done
+                  ? "border-[color:var(--candlelight)] text-[color:var(--candlelight)]"
+                  : "border-[color:var(--mortar-strong)] text-[color:var(--mist)]",
+              )}
+            >
+              <CryptIcon glyph={glyphs[step.key]} size={20} />
+            </span>
+            <span>
+              <span className="block text-base font-bold text-foreground">{step.label}</span>
+              <span className="block text-sm text-muted-foreground">
+                {step.detail}
+                <span className="sr-only">{step.done ? ", done" : ", not done"}</span>
+              </span>
+            </span>
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function FeaturedFinding({
+  finding,
+  evidence,
+  evidenceLinks,
+}: {
+  finding: CustodianFinding;
+  evidence: readonly EvidenceItem[];
+  evidenceLinks: readonly CustodianFindingEvidence[];
+}) {
+  const tiles: { heading: string; glyph: CryptGlyph; toneClass: string; text: string }[] = [
+    {
+      heading: "What is uncertain",
+      glyph: "skull",
+      toneClass: "text-[color:var(--ember)]",
+      text: finding.uncertainties.join(" "),
+    },
+    {
+      heading: "What is missing",
+      glyph: "mound",
+      toneClass: "text-[color:var(--mist)]",
+      text: finding.evidenceGaps.join(" "),
+    },
+    {
+      heading: "What would change this",
+      glyph: "candle",
+      toneClass: "text-[color:var(--candlelight)]",
+      text: finding.whatWouldChangeMind,
+    },
+    {
+      heading: "Look again when",
+      glyph: "hourglass",
+      toneClass: "text-[color:var(--mist)]",
+      text: finding.revisitCondition,
+    },
+  ];
+  return (
+    <section
+      aria-labelledby={`finding-${finding.id}`}
+      className="border border-[color:var(--mortar-strong)] bg-card p-5 md:p-8"
+    >
+      <div className="flex items-center gap-5">
+        <CustodianPortrait size={76} ring="candle" />
+        <div className="min-w-0">
+          <p className="text-[0.9375rem] text-[color:var(--candlelight)]">
+            A Finding, prepared by the Custodian
+          </p>
+          <h2
+            id={`finding-${finding.id}`}
+            className="mt-1 break-words font-serif text-[1.75rem] leading-tight text-foreground md:text-[2rem]"
+          >
+            {finding.title}
+          </h2>
+        </div>
+      </div>
+      <CustodianLine size="md" className="mt-6 whitespace-pre-wrap break-words">
+        {finding.finding}
+      </CustodianLine>
+      <ul className="mt-6 grid gap-3 sm:grid-cols-2">
+        {tiles.map((tile) => (
+          <li
+            key={tile.heading}
+            className="grid grid-cols-[28px_minmax(0,1fr)] gap-3 border border-border bg-[color:var(--vault-deep)] p-4"
+          >
+            <CryptIcon glyph={tile.glyph} size={24} className={tile.toneClass} />
+            <div className="min-w-0">
+              <h3 className="font-sans text-base font-bold text-foreground">{tile.heading}</h3>
+              <p className="mt-1 break-words text-[0.9375rem] leading-6 text-[color:var(--mist)]">
+                {tile.text.trim() || "Nothing recorded."}
+              </p>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-6 border-t border-border pt-5">
+        <h3 className="font-serif text-[1.375rem] text-foreground">Your judgment</h3>
+        <p className="mt-1 text-base text-muted-foreground">
+          This Finding is the Custodian&apos;s interpretation, not your judgment. Recording a
+          judgment on a Finding is not available yet; your decisions stay in the Archive, and the
+          Finding never edits them.
+        </p>
+      </div>
+      <details className="mt-5 border-t border-border pt-3">
+        <summary className="min-h-11 cursor-pointer py-2 text-base text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--candlelight)]">
+          Evidence, assumptions and attribution
+        </summary>
+        <div className="mt-2">
+          <FindingDetails finding={finding} evidence={evidence} evidenceLinks={evidenceLinks} />
+        </div>
+      </details>
+    </section>
   );
 }
 

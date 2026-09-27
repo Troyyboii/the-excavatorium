@@ -83,8 +83,12 @@ function CaseDetailPage() {
   const persisted = cases.data?.find((item) => item.id === caseId);
   return (
     <CustodianPage
-      title="Investigation"
-      description="Question, selected evidence, examination output, and its provenance."
+      title={persisted?.title ?? "Investigation"}
+      glyph="key"
+      description={
+        persisted?.currentQuestion ||
+        "Question, selected evidence, examination output, and its provenance."
+      }
       status={<CustodianStatus online={online} fetching={cases.isFetching} error={error} />}
     >
       <CaseDetailSurface

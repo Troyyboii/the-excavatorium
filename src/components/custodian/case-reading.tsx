@@ -33,24 +33,28 @@ export function CaseReadingSurface({
 
   if (!archiveReady) {
     return (
-      <section className="border border-[#b79b68]/45 bg-[#fffdf8] text-[#2c2721]">
+      <section className="border border-[color:var(--mortar-strong)]/45 bg-card text-foreground">
         <ReadingHeader
           selectedCount={scope.recordIds.length}
           includedCount={0}
           serializedChars={0}
         />
         <div
-          className="flex items-start gap-3 border-t border-[#d7c9ae] px-4 py-5 text-sm"
+          className="flex items-start gap-3 border-t border-border px-4 py-5 text-sm"
           role="status"
         >
-          <WarningCircle size={19} className="mt-0.5 shrink-0 text-[#8a2525]" aria-hidden="true" />
+          <WarningCircle
+            size={19}
+            className="mt-0.5 shrink-0 text-[color:var(--ember)]"
+            aria-hidden="true"
+          />
           <div className="min-w-0">
             {archiveLoading ? (
-              <p className="text-[#675c4f]">Retrieving the selected archive snapshot…</p>
+              <p className="text-muted-foreground">Retrieving the selected archive snapshot…</p>
             ) : (
               <>
                 <p className="font-medium">Case Reading withheld.</p>
-                <p className="mt-1 text-[#675c4f]">
+                <p className="mt-1 text-muted-foreground">
                   {archiveError ??
                     "Archive records are unavailable. No evidence bundle has been constructed."}
                 </p>
@@ -63,15 +67,19 @@ export function CaseReadingSurface({
   }
 
   return (
-    <section className="border border-[#b79b68]/55 bg-[#fffdf8] text-[#2c2721]">
+    <section className="border border-[color:var(--mortar-strong)]/55 bg-card text-foreground">
       <ReadingHeader
         selectedCount={bundle.selectedRecordIds.length}
         includedCount={bundle.includedRecords.length}
         serializedChars={bundle.serializedChars}
       />
       {archiveStale ? (
-        <div className="flex items-start gap-3 border-b border-[#d7c9ae] bg-[#f5ead8] px-4 py-3 text-sm">
-          <Info size={18} className="mt-0.5 shrink-0 text-[#795a28]" aria-hidden="true" />
+        <div className="flex items-start gap-3 border-b border-border bg-[color:var(--vault-deep)] px-4 py-3 text-sm">
+          <Info
+            size={18}
+            className="mt-0.5 shrink-0 text-[color:var(--candlelight)]"
+            aria-hidden="true"
+          />
           <p>
             Showing the last successful archive snapshot. A refresh failed; unavailable and excluded
             records are reported below.
@@ -80,8 +88,8 @@ export function CaseReadingSurface({
       ) : null}
 
       <div className="grid gap-4 p-4 md:p-5">
-        <div className="border border-[#d7c9ae] bg-[#f8f1e5] p-4">
-          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#795a28]">
+        <div className="border border-border bg-[color:var(--vault-deep)] p-4">
+          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:var(--candlelight)]">
             Owner context
           </p>
           <h3 className="mt-1 font-serif text-lg">Not archive evidence</h3>
@@ -90,31 +98,31 @@ export function CaseReadingSurface({
               {bundle.ownerContext}
             </p>
           ) : (
-            <p className="mt-3 text-sm text-[#675c4f]">No free-text context recorded.</p>
+            <p className="mt-3 text-sm text-muted-foreground">No free-text context recorded.</p>
           )}
         </div>
 
-        <div className="border border-[#d7c9ae]">
-          <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-[#d7c9ae] px-4 py-3">
+        <div className="border border-border">
+          <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border px-4 py-3">
             <div>
-              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#795a28]">
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:var(--candlelight)]">
                 Read-only evidence bundle
               </p>
               <h3 className="mt-1 font-serif text-xl">Included archive records</h3>
             </div>
-            <span className="font-mono text-[10px] text-[#675c4f]">
+            <span className="font-mono text-[10px] text-muted-foreground">
               {bundle.serializedChars.toLocaleString()} / {CASE_READING_MAX_CHARS.toLocaleString()}{" "}
               serialized chars
             </span>
           </div>
           {bundle.includedRecords.length ? (
-            <div className="divide-y divide-[#d7c9ae]">
+            <div className="divide-y divide-border">
               {bundle.includedRecords.map((record, index) => {
                 const archiveRecord = archiveRecords.find((item) => item.id === record.recordId);
                 return (
                   <article key={record.recordId} className="p-4">
                     <div className="flex items-start gap-3">
-                      <span className="mt-0.5 font-mono text-xs text-[#795a28]">
+                      <span className="mt-0.5 font-mono text-xs text-[color:var(--candlelight)]">
                         {String(index + 1).padStart(2, "0")}
                       </span>
                       <div className="min-w-0 flex-1">
@@ -122,7 +130,7 @@ export function CaseReadingSurface({
                           {archiveRecord ? (
                             <Link
                               to={recordHref(archiveRecord)}
-                              className="inline-flex min-h-11 min-w-0 items-center gap-2 font-serif text-lg underline decoration-[#b79b68] underline-offset-4 hover:text-[#7b2030] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#795a28]"
+                              className="inline-flex min-h-11 min-w-0 items-center gap-2 font-serif text-lg underline decoration-[color:var(--candlelight)] underline-offset-4 hover:text-[color:var(--candlelight)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--candlelight)]"
                             >
                               <TypeIcon type={record.recordType} size={17} />
                               <span className="break-words">{record.title}</span>
@@ -131,15 +139,15 @@ export function CaseReadingSurface({
                           ) : (
                             <h4 className="font-serif text-lg">{record.title}</h4>
                           )}
-                          <span className="inline-flex min-h-7 items-center gap-1 rounded-full border border-[#b79b68] px-2 py-1 font-mono text-[10px] uppercase text-[#795a28]">
+                          <span className="inline-flex min-h-7 items-center gap-1 rounded-full border border-[color:var(--mortar-strong)] px-2 py-1 font-mono text-[10px] uppercase text-[color:var(--candlelight)]">
                             <FileText size={12} aria-hidden="true" />
                             {RECORD_TYPE_LABEL[record.recordType]}
                           </span>
                         </div>
-                        <p className="mt-2 break-all font-mono text-[10px] text-[#675c4f]">
+                        <p className="mt-2 break-all font-mono text-[10px] text-muted-foreground">
                           Record ID · {record.recordId}
                         </p>
-                        <p className="mt-2 text-xs text-[#795a28]">
+                        <p className="mt-2 text-xs text-[color:var(--candlelight)]">
                           Why admitted ·{" "}
                           {describeCaseReadingAdmission({
                             decision: "included",
@@ -151,16 +159,16 @@ export function CaseReadingSurface({
                             {record.summary}
                           </p>
                         ) : (
-                          <p className="mt-3 text-sm text-[#675c4f]">No summary recorded.</p>
+                          <p className="mt-3 text-sm text-muted-foreground">No summary recorded.</p>
                         )}
                         {record.fields.length ? (
-                          <dl className="mt-4 divide-y divide-[#e4dac8] border-y border-[#e4dac8]">
+                          <dl className="mt-4 divide-y divide-border border-y border-border">
                             {record.fields.map((field) => (
                               <div
                                 key={record.recordId + "-" + field.label}
                                 className="grid gap-1 py-3 sm:grid-cols-[minmax(9rem,0.35fr)_minmax(0,1fr)] sm:gap-4"
                               >
-                                <dt className="text-xs font-medium text-[#675c4f]">
+                                <dt className="text-xs font-medium text-muted-foreground">
                                   {field.label}
                                 </dt>
                                 <dd className="whitespace-pre-wrap break-words text-sm">
@@ -171,20 +179,20 @@ export function CaseReadingSurface({
                           </dl>
                         ) : null}
                         {record.truncatedFields.length ? (
-                          <p className="mt-3 text-xs text-[#795a28]">
+                          <p className="mt-3 text-xs text-[color:var(--candlelight)]">
                             Truncated fields: {record.truncatedFields.join(", ")}.
                           </p>
                         ) : null}
                         {record.omittedFields.length ? (
-                          <p className="mt-2 text-xs text-[#8a2525]">
+                          <p className="mt-2 text-xs text-[color:var(--ember)]">
                             Omitted from the reading limit: {record.omittedFields.join(", ")}.
                           </p>
                         ) : null}
-                        <details className="mt-4 border-t border-[#e4dac8] pt-3">
-                          <summary className="min-h-11 cursor-pointer py-2 text-xs font-medium text-[#795a28] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#795a28]">
+                        <details className="mt-4 border-t border-border pt-3">
+                          <summary className="min-h-11 cursor-pointer py-2 text-xs font-medium text-[color:var(--candlelight)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--candlelight)]">
                             Source provenance
                           </summary>
-                          <ul className="mt-2 space-y-2 text-xs text-[#675c4f]">
+                          <ul className="mt-2 space-y-2 text-xs text-muted-foreground">
                             {record.provenance.map((line) => (
                               <li key={line} className="break-words">
                                 {line}
@@ -199,7 +207,7 @@ export function CaseReadingSurface({
               })}
             </div>
           ) : (
-            <div className="px-4 py-6 text-sm text-[#675c4f]">
+            <div className="px-4 py-6 text-sm text-muted-foreground">
               No selected archive records are available in this snapshot.
             </div>
           )}
@@ -221,29 +229,29 @@ function ReadingHeader({
   serializedChars: number;
 }) {
   return (
-    <header className="flex flex-col gap-3 border-b border-[#d7c9ae] px-4 py-4 sm:flex-row sm:items-end sm:justify-between md:px-5">
+    <header className="flex flex-col gap-3 border-b border-border px-4 py-4 sm:flex-row sm:items-end sm:justify-between md:px-5">
       <div>
-        <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#795a28]">
+        <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-[color:var(--candlelight)]">
           Custodian boundary
         </p>
         <h2 className="mt-1 font-serif text-2xl">Case Reading</h2>
-        <p className="mt-1 max-w-2xl text-sm text-[#675c4f]">
+        <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
           Bounded, read-only projection of the Case&apos;s selected canonical archive records. No AI
           or provider run is invoked.
         </p>
       </div>
-      <dl className="grid grid-cols-3 gap-3 text-right font-mono text-[10px] text-[#675c4f]">
+      <dl className="grid grid-cols-3 gap-3 text-right font-mono text-[10px] text-muted-foreground">
         <div>
           <dt>Selected</dt>
-          <dd className="mt-1 text-sm text-[#2c2721]">{selectedCount}</dd>
+          <dd className="mt-1 text-sm text-foreground">{selectedCount}</dd>
         </div>
         <div>
           <dt>Included</dt>
-          <dd className="mt-1 text-sm text-[#2c2721]">{includedCount}</dd>
+          <dd className="mt-1 text-sm text-foreground">{includedCount}</dd>
         </div>
         <div>
           <dt>Serialized</dt>
-          <dd className="mt-1 text-sm text-[#2c2721]">{serializedChars.toLocaleString()}</dd>
+          <dd className="mt-1 text-sm text-foreground">{serializedChars.toLocaleString()}</dd>
         </div>
       </dl>
     </header>
@@ -265,8 +273,12 @@ function ReadingBoundary({ bundle }: { bundle: ReturnType<typeof buildCaseReadin
 
   if (!hasBoundaryItems) {
     return (
-      <div className="flex items-start gap-3 border border-[#c2d3c0] bg-[#f3f7f0] p-4 text-sm">
-        <CheckCircle size={19} className="mt-0.5 shrink-0 text-[#3f6840]" aria-hidden="true" />
+      <div className="flex items-start gap-3 border border-[color:var(--moonwater)] bg-[color:var(--vault-deep)] p-4 text-sm">
+        <CheckCircle
+          size={19}
+          className="mt-0.5 shrink-0 text-[color:var(--moonwater)]"
+          aria-hidden="true"
+        />
         <p>
           No deterministic exclusions, supersession markers, conflicts, or evidence gaps were found.
         </p>
@@ -275,9 +287,9 @@ function ReadingBoundary({ bundle }: { bundle: ReturnType<typeof buildCaseReadin
   }
 
   return (
-    <div className="border border-[#b79b68]/55 bg-[#f8f1e5]">
-      <div className="border-b border-[#d7c9ae] px-4 py-3">
-        <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#795a28]">
+    <div className="border border-[color:var(--mortar-strong)]/55 bg-[color:var(--vault-deep)]">
+      <div className="border-b border-border px-4 py-3">
+        <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:var(--candlelight)]">
           Reading boundaries
         </p>
         <h3 className="mt-1 font-serif text-xl">What the bundle does not resolve</h3>
@@ -334,10 +346,10 @@ function BoundaryList({ title, items }: { title: string; items: readonly string[
   return (
     <section>
       <h4 className="flex items-center gap-2 text-sm font-medium">
-        <WarningCircle size={16} className="text-[#8a2525]" aria-hidden="true" />
+        <WarningCircle size={16} className="text-[color:var(--ember)]" aria-hidden="true" />
         {title}
       </h4>
-      <ul className="mt-2 space-y-2 text-xs leading-5 text-[#675c4f]">
+      <ul className="mt-2 space-y-2 text-xs leading-5 text-muted-foreground">
         {items.map((item) => (
           <li key={item} className="break-words">
             {item}
@@ -352,13 +364,15 @@ function SignalList({ title, items }: { title: string; items: readonly CaseReadi
   return (
     <section>
       <h4 className="flex items-center gap-2 text-sm font-medium">
-        <Info size={16} className="text-[#795a28]" aria-hidden="true" />
+        <Info size={16} className="text-[color:var(--candlelight)]" aria-hidden="true" />
         {title}
       </h4>
-      <ul className="mt-2 space-y-2 text-xs leading-5 text-[#675c4f]">
+      <ul className="mt-2 space-y-2 text-xs leading-5 text-muted-foreground">
         {items.map((item) => (
           <li key={item.recordId + "-" + item.message} className="break-words">
-            <span className="font-mono text-[10px] text-[#795a28]">{item.recordId}</span>
+            <span className="font-mono text-[10px] text-[color:var(--candlelight)]">
+              {item.recordId}
+            </span>
             <span className="mx-1">·</span>
             {item.message}
           </li>
