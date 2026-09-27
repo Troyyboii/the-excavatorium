@@ -8,9 +8,13 @@ public hosted beta when it is running that source.
 
 ## Reporting
 
-Email **dario.juzbasic11@gmail.com** with a clear description, impact, and
-reproduction steps when possible. Do **not** open a public GitHub issue for
-credential leaks, auth bypasses, or data-isolation failures.
+Use GitHub's private vulnerability reporting for this repository. Do **not**
+open a public GitHub issue containing vulnerability details, credentials, or
+sensitive evidence.
+
+If private vulnerability reporting is unavailable, open a minimal public issue
+requesting a private reporting channel without including any vulnerability
+details.
 
 Please include:
 
