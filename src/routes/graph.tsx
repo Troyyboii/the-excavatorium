@@ -162,20 +162,16 @@ function GraphPage() {
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-background text-foreground">
-      <header className="border-b border-strong-border px-4 py-5 md:px-7">
+      <header className="border-b border-border px-4 py-5 md:px-7">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
-            <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-brass">
-              Archive connections
-            </p>
-            <h1 className="mt-1 text-3xl md:text-4xl">Connections</h1>
-            <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
+            <h1 className="font-serif text-3xl text-foreground md:text-4xl">Connections</h1>
+            <p className="mt-2 max-w-3xl text-base text-muted-foreground">
               Records and saved links only. No inferred relationships, weights, or activity.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
             <span>{query.data.records.length} records</span>
-            <span aria-hidden="true">·</span>
             <span>
               {linkReadState === "pending"
                 ? "Retrieving persisted links"
@@ -185,7 +181,6 @@ function GraphPage() {
                     ? "Link evidence unavailable"
                     : `${query.data.links.length} persisted links`}
             </span>
-            <span aria-hidden="true">·</span>
             <span>{online ? "Archive available" : "Cached view"}</span>
           </div>
         </div>
@@ -200,7 +195,11 @@ function GraphPage() {
           <div className="grid gap-3 border-b border-border bg-card px-4 py-4 md:px-7 lg:grid-cols-[minmax(260px,1fr)_auto_auto] lg:items-center">
             <div className="relative">
               <label className="flex min-h-11 items-center gap-2 rounded-md border border-input bg-background px-3 focus-within:ring-2 focus-within:ring-ring">
-                <MagnifyingGlass size={17} className="shrink-0 text-brass" aria-hidden="true" />
+                <MagnifyingGlass
+                  size={17}
+                  className="shrink-0 text-[color:var(--candlelight)]"
+                  aria-hidden="true"
+                />
                 <span className="sr-only">Search graph records by title or ID</span>
                 <input
                   value={term}
@@ -225,7 +224,7 @@ function GraphPage() {
                         className="flex min-h-11 w-full items-center justify-between gap-3 rounded px-3 text-left text-sm hover:bg-record-hover"
                       >
                         <span className="truncate">{node.record.title}</span>
-                        <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                        <span className="shrink-0 text-xs text-muted-foreground">
                           {RECORD_TYPE_LABEL[node.record.recordType]}
                         </span>
                       </button>
@@ -245,9 +244,9 @@ function GraphPage() {
                   aria-pressed={selectedTypes.has(type)}
                   onClick={() => toggleType(type)}
                   className={cn(
-                    "min-h-11 rounded-full border px-2.5 text-[11px]",
+                    "min-h-11 rounded-sm border px-2.5 text-sm",
                     selectedTypes.has(type)
-                      ? "border-primary bg-burgundy-muted text-foreground"
+                      ? "border-[color:var(--candlelight)] bg-[color:var(--vault-raised)] text-foreground"
                       : "border-border text-muted-foreground",
                   )}
                 >
@@ -494,7 +493,7 @@ function GraphCanvas({
             </button>
             <div className="min-w-0 text-center">
               <p className="truncate font-serif text-sm">{selected.record.title}</p>
-              <p className="font-mono text-[10px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 {directNeighbors.length} direct neighbor{directNeighbors.length === 1 ? "" : "s"}
               </p>
             </div>
@@ -635,38 +634,38 @@ function RecordInspector({
   }
   return (
     <div>
-      <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-brass">
-        Selected record
-      </p>
-      <h2 className="mt-3 text-2xl leading-tight">{selected.record.title}</h2>
+      <p className="text-sm text-muted-foreground">Selected record</p>
+      <h2 className="mt-2 font-serif text-2xl leading-tight text-foreground">
+        {selected.record.title}
+      </h2>
       <div className="mt-3 flex flex-wrap gap-2">
-        <span className="rounded-full border border-primary bg-burgundy-muted px-2 py-1 text-[11px]">
+        <span className="rounded-sm border border-[color:var(--mortar-strong)] px-2 py-1 text-sm">
           {RECORD_TYPE_LABEL[selected.record.recordType]}
         </span>
-        <span className="rounded-full border border-border px-2 py-1 font-mono text-[11px] text-muted-foreground">
+        <span className="rounded-sm border border-border px-2 py-1 text-sm text-muted-foreground">
           {neighbors.length} direct
         </span>
       </div>
-      <p className="mt-4 text-sm leading-6 text-muted-foreground">
+      <p className="mt-4 text-base leading-6 text-muted-foreground">
         {selected.record.summary || "No summary recorded."}
       </p>
-      <dl className="mt-5 divide-y divide-border border-y border-border text-xs">
+      <dl className="mt-5 divide-y divide-border border-y border-border text-sm">
         <div className="grid grid-cols-[80px_1fr] gap-3 py-3">
           <dt className="text-muted-foreground">Updated</dt>
           <dd>{formatArchiveDateTime(selected.record.updatedAt)}</dd>
         </div>
         <div className="grid grid-cols-[80px_1fr] gap-3 py-3">
           <dt className="text-muted-foreground">Record ID</dt>
-          <dd className="break-all font-mono text-[10px]">{selected.id}</dd>
+          <dd className="break-all font-mono text-xs">{selected.id}</dd>
         </div>
       </dl>
       <Link
         to={archiveRecordHref(selected.record)}
-        className="mt-5 flex min-h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground"
+        className="mt-5 flex min-h-11 items-center justify-center rounded-sm bg-[color:var(--candlelight)] px-4 text-base font-medium text-[color:var(--candle-ink)]"
       >
         Open record
       </Link>
-      <h3 className="mt-7 border-b border-border pb-2 font-mono text-[10px] uppercase tracking-[0.16em] text-brass">
+      <h3 className="mt-7 border-b border-border pb-2 font-serif text-lg text-foreground">
         Direct neighbors
       </h3>
       {neighbors.length ? (
@@ -717,14 +716,12 @@ function LinkLedger({
     >
       <header className="flex flex-wrap items-end justify-between gap-3 border-b border-border px-4 py-4 md:px-7">
         <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-brass">
-            Evidence ledger
-          </p>
-          <h2 id="link-ledger-heading" className="mt-1 text-xl">
+          <p className="text-sm text-muted-foreground">Evidence ledger</p>
+          <h2 id="link-ledger-heading" className="mt-1 font-serif text-xl text-foreground">
             {selected ? "Incident links" : "Visible links"}
           </h2>
         </div>
-        <span className="font-mono text-[11px] text-muted-foreground">
+        <span className="text-sm text-muted-foreground">
           {linkReadState === "pending"
             ? "Retrieving…"
             : linkReadState === "cold-offline"
@@ -795,11 +792,12 @@ function LinkLedger({
                         <LedgerRecord record={records.get(edge.target.id)} id={edge.target.id} />
                       </td>
                       <td>
-                        <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-                          <LinkSimple size={15} className="text-brass" /> Persisted link
+                        <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                          <LinkSimple size={15} className="text-[color:var(--candlelight)]" />{" "}
+                          Persisted link
                         </span>
                       </td>
-                      <td className="font-mono text-xs text-muted-foreground">
+                      <td className="text-sm text-muted-foreground">
                         {formatArchiveDate(edge.link.createdAt)}
                       </td>
                     </tr>

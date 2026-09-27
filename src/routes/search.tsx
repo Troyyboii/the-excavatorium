@@ -1,5 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useMemo } from "react";
 import { useArchive } from "@/lib/archive";
 import { Banner, PageHeader } from "@/components/page-parts";
 import { RecordList } from "@/components/record-list";
@@ -7,6 +7,7 @@ import type { ArchiveRecord, RecordType } from "@/lib/types";
 import { RECORD_TYPES, RECORD_TYPE_PLURAL } from "@/lib/types";
 import { ArchiveViewNav } from "@/components/archive-view-nav";
 import { toSearchableText } from "@/lib/archive-search";
+import { useRouteQuery } from "@/hooks/use-route-query";
 
 export const Route = createFileRoute("/search")({
   component: Page,
@@ -18,8 +19,16 @@ export const Route = createFileRoute("/search")({
 
 function Page() {
   const q = useArchive(true);
-  const { q: initialText } = Route.useSearch();
-  const [text, setText] = useState(initialText ?? "");
+  const { q: routeQ } = Route.useSearch();
+  const navigate = useNavigate({ from: "/search" });
+  const [text, setText] = useRouteQuery(
+    routeQ,
+    (next) =>
+      void navigate({
+        search: next ? { q: next } : {},
+        replace: true,
+      }),
+  );
 
   const indexed = useMemo(() => {
     const items = q.data?.records ?? [];

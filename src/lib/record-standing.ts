@@ -3,17 +3,13 @@ import type { ArchiveRecord, RecordType, RepositoryAction, ToolStatus } from "./
 
 /**
  * How a record stands, derived only from fields it already saves. The same
- * checks drive the Home attention list (see `needsAttention` in dashboard.ts),
- * so the two never disagree.
+ * helper drives Archive filters and Home attention glyphs, so the two never
+ * disagree on kind/tone.
  *
- * Vocabulary decision (pending reconciliation with the Signs of the Crypt
- * legend): the canvas legend shows five standings, but "Awaiting verdict" is
- * kept as a deliberate sixth. It marks records the owner has not yet judged:
- * a repository with no recommended action, a Tentative decision, and tools
- * that are Worth revisiting, Useful but dormant or Experimental. None of the
- * five fits them without claiming a judgment that was never made. DESIGN.md's
- * icon map already names it (hourglass, mist). Do not add further standings
- * without the same explicit decision.
+ * "Awaiting verdict" is a deliberate sixth standing (the canvas legend shows
+ * five). It means owner judgment is actually absent — not merely that a status
+ * label is soft or provisional. Status labels stay visible; they do not by
+ * themselves prove judgment is missing.
  */
 export type StandingKind =
   | "current"
@@ -59,26 +55,43 @@ function standing(kind: StandingKind, label = SIGN[kind].label): RecordStanding 
   return { ...standingSign(kind), label };
 }
 
-const TOOL_STANDING: Record<ToolStatus, StandingKind> = {
+const TOOL_STATUS_KIND: Record<ToolStatus, StandingKind> = {
   Active: "current",
-  "Useful but dormant": "awaiting",
-  Experimental: "awaiting",
-  "Worth revisiting": "awaiting",
+  "Useful but dormant": "current",
+  Experimental: "current",
+  "Worth revisiting": "current",
   Disappointing: "superseded",
   Buried: "buried",
   "Grok-tier cursed": "buried",
 };
 
+/** Soft tool statuses that need a written verdict before they leave awaiting. */
+const TOOL_AWAITING_WITHOUT_VERDICT: readonly ToolStatus[] = [
+  "Useful but dormant",
+  "Experimental",
+  "Worth revisiting",
+];
+
 const BURIED_REPOSITORY_ACTIONS: readonly RepositoryAction[] = ["Skip", "Pour down sink"];
+
+function hasWrittenVerdict(value: string): boolean {
+  return value.trim() !== "";
+}
 
 export function recordStanding(record: ArchiveRecord): RecordStanding {
   switch (record.recordType) {
-    case "tool":
-      return standing(TOOL_STANDING[record.recordData.status], record.recordData.status);
+    case "tool": {
+      const { status, finalVerdict } = record.recordData;
+      if (TOOL_AWAITING_WITHOUT_VERDICT.includes(status) && !hasWrittenVerdict(finalVerdict)) {
+        return standing("awaiting", status);
+      }
+      return standing(TOOL_STATUS_KIND[status], status);
+    }
     case "decision": {
       const status = record.recordData.status;
       if (status === "Current") return standing("current", status);
-      if (status === "Tentative") return standing("awaiting", status);
+      // Tentative is a provisional judgment, not the absence of one.
+      if (status === "Tentative") return standing("uncertain", status);
       if (status === "Archived") return standing("buried", status);
       return standing("superseded", status);
     }
@@ -89,11 +102,14 @@ export function recordStanding(record: ArchiveRecord): RecordStanding {
         ? standing("uncertain")
         : standing("current");
     case "repository": {
-      const action = record.recordData.recommendedAction;
-      if (action === null) return standing("awaiting");
-      return BURIED_REPOSITORY_ACTIONS.includes(action)
-        ? standing("buried", action)
-        : standing("current", action);
+      const { recommendedAction, finalVerdict } = record.recordData;
+      if (recommendedAction === null && !hasWrittenVerdict(finalVerdict)) {
+        return standing("awaiting");
+      }
+      if (recommendedAction && BURIED_REPOSITORY_ACTIONS.includes(recommendedAction)) {
+        return standing("buried", recommendedAction);
+      }
+      return standing("current", recommendedAction ?? SIGN.current.label);
     }
   }
 }

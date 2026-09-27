@@ -1,9 +1,10 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { ArchiveViewNav } from "@/components/archive-view-nav";
 import { CryptIcon } from "@/components/crypt-icon";
 import { archiveRecordHref } from "@/components/custodian/custodian-format";
 import { CustodianLine, CustodianPortrait } from "@/components/custodian/custodian-presence";
+import { useRouteQuery } from "@/hooks/use-route-query";
 import { useArchive } from "@/lib/archive";
 import { formatArchiveDate } from "@/lib/date-format";
 import {
@@ -45,13 +46,8 @@ function ArchivePage() {
   const archive = useArchive(true);
   const filters = Route.useSearch();
   const navigate = useNavigate({ from: "/archive" });
-  const [text, setText] = useState(filters.q ?? "");
   const all = archive.data?.records;
   const directory = useMemo(() => buildArchiveDirectory(all ?? []), [all]);
-  const records = useMemo(
-    () => filterArchive(all ?? [], { ...filters, q: text }),
-    [all, filters, text],
-  );
 
   const setFilters = (next: Partial<ArchiveFilters>) =>
     void navigate({
@@ -63,6 +59,12 @@ function ArchivePage() {
       },
       replace: true,
     });
+
+  const [text, setText] = useRouteQuery(filters.q, (q) => setFilters({ q }));
+  const records = useMemo(
+    () => filterArchive(all ?? [], { ...filters, q: text }),
+    [all, filters, text],
+  );
 
   const header = (
     <header className="flex flex-wrap items-center gap-x-6 gap-y-4">
@@ -159,10 +161,7 @@ function ArchivePage() {
           <input
             type="search"
             value={text}
-            onChange={(event) => {
-              setText(event.target.value);
-              setFilters({ q: event.target.value || undefined });
-            }}
+            onChange={(event) => setText(event.target.value)}
             placeholder="Search titles, verdicts, reasons and raw text"
             className="min-w-0 flex-1 bg-transparent text-[1.0625rem] text-foreground outline-none placeholder:text-[color:var(--ash)]"
           />

@@ -3,15 +3,21 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#111412" />
+    <meta name="theme-color" content="#11131B" />
     <link rel="icon" href="/brand/excavatorium-lantern-app-icon.png" type="image/png" />
     <title>The Excavatorium · Offline</title>
     <style>
       :root {
         color-scheme: dark;
-        font-family: system-ui, sans-serif;
-        background: #111412;
-        color: #f0e7d2;
+        --grave-night: #11131b;
+        --vault-stone: #1b1e29;
+        --mortar: #2e3345;
+        --moonbone: #f1ead9;
+        --mist: #c4bfd0;
+        --candlelight: #f2b857;
+        font-family: "Alegreya Sans", ui-sans-serif, system-ui, sans-serif;
+        background: var(--grave-night);
+        color: var(--moonbone);
       }
       body {
         box-sizing: border-box;
@@ -20,27 +26,32 @@
         margin: 0;
         place-items: center;
         padding: 1.5rem;
+        background:
+          radial-gradient(ellipse at 50% 0%, rgba(242, 184, 87, 0.08), transparent 55%),
+          var(--grave-night);
       }
       main {
         width: min(32rem, 100%);
-        border: 1px solid #41382f;
-        border-radius: 8px;
-        background: #1d1a17;
+        border: 1px solid var(--mortar);
+        border-radius: 4px;
+        background: var(--vault-stone);
         padding: 2rem;
       }
       h1 {
         margin: 0;
-        color: #c19a5a;
-        font:
-          1.65rem Georgia,
-          serif;
+        color: var(--moonbone);
+        font-family: "IM Fell English", "Iowan Old Style", Georgia, serif;
+        font-size: 1.75rem;
+        font-weight: 400;
+        line-height: 1.2;
       }
       p {
-        color: #a09587;
+        color: var(--mist);
         line-height: 1.6;
+        font-size: 1.0625rem;
       }
       a {
-        color: #f3ece1;
+        color: var(--candlelight);
       }
       .mark {
         width: 3.5rem;

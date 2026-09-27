@@ -1,5 +1,7 @@
 import { documentDataSchema, formatDocumentValidationIssues } from "./document";
+import { findSupersessionCycle } from "./record-reading";
 import type {
+  ArchiveRecord,
   ConversationData,
   DecisionData,
   DocumentData,
@@ -13,12 +15,17 @@ import type {
  * its own branch; a type must never fall through to another type's validation
  * (a conversation was once validated as a document). The database remains the
  * authority on record shape.
+ *
+ * Pass `recordsById` when validating a Decision so supersession cycles can be
+ * rejected before save. Without it, only self-reference is checked here; the
+ * record page still surfaces cycles for already-saved data.
  */
 export function validateRecordDraft(
   recordType: RecordType,
   title: string,
   data: ToolData | RepositoryData | ConversationData | DecisionData | DocumentData,
   existingId?: string | null,
+  recordsById?: Map<string, ArchiveRecord>,
 ): string[] {
   if (title.trim() === "") return ["Title is required."];
   switch (recordType) {
@@ -42,6 +49,12 @@ export function validateRecordDraft(
       if (!d.confidence) return ["Confidence is required."];
       if (d.supersedesDecisionId && d.supersedesDecisionId === existingId)
         return ["Supersedes cannot reference the current record."];
+      if (existingId && d.supersedesDecisionId && recordsById) {
+        const invalid = findSupersessionCycle(existingId, d.supersedesDecisionId, recordsById);
+        if (invalid?.kind === "cycle") {
+          return ["Supersedes cannot create a cycle with other Decisions."];
+        }
+      }
       return [];
     }
     case "conversation":

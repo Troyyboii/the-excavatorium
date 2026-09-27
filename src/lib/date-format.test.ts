@@ -7,20 +7,21 @@ import {
 } from "./date-format";
 
 describe("archive date formatting", () => {
-  test("formats date-only values without timezone conversion", () => {
-    expect(formatArchiveDate("2026-08-05")).toBe("05/08/26");
-    expect(formatArchiveDate("2024-02-29")).toBe("29/02/24");
+  test("formats date-only values as day month year without timezone conversion", () => {
+    expect(formatArchiveDate("2026-08-05")).toBe("5 Aug 2026");
+    expect(formatArchiveDate("2024-02-29")).toBe("29 Feb 2024");
+    expect(formatArchiveDate("2026-09-22")).toBe("22 Sep 2026");
   });
 
   test("rejects impossible date-only values instead of normalizing them", () => {
     expect(formatArchiveDate("2026-02-30")).toBe("2026-02-30");
   });
 
-  test("formats timestamps with an explicit 24-hour clock", () => {
-    expect(formatArchiveDateTime("2026-08-22T08:48:00.000Z", "UTC")).toBe("22/08/26, 08:48");
-    expect(formatArchiveDateTime("2026-08-22T23:07:00.000Z", "UTC")).toBe("22/08/26, 23:07");
+  test("formats timestamps with canonical date style and an explicit 24-hour clock", () => {
+    expect(formatArchiveDateTime("2026-08-22T08:48:00.000Z", "UTC")).toBe("22 Aug 2026, 08:48");
+    expect(formatArchiveDateTime("2026-08-22T23:07:00.000Z", "UTC")).toBe("22 Aug 2026, 23:07");
     expect(formatArchiveDateTime("2026-08-22T08:48:00.000Z", "Europe/Zagreb")).toBe(
-      "22/08/26, 10:48",
+      "22 Aug 2026, 10:48",
     );
   });
 

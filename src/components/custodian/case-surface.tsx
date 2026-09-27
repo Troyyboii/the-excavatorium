@@ -37,7 +37,12 @@ import { CaseScopePicker } from "./case-scope-picker";
 import { InvestigationAnalysisPanel } from "./investigation-analysis";
 import { CustodianLine, CustodianNiche, CustodianPortrait } from "./custodian-presence";
 import { CryptIcon, type CryptGlyph } from "@/components/crypt-icon";
-import { investigationTrail, orderFindings, type TrailStep } from "@/lib/investigation-view";
+import {
+  investigationTrail,
+  isFeaturedFindingEligible,
+  orderFindings,
+  type TrailStep,
+} from "@/lib/investigation-view";
 import { RECORD_KIND_SIGN, recordStanding } from "@/lib/record-standing";
 import { RECORD_TYPE_LABEL } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -249,7 +254,8 @@ export function CaseDetailSurface({
 
   const recordsById = new Map(archiveRecords.map((record) => [record.id, record]));
   const ordered = orderFindings(findings);
-  const [featured, ...earlier] = ordered;
+  const featured = ordered.find(isFeaturedFindingEligible) ?? null;
+  const earlier = featured ? ordered.filter((finding) => finding.id !== featured.id) : ordered;
   const trail = investigationTrail({
     currentQuestion: item.currentQuestion,
     evidenceCount: item.archiveScope.recordIds.length,

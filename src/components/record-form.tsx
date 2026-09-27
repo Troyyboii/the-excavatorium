@@ -108,7 +108,11 @@ export function RecordForm({ recordType, existing, allRecords, allLinks }: Props
   }
 
   function clientValidate(): string[] {
-    return validateRecordDraft(recordType, title, data, existing?.id);
+    const recordsById =
+      recordType === "decision"
+        ? new Map(allRecords.map((record) => [record.id, record]))
+        : undefined;
+    return validateRecordDraft(recordType, title, data, existing?.id, recordsById);
   }
 
   async function onSubmit(e: React.FormEvent) {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { custodianReadingLine, supersessionChain } from "./record-reading";
+import { custodianReadingLine, findSupersessionCycle, supersessionChain } from "./record-reading";
 import {
   emptyToolData,
   type ArchiveRecord,
@@ -55,15 +55,62 @@ describe("supersessionChain", () => {
       "stop",
     ]);
     expect(supersessionChain(restrict, all, byId).replaces).toBeNull();
+    expect(supersessionChain(restrict, all, byId).invalid).toBeNull();
   });
 
   test("finds the decision this one replaced, ignoring missing targets", () => {
     expect(supersessionChain(stop, all, byId).replaces?.id).toBe("restrict");
-    expect(supersessionChain(dangling, all, byId)).toEqual({ replaces: null, replacedBy: [] });
+    expect(supersessionChain(dangling, all, byId)).toEqual({
+      replaces: null,
+      replacedBy: [],
+      invalid: null,
+    });
   });
 
   test("is empty for other record types", () => {
-    expect(supersessionChain(tool, all, byId)).toEqual({ replaces: null, replacedBy: [] });
+    expect(supersessionChain(tool, all, byId)).toEqual({
+      replaces: null,
+      replacedBy: [],
+      invalid: null,
+    });
+  });
+
+  test("self-reference is an explicit invalid chain, not ancestry", () => {
+    const self = decision("self", "Current", "self");
+    const map = new Map<string, ArchiveRecord>([[self.id, self]]);
+    expect(supersessionChain(self, [self], map)).toEqual({
+      replaces: null,
+      replacedBy: [],
+      invalid: { kind: "self-reference", path: ["self", "self"] },
+    });
+  });
+
+  test("two-node cycles are surfaced instead of contradictory replacement links", () => {
+    const a = decision("a", "Current", "b");
+    const b = decision("b", "Current", "a");
+    const records = [a, b];
+    const map = new Map(records.map((record) => [record.id, record]));
+    expect(supersessionChain(a, records, map).invalid).toEqual({
+      kind: "cycle",
+      path: ["a", "b", "a"],
+    });
+    expect(supersessionChain(a, records, map).replaces).toBeNull();
+    expect(supersessionChain(a, records, map).replacedBy).toEqual([]);
+  });
+
+  test("longer cycles are detected while walking supersedes pointers", () => {
+    const a = decision("a", "Current", "b");
+    const b = decision("b", "Current", "c");
+    const c = decision("c", "Current", "a");
+    const map = new Map<string, ArchiveRecord>([
+      ["a", a],
+      ["b", b],
+      ["c", c],
+    ]);
+    expect(findSupersessionCycle("a", "b", map)).toEqual({
+      kind: "cycle",
+      path: ["a", "b", "c", "a"],
+    });
   });
 });
 
@@ -80,5 +127,14 @@ describe("custodianReadingLine", () => {
     );
     expect(custodianReadingLine("open-loop", 2, false)).toContain("I have read it before");
     expect(custodianReadingLine("buried", 1, true)).toContain("Bid me, and I shall read it again.");
+  });
+
+  test("awaiting narration is reserved for absent judgment", () => {
+    expect(custodianReadingLine("awaiting", 0, false)).toBe(
+      "No verdict has been given. It waits on your judgment. I have not read it.",
+    );
+    expect(custodianReadingLine("uncertain", 0, false)).toBe(
+      "Its ground is unsure; not all of it is settled. I have not read it.",
+    );
   });
 });

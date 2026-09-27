@@ -14,4 +14,13 @@ describe("service worker privacy boundary", () => {
     expect(source).toContain("no-store");
     expect(source).toContain("private");
   });
+
+  test("precaches the Night Crypt Custodian character assets used by the UI", async () => {
+    const source = await Bun.file("public/sw.js").text();
+    expect(source).toContain("excavatorium-static-v4-night-crypt");
+    expect(source).toContain('"/character/custodian-cutout.webp"');
+    expect(source).toContain('"/character/custodian-portrait.webp"');
+    expect(source).toContain('"/character/custodian-lantern.webp"');
+    expect(source).not.toContain('"/character/00-custodian-canon.png"');
+  });
 });

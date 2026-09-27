@@ -25,10 +25,10 @@ const base: Omit<BaseArchiveRecord, "recordType"> = {
   updatedAt: "2026-08-07T10:00:00.000Z",
 };
 
-const tool = (status: ToolStatus): ArchiveRecord => ({
+const tool = (status: ToolStatus, finalVerdict = ""): ArchiveRecord => ({
   ...base,
   recordType: "tool",
-  recordData: { ...emptyToolData, status },
+  recordData: { ...emptyToolData, status, finalVerdict },
 });
 const decision = (status: DecisionStatus): ArchiveRecord => ({
   ...base,
@@ -56,10 +56,13 @@ const document = (uncertain: boolean): ArchiveRecord => ({
     uncertainties: uncertain ? [{ text: "Unclear source", sourceReferenceIds: [] }] : [],
   },
 });
-const repository = (recommendedAction: RepositoryAction | null): ArchiveRecord => ({
+const repository = (
+  recommendedAction: RepositoryAction | null,
+  finalVerdict = "",
+): ArchiveRecord => ({
   ...base,
   recordType: "repository",
-  recordData: { ...emptyRepositoryData, recommendedAction },
+  recordData: { ...emptyRepositoryData, recommendedAction, finalVerdict },
 });
 
 describe("recordStanding", () => {
@@ -80,6 +83,18 @@ describe("recordStanding", () => {
     }
   });
 
+  test("tools with a written finalVerdict are not awaiting, even on soft statuses", () => {
+    for (const status of ["Useful but dormant", "Experimental", "Worth revisiting"] as const) {
+      const standing = recordStanding(tool(status, "Still worth the cellar shelf."));
+      expect(standing.kind).toBe("current");
+      expect(standing.label).toBe(status);
+    }
+  });
+
+  test("whitespace-only finalVerdict does not count as a verdict", () => {
+    expect(recordStanding(tool("Experimental", "   ")).kind).toBe("awaiting");
+  });
+
   test("decisions map every status", () => {
     expect(recordStanding(decision("Current"))).toEqual({
       kind: "current",
@@ -88,10 +103,10 @@ describe("recordStanding", () => {
       tone: "candle",
     });
     expect(recordStanding(decision("Tentative"))).toEqual({
-      kind: "awaiting",
+      kind: "uncertain",
       label: "Tentative",
-      glyph: "hourglass",
-      tone: "mist",
+      glyph: "skull",
+      tone: "ember",
     });
     expect(recordStanding(decision("Superseded"))).toEqual({
       kind: "superseded",
@@ -153,6 +168,12 @@ describe("recordStanding", () => {
         action === "Skip" || action === "Pour down sink" ? "buried" : "current",
       );
     }
+  });
+
+  test("a repository finalVerdict counts as owner judgment even without recommendedAction", () => {
+    const standing = recordStanding(repository(null, "Cellar it for the winter."));
+    expect(standing.kind).toBe("current");
+    expect(standing.label).toBe("Current");
   });
 
   test("every standing has a generic sign", () => {

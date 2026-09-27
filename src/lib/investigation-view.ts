@@ -1,4 +1,4 @@
-import type { CustodianFinding } from "./custodian-types";
+import type { CustodianFinding, FindingStatus } from "./custodian-types";
 
 export type TrailStep = {
   key: "question" | "evidence" | "examined" | "judgment";
@@ -47,11 +47,26 @@ export function investigationTrail(input: {
   ];
 }
 
-/** Active Findings first, then newest; the first one is featured. */
+const RETIRED_FINDING_STATUSES: ReadonlySet<FindingStatus> = new Set(["superseded", "archived"]);
+
+/**
+ * A Finding may be featured as the current reading only when it is still live
+ * in lifecycle and not retired by status. Superseded/archived status must not
+ * displace a valid current Finding even if lifecycleStatus remains "active".
+ */
+export function isFeaturedFindingEligible(finding: CustodianFinding): boolean {
+  return finding.lifecycleStatus === "active" && !RETIRED_FINDING_STATUSES.has(finding.status);
+}
+
+/**
+ * Eligible Findings first (newest first), then the rest newest first. The
+ * first eligible entry is the featured current reading; retired Findings stay
+ * in the ordered list as history.
+ */
 export function orderFindings(findings: readonly CustodianFinding[]): CustodianFinding[] {
   return [...findings].sort(
     (a, b) =>
-      Number(b.lifecycleStatus === "active") - Number(a.lifecycleStatus === "active") ||
+      Number(isFeaturedFindingEligible(b)) - Number(isFeaturedFindingEligible(a)) ||
       b.updatedAt.localeCompare(a.updatedAt),
   );
 }

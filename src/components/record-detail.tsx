@@ -8,7 +8,11 @@ import { CryptIcon, type CryptGlyph } from "./crypt-icon";
 import { CustodianLine, CustodianPortrait } from "./custodian/custodian-presence";
 import { download, toMarkdown } from "@/lib/format";
 import { formatArchiveDate } from "@/lib/date-format";
-import { custodianReadingLine, supersessionChain } from "@/lib/record-reading";
+import {
+  custodianReadingLine,
+  supersessionChain,
+  type SupersessionInvalidity,
+} from "@/lib/record-reading";
 import { RECORD_KIND_SIGN, recordStanding, STANDING_TONE_CLASS } from "@/lib/record-standing";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -157,7 +161,11 @@ export function RecordDetail({
         </div>
       </header>
 
-      <SupersessionChain replaces={chain.replaces} replacedBy={chain.replacedBy} />
+      <SupersessionChain
+        replaces={chain.replaces}
+        replacedBy={chain.replacedBy}
+        invalid={chain.invalid}
+      />
 
       <div className="mt-8 grid min-w-0 gap-8 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-14">
         <div className="min-w-0 space-y-6">
@@ -277,10 +285,27 @@ function Chip({
 function SupersessionChain({
   replaces,
   replacedBy,
+  invalid,
 }: {
   replaces: DecisionRecord | null;
   replacedBy: DecisionRecord[];
+  invalid: SupersessionInvalidity | null;
 }) {
+  if (invalid) {
+    return (
+      <div className="mt-6 border border-[color:var(--ember)] bg-card px-4 py-3 text-base text-foreground">
+        <p className="font-medium text-[color:var(--ember)]">Invalid supersession chain</p>
+        <p className="mt-1 text-[0.9375rem] text-muted-foreground">
+          {invalid.kind === "self-reference"
+            ? "This decision names itself as the record it replaces. The replacement ancestry is not shown."
+            : "Saved replacement pointers form a cycle. The contradictory ancestry is not shown."}
+        </p>
+        <p className="mt-2 break-all font-mono text-[0.8125rem] text-[color:var(--ash)]">
+          {invalid.path.join(" → ")}
+        </p>
+      </div>
+    );
+  }
   if (!replaces && !replacedBy.length) return null;
   const link = (target: DecisionRecord, emphasised: boolean) => (
     <Link

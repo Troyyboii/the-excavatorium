@@ -1,17 +1,71 @@
 import type { StandingKind } from "./record-standing";
 import type { ArchiveRecord, DecisionRecord } from "./types";
 
+export type SupersessionInvalidity = {
+  kind: "self-reference" | "cycle";
+  /** Decision ids walked before the invalidity was confirmed, ending on the repeat. */
+  path: string[];
+};
+
+export type SupersessionChain = {
+  replaces: DecisionRecord | null;
+  replacedBy: DecisionRecord[];
+  /** Set when saved pointers would present a contradictory replacement chain. */
+  invalid: SupersessionInvalidity | null;
+};
+
+/**
+ * Walks `fromId`'s `supersedesDecisionId` chain. Returns a cycle/self path when
+ * the walk revisits an id; otherwise null. Missing or non-decision targets end
+ * the walk without error.
+ */
+export function findSupersessionCycle(
+  fromId: string,
+  firstTargetId: string | null | undefined,
+  byId: Map<string, ArchiveRecord>,
+): SupersessionInvalidity | null {
+  if (!firstTargetId) return null;
+  if (firstTargetId === fromId) {
+    return { kind: "self-reference", path: [fromId, firstTargetId] };
+  }
+
+  const path = [fromId];
+  const seen = new Set<string>([fromId]);
+  let current: string | null = firstTargetId;
+
+  while (current) {
+    path.push(current);
+    if (seen.has(current)) {
+      return { kind: "cycle", path };
+    }
+    seen.add(current);
+    const next = byId.get(current);
+    if (!next || next.recordType !== "decision") return null;
+    current = next.recordData.supersedesDecisionId;
+  }
+  return null;
+}
+
 /**
  * The decision this one replaced (its saved `supersedesDecisionId`) and the
  * decisions that name it as the one they replaced. Built only from saved
- * fields; missing or non-decision targets are ignored.
+ * fields; missing or non-decision targets are ignored. Cycles and self-links
+ * surface as `invalid` instead of a misleading ancestry.
  */
 export function supersessionChain(
   record: ArchiveRecord,
   allRecords: ArchiveRecord[],
   byId: Map<string, ArchiveRecord>,
-): { replaces: DecisionRecord | null; replacedBy: DecisionRecord[] } {
-  if (record.recordType !== "decision") return { replaces: null, replacedBy: [] };
+): SupersessionChain {
+  if (record.recordType !== "decision") {
+    return { replaces: null, replacedBy: [], invalid: null };
+  }
+
+  const invalid = findSupersessionCycle(record.id, record.recordData.supersedesDecisionId, byId);
+  if (invalid) {
+    return { replaces: null, replacedBy: [], invalid };
+  }
+
   const target = record.recordData.supersedesDecisionId
     ? byId.get(record.recordData.supersedesDecisionId)
     : undefined;
@@ -30,6 +84,7 @@ export function supersessionChain(
   return {
     replaces: target?.recordType === "decision" ? target : null,
     replacedBy,
+    invalid: null,
   };
 }
 
