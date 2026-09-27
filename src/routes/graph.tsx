@@ -464,7 +464,7 @@ function GraphCanvas({
                       y={node.y + 4}
                       fill="var(--foreground)"
                       fontSize="12"
-                      fontFamily="Geist Variable, sans-serif"
+                      fontFamily="Alegreya Sans, sans-serif"
                       fontWeight={active ? 700 : 520}
                     >
                       {truncate(node.record.title, 34)}
