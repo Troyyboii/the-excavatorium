@@ -133,7 +133,8 @@ function HomePage() {
               return (
                 <li key={chamber.type} className="min-w-0">
                   <Link
-                    to={chamber.href}
+                    to="/archive"
+                    search={{ type: chamber.type }}
                     className={cn(
                       "flex h-full flex-col items-center gap-2 border border-border bg-card px-1 pb-4 pt-[18px] transition-colors hover:border-[color:var(--mortar-strong)] hover:bg-accent",
                       FOCUS_RING,

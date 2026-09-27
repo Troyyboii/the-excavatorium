@@ -179,11 +179,15 @@ export function homeGreeting(
   };
 }
 
-/** The Home chambers, in canvas order, with singular and plural names. */
-export const CHAMBERS: readonly { type: RecordType; one: string; many: string; href: string }[] = [
-  { type: "document", one: "Document", many: "Documents", href: "/documents" },
-  { type: "tool", one: "Tool", many: "Tools", href: "/tools" },
-  { type: "conversation", one: "Conversation", many: "Conversations", href: "/conversations" },
-  { type: "decision", one: "Decision", many: "Decisions", href: "/decisions" },
-  { type: "repository", one: "Repository", many: "Repositories", href: "/repositories" },
+/**
+ * The Home chambers, in canvas order, with singular and plural names. Each
+ * opens its chamber in the unified Archive (`/archive?type=…`); the older
+ * per-type list routes stay for existing links.
+ */
+export const CHAMBERS: readonly { type: RecordType; one: string; many: string }[] = [
+  { type: "document", one: "Document", many: "Documents" },
+  { type: "tool", one: "Tool", many: "Tools" },
+  { type: "conversation", one: "Conversation", many: "Conversations" },
+  { type: "decision", one: "Decision", many: "Decisions" },
+  { type: "repository", one: "Repository", many: "Repositories" },
 ];
