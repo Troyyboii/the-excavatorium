@@ -1,24 +1,16 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import {
-  Archive,
-  BookOpen,
-  ChatCenteredDots,
-  FileText,
-  FolderOpen,
-  Gear,
-  House,
-  MagnifyingGlass,
-  Plus,
-  Scales,
-  SignOut,
-  Wrench,
-  X,
-} from "@phosphor-icons/react";
+import { X } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { CryptIcon, type CryptGlyph } from "@/components/crypt-icon";
+import { RECORD_KIND_SIGN } from "@/lib/record-standing";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { useOnlineStatus } from "@/hooks/use-online";
+
+const CANDLE = "text-[color:var(--candlelight)]";
+const FOCUS_RING =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--candlelight)]";
 
 type CaptureLinkItem = {
   to:
@@ -28,28 +20,29 @@ type CaptureLinkItem = {
     | "/repositories/new"
     | "/tools/new";
   label: string;
-  icon: typeof House;
+  glyph: CryptGlyph;
+  toneClass: string;
 };
 const CAPTURE_LINKS: readonly CaptureLinkItem[] = [
-  { to: "/conversations/new", label: "Paste text", icon: ChatCenteredDots },
-  { to: "/documents/new", label: "Add document", icon: FileText },
-  { to: "/conversations/new", label: "Add conversation", icon: ChatCenteredDots },
-  { to: "/decisions/new", label: "Record a decision", icon: Scales },
+  { to: "/conversations/new", label: "Paste text", glyph: "shovel", toneClass: CANDLE },
+  { to: "/documents/new", label: "Add document", ...RECORD_KIND_SIGN.document },
+  { to: "/conversations/new", label: "Add conversation", ...RECORD_KIND_SIGN.conversation },
+  { to: "/decisions/new", label: "Record a decision", ...RECORD_KIND_SIGN.decision },
 ] as const;
 const MORE_CAPTURE_LINKS: readonly CaptureLinkItem[] = [
-  { to: "/repositories/new", label: "Code repository", icon: BookOpen },
-  { to: "/tools/new", label: "Tool", icon: Wrench },
+  { to: "/repositories/new", label: "Code repository", ...RECORD_KIND_SIGN.repository },
+  { to: "/tools/new", label: "Tool", ...RECORD_KIND_SIGN.tool },
 ] as const;
 type ShellLink = {
   to: "/" | "/archive" | "/cases" | "/approvals";
   label: "Home" | "Archive" | "Investigations" | "Review";
-  icon: typeof House;
+  glyph: CryptGlyph;
 };
 const PRIMARY_LINKS: readonly ShellLink[] = [
-  { to: "/", label: "Home", icon: House },
-  { to: "/archive", label: "Archive", icon: Archive },
-  { to: "/cases", label: "Investigations", icon: FolderOpen },
-  { to: "/approvals", label: "Review", icon: Scales },
+  { to: "/", label: "Home", glyph: "lantern" },
+  { to: "/archive", label: "Archive", glyph: "crypt" },
+  { to: "/cases", label: "Investigations", glyph: "key" },
+  { to: "/approvals", label: "Review", glyph: "seal" },
 ];
 
 export function AppShell({ email, children }: { email: string | null; children: ReactNode }) {
@@ -73,23 +66,18 @@ export function AppShell({ email, children }: { email: string | null; children: 
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-30 border-b border-sidebar-border bg-sidebar text-sidebar-foreground">
-        <div className="mx-auto flex min-h-16 max-w-[1440px] items-center gap-2 px-4 md:px-6">
+        <div className="mx-auto flex h-[72px] max-w-[1440px] items-center gap-3 px-4 md:gap-5 md:px-6 xl:gap-10 xl:px-14">
           <Link
             to="/"
             aria-label="The Excavatorium home"
-            className="flex min-h-11 min-w-0 items-center gap-2 rounded-sm pr-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold"
+            className={cn("flex min-h-11 min-w-0 items-center gap-2.5 rounded-sm pr-2", FOCUS_RING)}
           >
-            <img
-              src="/brand/excavatorium-lantern.png"
-              alt=""
-              aria-hidden="true"
-              className="h-9 w-9 shrink-0 object-contain"
-            />
-            <span className="hidden truncate font-serif text-xl tracking-tight sm:block">
+            <CryptIcon glyph="lantern" size={28} className={CANDLE} />
+            <span className="truncate font-serif text-[1.45rem] leading-none text-foreground md:hidden lg:inline xl:text-[1.625rem]">
               The Excavatorium
             </span>
           </Link>
-          <nav className="hidden items-center gap-1 md:flex" aria-label="Primary">
+          <nav className="hidden h-full flex-1 items-stretch gap-1 md:flex" aria-label="Primary">
             {PRIMARY_LINKS.map((item) => (
               <DesktopNavLink
                 key={item.to}
@@ -97,29 +85,33 @@ export function AppShell({ email, children }: { email: string | null; children: 
                 active={item.to === "/archive" ? archiveActive : isActive(item.to)}
               />
             ))}
-            <MoreMenu email={email} onSignOut={onSignOut} active={moreActive} />
+            <div className="ml-auto flex items-center">
+              <MoreMenu email={email} onSignOut={onSignOut} active={moreActive} />
+            </div>
           </nav>
-          <div className="ml-auto flex items-center gap-1.5">
+          <div className="ml-auto flex items-center gap-2.5 md:ml-0">
             <Link
               to="/search"
               aria-label="Search Archive"
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-sm border border-sidebar-border px-3 text-sm text-sidebar-foreground transition-colors hover:border-sidebar-ring hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold"
+              className={cn(
+                "inline-flex h-11 w-11 items-center justify-center rounded-sm border border-[color:var(--mortar-strong)] text-[color:var(--mist)] transition-colors hover:border-[color:var(--candlelight)] hover:text-foreground",
+                FOCUS_RING,
+              )}
             >
-              <MagnifyingGlass size={18} aria-hidden="true" />
-              <span className="hidden md:inline">Search</span>
+              <CryptIcon glyph="search" size={20} />
             </Link>
             <div className="hidden md:block">
               <CaptureMenu online={online} />
             </div>
             <div className="md:hidden">
-              <MoreMenu email={email} onSignOut={onSignOut} active={moreActive} compact />
+              <MoreMenu email={email} onSignOut={onSignOut} active={moreActive} />
             </div>
           </div>
         </div>
       </header>
       {!online ? (
         <div
-          className="border-b border-[color:var(--warning)]/60 bg-[color:var(--warning)]/15 px-4 py-2 text-center text-xs text-foreground"
+          className="border-b border-[color:var(--warning)]/60 bg-[color:var(--warning)]/15 px-4 py-2 text-center text-sm text-foreground"
           role="status"
         >
           Offline. Cached screens may remain visible, but saving and examination are disabled.
@@ -136,22 +128,17 @@ export function AppShell({ email, children }: { email: string | null; children: 
         </div>
       </main>
       <nav
-        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-sidebar-border bg-sidebar px-1 pb-[env(safe-area-inset-bottom)] text-sidebar-foreground shadow-[0_-8px_24px_rgba(17,20,18,0.18)] md:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-sidebar-border bg-sidebar px-1 pb-[env(safe-area-inset-bottom)] text-sidebar-foreground shadow-[0_-8px_24px_rgba(0,0,0,0.35)] md:hidden"
         aria-label="Mobile primary"
       >
-        <MobileNavLink to="/" label="Home" icon={House} active={pathname === "/"} />
-        <MobileNavLink to="/archive" label="Archive" icon={Archive} active={archiveActive} />
+        <MobileNavLink to="/" label="Home" glyph="lantern" active={pathname === "/"} />
+        <MobileNavLink to="/archive" label="Archive" glyph="crypt" active={archiveActive} />
         <CaptureMenu online={online} mobile />
-        <MobileNavLink
-          to="/cases"
-          label="Investigations"
-          icon={FolderOpen}
-          active={isActive("/cases")}
-        />
+        <MobileNavLink to="/cases" label="Investigations" glyph="key" active={isActive("/cases")} />
         <MobileNavLink
           to="/approvals"
           label="Review"
-          icon={Scales}
+          glyph="seal"
           active={isActive("/approvals")}
         />
       </nav>
@@ -159,33 +146,36 @@ export function AppShell({ email, children }: { email: string | null; children: 
   );
 }
 
-function DesktopNavLink({ to, label, active }: ShellLink & { active: boolean }) {
+function DesktopNavLink({ to, label, glyph, active }: ShellLink & { active: boolean }) {
   return (
     <Link
       to={to}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "inline-flex min-h-11 items-center rounded-sm border-b-2 px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold",
+        "-mb-px inline-flex min-h-11 items-center gap-2 border-b-2 px-2.5 text-base transition-colors focus-visible:ring-inset lg:px-3.5 lg:text-[1.0625rem]",
+        FOCUS_RING,
         active
-          ? "border-[color:var(--brass)] text-sidebar-foreground"
-          : "border-transparent text-sidebar-foreground/75 hover:border-sidebar-ring/70 hover:text-sidebar-foreground",
+          ? "border-[color:var(--candlelight)] text-foreground"
+          : "border-transparent text-[color:var(--mist)] hover:text-foreground",
       )}
     >
+      <CryptIcon glyph={glyph} size={20} className={active ? CANDLE : undefined} />
       {label}
     </Link>
   );
 }
 
+const MENU_ITEM =
+  "flex min-h-11 items-center rounded-sm px-3 py-2 text-left text-base text-foreground hover:bg-accent";
+
 function MoreMenu({
   email,
   onSignOut,
   active,
-  compact = false,
 }: {
   email: string | null;
   onSignOut: () => void;
   active: boolean;
-  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   useEffect(() => {
@@ -205,56 +195,52 @@ function MoreMenu({
         aria-haspopup="menu"
         onClick={() => setOpen((value) => !value)}
         className={cn(
-          "inline-flex min-h-11 items-center justify-center rounded-sm border-b-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold",
-          compact ? "w-11 border-transparent" : "px-3",
-          active
-            ? "border-[color:var(--brass)] text-sidebar-foreground"
-            : "border-transparent text-sidebar-foreground/75 hover:text-sidebar-foreground",
+          "inline-flex h-11 w-11 items-center justify-center rounded-sm border transition-colors",
+          FOCUS_RING,
+          active || open
+            ? "border-[color:var(--candlelight)] text-[color:var(--candlelight)]"
+            : "border-[color:var(--mortar-strong)] text-[color:var(--mist)] hover:border-[color:var(--candlelight)] hover:text-foreground",
         )}
       >
-        {compact ? <Gear size={19} aria-hidden="true" /> : "More"}
+        <CryptIcon glyph="hood" size={20} />
       </button>
       {open ? (
         <div
           role="menu"
           aria-label="More destinations"
-          className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-56 overflow-hidden rounded-sm border border-sidebar-border bg-[color:var(--charcoal-stone)] p-1 shadow-xl"
+          className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-60 overflow-hidden rounded-sm border border-[color:var(--mortar-strong)] bg-popover p-1 text-popover-foreground shadow-xl"
         >
           <Link
             to="/settings"
             role="menuitem"
             onClick={() => setOpen(false)}
-            className="flex min-h-11 items-center gap-3 rounded-sm px-3 py-2 text-sm text-sidebar-foreground hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold"
+            className={cn(MENU_ITEM, FOCUS_RING)}
           >
-            <Gear size={18} aria-hidden="true" /> Settings
+            Settings
           </Link>
           <Link
             to="/advanced"
             role="menuitem"
             onClick={() => setOpen(false)}
-            className="flex min-h-11 items-center gap-3 rounded-sm px-3 py-2 text-sm text-sidebar-foreground hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold"
+            className={cn(MENU_ITEM, FOCUS_RING)}
           >
-            <BookOpen size={18} aria-hidden="true" /> Advanced
+            Advanced
           </Link>
-          <div className="my-1 border-t border-sidebar-border" />
-          <p
-            className="truncate px-3 py-1 font-mono text-[10px] text-sidebar-foreground/65"
-            title={email ?? ""}
-          >
-            {email ?? "—"}
+          <div className="my-1 border-t border-border" />
+          <p className="truncate px-3 py-1.5 text-sm text-[color:var(--ash)]" title={email ?? ""}>
+            {email ?? "Not signed in"}
           </p>
-          <button
-            type="button"
-            onClick={onSignOut}
-            className="flex min-h-11 w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm text-sidebar-foreground hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold"
-          >
-            <SignOut size={18} aria-hidden="true" /> Sign out
+          <button type="button" onClick={onSignOut} className={cn(MENU_ITEM, "w-full", FOCUS_RING)}>
+            Sign out
           </button>
         </div>
       ) : null}
     </div>
   );
 }
+
+const CHOICE =
+  "flex min-h-16 items-center gap-4 rounded-sm border border-border bg-card px-4 py-3 text-left text-foreground hover:border-[color:var(--candlelight)] hover:bg-accent";
 
 export function CaptureMenu({
   online,
@@ -315,24 +301,23 @@ export function CaptureMenu({
         setOpen(true);
       }}
       className={cn(
-        "inline-flex min-h-11 items-center justify-center gap-2 rounded-sm border border-[color:var(--brass)] bg-[color:var(--deep-moss)] px-3 text-sm text-[color:var(--bone)] transition-colors hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold disabled:cursor-not-allowed disabled:opacity-50",
-        mobile && "-mt-5 h-12 w-12 rounded-full px-0 shadow-lg",
+        "inline-flex h-11 items-center justify-center gap-2 rounded-sm bg-[color:var(--candlelight)] px-[18px] text-base font-bold text-[color:var(--candle-ink)] transition-colors hover:bg-[color:var(--moonbone)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--moonbone)] focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50",
+        mobile && "-mt-7 h-16 w-16 rounded-full px-0 shadow-[0_6px_18px_rgba(0,0,0,0.45)]",
       )}
     >
-      <Plus size={mobile ? 23 : 18} weight="bold" aria-hidden="true" />
+      <CryptIcon glyph="shovel" size={mobile ? 28 : 20} />
       {mobile ? <span className="sr-only">Add or capture material</span> : <span>{label}</span>}
     </button>
   );
   return (
     <div className={cn("relative", mobile && "flex min-h-16 flex-col items-center justify-center")}>
       {trigger}
-      {mobile ? <span className="mt-1 text-xs">Add</span> : null}
       {open ? (
         <>
           <button
             type="button"
             aria-label="Close capture"
-            className="fixed inset-0 z-40 cursor-default bg-black/50"
+            className="fixed inset-0 z-40 cursor-default bg-black/60"
             onClick={close}
           />
           <div
@@ -341,7 +326,7 @@ export function CaptureMenu({
             aria-modal="true"
             aria-label={step === "choice" ? "Choose an action" : "Capture material"}
             className={cn(
-              "fixed z-50 w-[min(30rem,calc(100vw-2rem))] border border-[color:var(--brass)] bg-popover p-5 text-popover-foreground shadow-2xl",
+              "fixed z-50 w-[min(30rem,calc(100vw-2rem))] border border-[color:var(--mortar-strong)] bg-popover p-5 text-popover-foreground shadow-2xl",
               mobile
                 ? "inset-x-4 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] max-h-[min(36rem,calc(100dvh-7rem))] overflow-y-auto rounded-t-lg"
                 : "right-4 top-20 rounded-sm md:right-6",
@@ -349,10 +334,10 @@ export function CaptureMenu({
           >
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
-                <p className="font-serif text-xl text-foreground">
+                <p className="font-serif text-2xl text-foreground">
                   {step === "choice" ? "Add to the Archive" : "Capture material"}
                 </p>
-                <p className="mt-1 text-sm text-muted-foreground">
+                <p className="mt-1 text-base text-muted-foreground">
                   {step === "choice"
                     ? "Choose what you want to do. Nothing is created yet."
                     : "Choose a supported path. Saving happens in the selected form."}
@@ -362,7 +347,10 @@ export function CaptureMenu({
                 type="button"
                 aria-label="Close capture"
                 onClick={close}
-                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-sm border border-border text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold"
+                className={cn(
+                  "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-sm border border-[color:var(--mortar-strong)] text-foreground hover:bg-accent",
+                  FOCUS_RING,
+                )}
               >
                 <X size={18} aria-hidden="true" />
               </button>
@@ -372,28 +360,24 @@ export function CaptureMenu({
                 <button
                   type="button"
                   onClick={() => setStep("material")}
-                  className="flex min-h-14 items-center justify-between rounded-sm border border-border bg-card px-4 text-left text-foreground hover:border-[color:var(--brass)] hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold"
+                  className={cn(CHOICE, FOCUS_RING)}
                 >
+                  <CryptIcon glyph="shovel" size={24} className={CANDLE} />
                   <span>
-                    <span className="block font-medium">Capture material</span>
+                    <span className="block font-bold">Capture material</span>
                     <span className="block text-sm text-muted-foreground">
                       Add something to the Archive.
                     </span>
                   </span>
-                  <Archive size={20} aria-hidden="true" />
                 </button>
-                <Link
-                  to="/cases"
-                  onClick={close}
-                  className="flex min-h-14 items-center justify-between rounded-sm border border-border bg-card px-4 text-left text-foreground hover:border-[color:var(--brass)] hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold"
-                >
+                <Link to="/cases" onClick={close} className={cn(CHOICE, FOCUS_RING)}>
+                  <CryptIcon glyph="key" size={24} className={CANDLE} />
                   <span>
-                    <span className="block font-medium">Start an Investigation</span>
+                    <span className="block font-bold">Start an Investigation</span>
                     <span className="block text-sm text-muted-foreground">
                       Frame a question and select evidence.
                     </span>
                   </span>
-                  <FolderOpen size={20} aria-hidden="true" />
                 </Link>
               </div>
             ) : (
@@ -401,7 +385,7 @@ export function CaptureMenu({
                 {CAPTURE_LINKS.map((item) => (
                   <CaptureLink key={item.label} {...item} onChoose={close} />
                 ))}
-                <p className="mt-3 border-t border-border pt-3 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                <p className="mt-3 border-t border-border px-3 pt-3 text-sm text-muted-foreground">
                   More capture types
                 </p>
                 {MORE_CAPTURE_LINKS.map((item) => (
@@ -410,7 +394,10 @@ export function CaptureMenu({
                 <button
                   type="button"
                   onClick={() => setStep("choice")}
-                  className="mt-2 min-h-11 self-start px-2 text-sm text-muted-foreground underline decoration-[color:var(--brass)] underline-offset-4 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold"
+                  className={cn(
+                    "mt-2 min-h-11 self-start px-3 text-base text-muted-foreground underline decoration-[color:var(--candlelight)] underline-offset-4 hover:text-foreground",
+                    FOCUS_RING,
+                  )}
                 >
                   Back
                 </button>
@@ -426,34 +413,37 @@ export function CaptureMenu({
 function CaptureLink({
   to,
   label,
-  icon: Icon,
+  glyph,
+  toneClass,
   onChoose,
 }: CaptureLinkItem & { onChoose: () => void }) {
   return (
     <Link
       to={to}
       onClick={onChoose}
-      className="flex min-h-11 items-center gap-3 rounded-sm px-3 py-2 text-sm text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold"
+      className={cn(
+        "flex min-h-11 items-center gap-3 rounded-sm px-3 py-2 text-base text-foreground hover:bg-accent",
+        FOCUS_RING,
+      )}
     >
-      <Icon size={18} className="text-[color:var(--brass)]" aria-hidden="true" />
+      <CryptIcon glyph={glyph} size={20} className={toneClass} />
       {label}
     </Link>
   );
 }
 
-function MobileNavLink({ to, label, icon: Icon, active }: ShellLink & { active: boolean }) {
+function MobileNavLink({ to, label, glyph, active }: ShellLink & { active: boolean }) {
   return (
     <Link
       to={to}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "flex min-h-16 flex-col items-center justify-center gap-1 rounded-sm text-[11px] leading-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-luminous-gold",
-        active
-          ? "bg-[color:var(--deep-moss)] text-[color:var(--bone)]"
-          : "text-sidebar-foreground/75",
+        "flex min-h-16 flex-col items-center justify-center gap-1 rounded-sm text-xs leading-tight focus-visible:ring-inset",
+        FOCUS_RING,
+        active ? CANDLE : "text-[color:var(--mist)]",
       )}
     >
-      <Icon size={21} weight={active ? "fill" : "regular"} aria-hidden="true" />
+      <CryptIcon glyph={glyph} size={24} />
       <span>{label}</span>
     </Link>
   );
