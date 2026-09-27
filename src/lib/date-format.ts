@@ -48,6 +48,10 @@ function formatDateParts(parts: DateParts): string {
   return `${parts.day} ${MONTHS_SHORT[parts.month - 1]} ${parts.year}`;
 }
 
+function normalizeMonthShort(value: string): string {
+  return value === "Sept" ? "Sep" : value;
+}
+
 /**
  * Formats archive dates as `22 Sep 2026`, with local viewer time for timestamps.
  * Date-only values are kept as calendar dates and never parsed through UTC.
@@ -72,7 +76,7 @@ export function formatArchiveDate(value: string | null | undefined, timeZone?: s
   const parts = Object.fromEntries(
     formatter.formatToParts(date).map(({ type, value: partValue }) => [type, partValue]),
   );
-  return `${Number(parts.day)} ${parts.month} ${parts.year}`;
+  return `${Number(parts.day)} ${normalizeMonthShort(parts.month)} ${parts.year}`;
 }
 
 /** Formats archive timestamps as `22 Sep 2026, 08:48` in the viewer's local timezone. */
@@ -95,7 +99,7 @@ export function formatArchiveDateTime(
   const parts = Object.fromEntries(
     formatter.formatToParts(date).map(({ type, value: partValue }) => [type, partValue]),
   );
-  return `${Number(parts.day)} ${parts.month} ${parts.year}, ${parts.hour}:${parts.minute}`;
+  return `${Number(parts.day)} ${normalizeMonthShort(parts.month)} ${parts.year}, ${parts.hour}:${parts.minute}`;
 }
 
 /**
@@ -109,5 +113,7 @@ export function formatCalendarDate(date: Date): string {
 
 /** Formats a calendar month abbreviation in English. */
 export function formatMonthShort(date: Date): string {
-  return new Intl.DateTimeFormat(DISPLAY_LOCALE, { month: "short" }).format(date);
+  return normalizeMonthShort(
+    new Intl.DateTimeFormat(DISPLAY_LOCALE, { month: "short" }).format(date),
+  );
 }

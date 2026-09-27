@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowCounterClockwise,
   CaretLeft,
@@ -74,6 +74,8 @@ function GraphPage() {
   const [term, setTerm] = useState("");
   const [zoom, setZoom] = useState(1.15);
   const [mobileSheet, setMobileSheet] = useState<"details" | "links" | null>(null);
+  const mobileSheetRef = useRef<HTMLDivElement>(null);
+  const mobileSheetOpenerRef = useRef<HTMLElement | null>(null);
   const linkReadState = getGraphLinkReadState({
     pending: query.state.linksPending,
     error: query.linksError,
@@ -112,6 +114,62 @@ function GraphPage() {
   const projectedById = new Map(projected.map((node) => [node.id, node]));
 
   useEffect(() => setZoom(1.15), [search.types]);
+
+  useEffect(() => {
+    if (!mobileSheet) {
+      const opener = mobileSheetOpenerRef.current;
+      if (opener && document.contains(opener)) opener.focus();
+      mobileSheetOpenerRef.current = null;
+      return;
+    }
+
+    const sheetElement = mobileSheetRef.current;
+    if (!sheetElement) return;
+    const sheet = sheetElement;
+
+    const getFocusable = () =>
+      Array.from(
+        sheet.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((element) => element.getClientRects().length > 0);
+
+    const focusable = getFocusable();
+    (focusable[0] ?? sheet).focus();
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMobileSheet(null);
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const currentFocusable = getFocusable();
+      if (currentFocusable.length === 0) {
+        event.preventDefault();
+        sheet.focus();
+        return;
+      }
+
+      const first = currentFocusable[0];
+      const last = currentFocusable[currentFocusable.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || active === sheet || !sheet.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (
+        !event.shiftKey &&
+        (active === last || active === sheet || !sheet.contains(active))
+      ) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [mobileSheet]);
 
   function updateSearch(patch: Partial<GraphSearch>) {
     void navigate({ search: (previous) => ({ ...previous, ...patch }), replace: true });
@@ -286,7 +344,10 @@ function GraphPage() {
               zoom={zoom}
               setZoom={setZoom}
               selectRecord={selectRecord}
-              setMobileSheet={setMobileSheet}
+              openMobileSheet={(value, opener) => {
+                mobileSheetOpenerRef.current = opener;
+                setMobileSheet(value);
+              }}
               linkReadState={linkReadState}
             />
           ) : null}
@@ -315,10 +376,12 @@ function GraphPage() {
 
       {mobileSheet ? (
         <div
+          ref={mobileSheetRef}
           className="fixed inset-0 z-50 bg-black/50 p-4 pt-20 xl:hidden"
           role="dialog"
           aria-modal="true"
           aria-label={mobileSheet === "details" ? "Record details" : "Record links"}
+          tabIndex={-1}
         >
           <div className="ml-auto max-h-full w-full max-w-md overflow-y-auto rounded-lg bg-card p-5 shadow-2xl">
             <button
@@ -364,7 +427,7 @@ function GraphCanvas({
   zoom,
   setZoom,
   selectRecord,
-  setMobileSheet,
+  openMobileSheet,
   linkReadState,
 }: {
   graph: ReturnType<typeof buildArchiveGraph>;
@@ -377,7 +440,7 @@ function GraphCanvas({
   zoom: number;
   setZoom: React.Dispatch<React.SetStateAction<number>>;
   selectRecord: (id: string) => void;
-  setMobileSheet: (value: "details" | "links") => void;
+  openMobileSheet: (value: "details" | "links", opener: HTMLElement) => void;
   linkReadState: GraphLinkReadState;
 }) {
   return (
@@ -510,14 +573,14 @@ function GraphCanvas({
             <button
               type="button"
               className="min-h-11 rounded-md bg-primary px-3 text-sm text-primary-foreground"
-              onClick={() => setMobileSheet("details")}
+              onClick={(event) => openMobileSheet("details", event.currentTarget)}
             >
               Details
             </button>
             <button
               type="button"
               className="min-h-11 rounded-md border border-input px-3 text-sm"
-              onClick={() => setMobileSheet("links")}
+              onClick={(event) => openMobileSheet("links", event.currentTarget)}
             >
               Links
             </button>

@@ -89,9 +89,7 @@ export function CaseReadingSurface({
 
       <div className="grid gap-4 p-4 md:p-5">
         <div className="border border-border bg-[color:var(--vault-deep)] p-4">
-          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:var(--candlelight)]">
-            Owner context
-          </p>
+          <p className="text-sm font-medium text-[color:var(--candlelight)]">Owner context</p>
           <h3 className="mt-1 font-serif text-lg">Not archive evidence</h3>
           {bundle.ownerContext.trim() ? (
             <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6">
@@ -105,12 +103,12 @@ export function CaseReadingSurface({
         <div className="border border-border">
           <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border px-4 py-3">
             <div>
-              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:var(--candlelight)]">
+              <p className="text-sm font-medium text-[color:var(--candlelight)]">
                 Read-only evidence bundle
               </p>
               <h3 className="mt-1 font-serif text-xl">Included archive records</h3>
             </div>
-            <span className="font-mono text-[10px] text-muted-foreground">
+            <span className="text-sm text-muted-foreground">
               {bundle.serializedChars.toLocaleString()} / {CASE_READING_MAX_CHARS.toLocaleString()}{" "}
               serialized chars
             </span>
@@ -122,7 +120,7 @@ export function CaseReadingSurface({
                 return (
                   <article key={record.recordId} className="p-4">
                     <div className="flex items-start gap-3">
-                      <span className="mt-0.5 font-mono text-xs text-[color:var(--candlelight)]">
+                      <span className="mt-0.5 text-sm font-medium text-[color:var(--candlelight)]">
                         {String(index + 1).padStart(2, "0")}
                       </span>
                       <div className="min-w-0 flex-1">
@@ -139,16 +137,16 @@ export function CaseReadingSurface({
                           ) : (
                             <h4 className="font-serif text-lg">{record.title}</h4>
                           )}
-                          <span className="inline-flex min-h-7 items-center gap-1 rounded-full border border-[color:var(--mortar-strong)] px-2 py-1 font-mono text-[10px] uppercase text-[color:var(--candlelight)]">
+                          <span className="inline-flex min-h-7 items-center gap-1 rounded-full border border-[color:var(--mortar-strong)] px-2 py-1 text-sm font-medium text-[color:var(--candlelight)]">
                             <FileText size={12} aria-hidden="true" />
                             {RECORD_TYPE_LABEL[record.recordType]}
                           </span>
                         </div>
-                        <p className="mt-2 break-all font-mono text-[10px] text-muted-foreground">
-                          Record ID · {record.recordId}
+                        <p className="mt-2 break-all text-sm text-muted-foreground">
+                          Record ID: {record.recordId}
                         </p>
-                        <p className="mt-2 text-xs text-[color:var(--candlelight)]">
-                          Why admitted ·{" "}
+                        <p className="mt-2 text-sm text-[color:var(--candlelight)]">
+                          <span className="font-medium text-foreground">Why admitted:</span>{" "}
                           {describeCaseReadingAdmission({
                             decision: "included",
                             reasonCode: "selected_scope",
@@ -168,7 +166,7 @@ export function CaseReadingSurface({
                                 key={record.recordId + "-" + field.label}
                                 className="grid gap-1 py-3 sm:grid-cols-[minmax(9rem,0.35fr)_minmax(0,1fr)] sm:gap-4"
                               >
-                                <dt className="text-xs font-medium text-muted-foreground">
+                                <dt className="text-sm font-medium text-muted-foreground">
                                   {field.label}
                                 </dt>
                                 <dd className="whitespace-pre-wrap break-words text-sm">
@@ -179,20 +177,20 @@ export function CaseReadingSurface({
                           </dl>
                         ) : null}
                         {record.truncatedFields.length ? (
-                          <p className="mt-3 text-xs text-[color:var(--candlelight)]">
+                          <p className="mt-3 text-sm text-[color:var(--candlelight)]">
                             Truncated fields: {record.truncatedFields.join(", ")}.
                           </p>
                         ) : null}
                         {record.omittedFields.length ? (
-                          <p className="mt-2 text-xs text-[color:var(--ember)]">
+                          <p className="mt-2 text-sm text-[color:var(--ember)]">
                             Omitted from the reading limit: {record.omittedFields.join(", ")}.
                           </p>
                         ) : null}
                         <details className="mt-4 border-t border-border pt-3">
-                          <summary className="min-h-11 cursor-pointer py-2 text-xs font-medium text-[color:var(--candlelight)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--candlelight)]">
+                          <summary className="min-h-11 cursor-pointer py-2 text-sm font-medium text-[color:var(--candlelight)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--candlelight)]">
                             Source provenance
                           </summary>
-                          <ul className="mt-2 space-y-2 text-xs text-muted-foreground">
+                          <ul className="mt-2 space-y-2 text-sm leading-6 text-muted-foreground">
                             {record.provenance.map((line) => (
                               <li key={line} className="break-words">
                                 {line}
@@ -231,26 +229,24 @@ function ReadingHeader({
   return (
     <header className="flex flex-col gap-3 border-b border-border px-4 py-4 sm:flex-row sm:items-end sm:justify-between md:px-5">
       <div>
-        <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-[color:var(--candlelight)]">
-          Custodian boundary
-        </p>
+        <p className="text-sm font-medium text-[color:var(--candlelight)]">Custodian boundary</p>
         <h2 className="mt-1 font-serif text-2xl">Case Reading</h2>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
           Bounded, read-only projection of the Case&apos;s selected canonical archive records. No AI
           or provider run is invoked.
         </p>
       </div>
-      <dl className="grid grid-cols-3 gap-3 text-right font-mono text-[10px] text-muted-foreground">
+      <dl className="grid grid-cols-3 gap-3 text-right text-sm text-muted-foreground">
         <div>
-          <dt>Selected</dt>
+          <dt className="font-medium text-[color:var(--mist)]">Selected</dt>
           <dd className="mt-1 text-sm text-foreground">{selectedCount}</dd>
         </div>
         <div>
-          <dt>Included</dt>
+          <dt className="font-medium text-[color:var(--mist)]">Included</dt>
           <dd className="mt-1 text-sm text-foreground">{includedCount}</dd>
         </div>
         <div>
-          <dt>Serialized</dt>
+          <dt className="font-medium text-[color:var(--mist)]">Serialized</dt>
           <dd className="mt-1 text-sm text-foreground">{serializedChars.toLocaleString()}</dd>
         </div>
       </dl>
@@ -289,9 +285,7 @@ function ReadingBoundary({ bundle }: { bundle: ReturnType<typeof buildCaseReadin
   return (
     <div className="border border-[color:var(--mortar-strong)]/55 bg-[color:var(--vault-deep)]">
       <div className="border-b border-border px-4 py-3">
-        <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:var(--candlelight)]">
-          Reading boundaries
-        </p>
+        <p className="text-sm font-medium text-[color:var(--candlelight)]">Reading boundaries</p>
         <h3 className="mt-1 font-serif text-xl">What the bundle does not resolve</h3>
       </div>
       <div className="grid gap-4 p-4 md:grid-cols-2">
@@ -299,7 +293,7 @@ function ReadingBoundary({ bundle }: { bundle: ReturnType<typeof buildCaseReadin
           <BoundaryList
             title="Excluded or unavailable"
             items={bundle.excludedRecords.map(
-              (item) => item.recordId + " · " + describeCaseReadingExclusion(item.reason),
+              (item) => `Record ID: ${item.recordId}. ${describeCaseReadingExclusion(item.reason)}`,
             )}
           />
         ) : null}
@@ -349,7 +343,7 @@ function BoundaryList({ title, items }: { title: string; items: readonly string[
         <WarningCircle size={16} className="text-[color:var(--ember)]" aria-hidden="true" />
         {title}
       </h4>
-      <ul className="mt-2 space-y-2 text-xs leading-5 text-muted-foreground">
+      <ul className="mt-2 space-y-2 text-sm leading-6 text-muted-foreground">
         {items.map((item) => (
           <li key={item} className="break-words">
             {item}
@@ -367,14 +361,13 @@ function SignalList({ title, items }: { title: string; items: readonly CaseReadi
         <Info size={16} className="text-[color:var(--candlelight)]" aria-hidden="true" />
         {title}
       </h4>
-      <ul className="mt-2 space-y-2 text-xs leading-5 text-muted-foreground">
+      <ul className="mt-2 space-y-2 text-sm leading-6 text-muted-foreground">
         {items.map((item) => (
           <li key={item.recordId + "-" + item.message} className="break-words">
-            <span className="font-mono text-[10px] text-[color:var(--candlelight)]">
-              {item.recordId}
+            <span className="font-medium text-[color:var(--candlelight)]">
+              Record ID: {item.recordId}
             </span>
-            <span className="mx-1">·</span>
-            {item.message}
+            <span className="block">{item.message}</span>
           </li>
         ))}
       </ul>

@@ -178,22 +178,57 @@ function MoreMenu({
   active: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const wasOpenRef = useRef(false);
+  const restoreFocusRef = useRef(false);
+
+  function closeMenu(restoreFocus = true) {
+    restoreFocusRef.current = restoreFocus;
+    setOpen(false);
+  }
+
   useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    if (!open) {
+      if (wasOpenRef.current) {
+        wasOpenRef.current = false;
+        if (restoreFocusRef.current) triggerRef.current?.focus();
+        restoreFocusRef.current = false;
+      }
+      return;
+    }
+    wasOpenRef.current = true;
   }, [open]);
   return (
-    <div className="relative">
+    <div
+      className="relative"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          closeMenu(false);
+        }
+      }}
+    >
       <button
+        ref={triggerRef}
         type="button"
         aria-label="More destinations"
         aria-expanded={open}
         aria-haspopup="menu"
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => (open ? closeMenu() : setOpen(true))}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && open) {
+            event.preventDefault();
+            closeMenu();
+            return;
+          }
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            setOpen(true);
+            queueMicrotask(() =>
+              menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus(),
+            );
+          }
+        }}
         className={cn(
           "inline-flex h-11 w-11 items-center justify-center rounded-sm border transition-colors",
           FOCUS_RING,
@@ -206,14 +241,33 @@ function MoreMenu({
       </button>
       {open ? (
         <div
+          ref={menuRef}
           role="menu"
           aria-label="More destinations"
+          onKeyDown={(event) => {
+            const items = Array.from(
+              event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+            );
+            const index = items.indexOf(document.activeElement as HTMLElement);
+            if (event.key === "Escape") {
+              event.preventDefault();
+              closeMenu();
+            } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+              event.preventDefault();
+              if (!items.length) return;
+              const direction = event.key === "ArrowDown" ? 1 : -1;
+              items[(index + direction + items.length) % items.length]?.focus();
+            } else if (event.key === "Home" || event.key === "End") {
+              event.preventDefault();
+              (event.key === "Home" ? items[0] : items.at(-1))?.focus();
+            }
+          }}
           className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-60 overflow-hidden rounded-sm border border-[color:var(--mortar-strong)] bg-popover p-1 text-popover-foreground shadow-xl"
         >
           <Link
             to="/settings"
             role="menuitem"
-            onClick={() => setOpen(false)}
+            onClick={() => closeMenu(false)}
             className={cn(MENU_ITEM, FOCUS_RING)}
           >
             Settings
@@ -221,7 +275,7 @@ function MoreMenu({
           <Link
             to="/advanced"
             role="menuitem"
-            onClick={() => setOpen(false)}
+            onClick={() => closeMenu(false)}
             className={cn(MENU_ITEM, FOCUS_RING)}
           >
             Advanced
@@ -230,7 +284,15 @@ function MoreMenu({
           <p className="truncate px-3 py-1.5 text-sm text-[color:var(--ash)]" title={email ?? ""}>
             {email ?? "Not signed in"}
           </p>
-          <button type="button" onClick={onSignOut} className={cn(MENU_ITEM, "w-full", FOCUS_RING)}>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              closeMenu(false);
+              onSignOut();
+            }}
+            className={cn(MENU_ITEM, "w-full", FOCUS_RING)}
+          >
             Sign out
           </button>
         </div>
@@ -291,7 +353,7 @@ export function CaptureMenu({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open]);
+  }, [open, step]);
   const trigger = (
     <button
       type="button"

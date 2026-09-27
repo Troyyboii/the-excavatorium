@@ -99,7 +99,7 @@ describe("Excavatorium shell", () => {
         .getByRole("menuitem", { name: /Advanced/ })
         .getAttribute("href"),
     ).toBe("/advanced");
-    expect(within(more).getByRole("button", { name: /Sign out/ })).toBeTruthy();
+    expect(within(more).getByRole("menuitem", { name: /Sign out/ })).toBeTruthy();
   });
   test("keeps the mobile bar to Home, Archive, Add, Investigations, and Review", async () => {
     await renderShell();
@@ -135,5 +135,62 @@ describe("Excavatorium shell", () => {
     await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: "Choose an action" })).toBeNull(),
     );
+  });
+
+  test("moves focus to the new Capture step", async () => {
+    const user = userEvent.setup();
+    await renderShell();
+    await user.click(screen.getAllByRole("button", { name: "Add or capture material" })[0]);
+    const dialog = screen.getByRole("dialog", { name: "Choose an action" });
+    await user.click(within(dialog).getByRole("button", { name: /Capture material/ }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("dialog", { name: "Capture material" })).toBeTruthy();
+      expect(document.activeElement?.getAttribute("aria-label")).toBe("Close capture");
+    });
+  });
+
+  test("restores More focus on Escape and closes when focus leaves", async () => {
+    const user = userEvent.setup();
+    await renderShell();
+    const primary = screen.getByRole("navigation", { name: "Primary" });
+    const trigger = within(primary).getByRole("button", { name: "More destinations" });
+    await user.click(trigger);
+    const menu = screen.getByRole("menu", { name: "More destinations" });
+    await user.tab();
+    expect(document.activeElement).toBe(within(menu).getByRole("menuitem", { name: /Settings/ }));
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByRole("menu", { name: "More destinations" })).toBeNull();
+      expect(document.activeElement).toBe(trigger);
+    });
+
+    await user.click(trigger);
+    const reopened = screen.getByRole("menu", { name: "More destinations" });
+    await user.tab();
+    await user.tab();
+    await user.tab();
+    await user.tab();
+    await waitFor(() =>
+      expect(screen.queryByRole("menu", { name: "More destinations" })).toBeNull(),
+    );
+  });
+
+  test("supports arrow-key navigation in More", async () => {
+    const user = userEvent.setup();
+    await renderShell();
+    const primary = screen.getByRole("navigation", { name: "Primary" });
+    const trigger = within(primary).getByRole("button", { name: "More destinations" });
+    await user.click(trigger);
+    const menu = screen.getByRole("menu", { name: "More destinations" });
+    const settings = within(menu).getByRole("menuitem", { name: /Settings/ });
+    const advanced = within(menu).getByRole("menuitem", { name: /Advanced/ });
+
+    await user.keyboard("{ArrowDown}");
+    await waitFor(() => expect(document.activeElement).toBe(settings));
+    await user.keyboard("{ArrowDown}");
+    expect(document.activeElement).toBe(advanced);
+    await user.keyboard("{ArrowUp}");
+    expect(document.activeElement).toBe(settings);
   });
 });

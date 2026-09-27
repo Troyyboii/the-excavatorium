@@ -1825,14 +1825,14 @@ function ExcavationFlow() {
   return (
     <ol
       aria-label="How excavation works"
-      className="flex flex-col gap-3 text-[0.9375rem] text-foreground sm:flex-row sm:flex-wrap sm:items-center sm:gap-0"
+      className="grid gap-3 text-[0.9375rem] text-foreground sm:grid-cols-2 sm:items-center sm:gap-x-4 sm:gap-y-3 xl:flex xl:flex-nowrap xl:gap-0"
     >
       {EXCAVATION_STEPS.map((step, index) => (
         <li key={step.label} className="flex items-center">
           {index > 0 ? (
             <span
               aria-hidden="true"
-              className="mx-4 hidden h-px w-10 bg-[color:var(--mortar-strong)] sm:block"
+              className="mx-4 hidden h-px w-10 bg-[color:var(--mortar-strong)] xl:block"
             />
           ) : null}
           <span className="flex items-center gap-2">

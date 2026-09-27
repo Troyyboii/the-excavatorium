@@ -18,8 +18,10 @@ describe("archive date formatting", () => {
   });
 
   test("formats timestamps with canonical date style and an explicit 24-hour clock", () => {
+    expect(formatArchiveDate("2026-09-22T08:48:00.000Z", "UTC")).toBe("22 Sep 2026");
     expect(formatArchiveDateTime("2026-08-22T08:48:00.000Z", "UTC")).toBe("22 Aug 2026, 08:48");
     expect(formatArchiveDateTime("2026-08-22T23:07:00.000Z", "UTC")).toBe("22 Aug 2026, 23:07");
+    expect(formatArchiveDateTime("2026-09-22T08:48:00.000Z", "UTC")).toBe("22 Sep 2026, 08:48");
     expect(formatArchiveDateTime("2026-08-22T08:48:00.000Z", "Europe/Zagreb")).toBe(
       "22 Aug 2026, 10:48",
     );
@@ -35,6 +37,7 @@ describe("archive date formatting", () => {
   test("formats calendar helpers in English and stable numeric form", () => {
     expect(formatCalendarDate(new Date(2026, 7, 5))).toBe("05/08/26");
     expect(formatMonthShort(new Date("2026-08-05T00:00:00Z"))).toBe("Aug");
+    expect(formatMonthShort(new Date("2026-09-05T00:00:00Z"))).toBe("Sep");
     expect(formatMonthShort(new Date("2026-08-05T00:00:00Z"))).not.toMatch(/kol|srp/i);
   });
 });

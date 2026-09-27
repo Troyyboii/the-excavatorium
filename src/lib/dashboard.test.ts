@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildDashboardViewModel } from "./dashboard";
+import { buildDashboardViewModel, needsAttention } from "./dashboard";
 import type { ArchiveLink, ArchiveRecord, BaseArchiveRecord } from "./types";
 
 function base(id: string, title: string, isExample = false): Omit<BaseArchiveRecord, "recordType"> {
@@ -82,6 +82,26 @@ const links: ArchiveLink[] = [
 ];
 
 describe("buildDashboardViewModel", () => {
+  test("does not flag a repository with a written final verdict as awaiting judgment", () => {
+    const repositoryWithVerdict = {
+      ...records[1],
+      recordData: {
+        ...records[1].recordData,
+        finalVerdict: "Keep this repository under consideration for later comparison.",
+      },
+    } as ArchiveRecord;
+
+    expect(needsAttention(repositoryWithVerdict)).toBe(false);
+
+    const model = buildDashboardViewModel(
+      records.map((record) => (record.id === "repository" ? repositoryWithVerdict : record)),
+      links,
+      new Date("2026-08-08"),
+    );
+    expect(model.attentionItems.map((item) => item.record.id)).not.toContain("repository");
+    expect(model.attentionCount).toBe(2);
+  });
+
   test("counts records matching the needs-review rules", () => {
     const model = buildDashboardViewModel(records, links, new Date("2026-08-08"));
     expect(model.totalRecords).toBe(3);

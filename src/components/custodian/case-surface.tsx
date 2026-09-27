@@ -173,7 +173,7 @@ export function CaseListSurface({
                   <span className="block truncate font-serif text-base text-white-gold">
                     {item.title}
                   </span>
-                  <span className="mt-1 block truncate text-xs text-muted-foreground">
+                  <span className="mt-1 block truncate text-sm text-muted-foreground">
                     {item.currentQuestion || "No current question recorded."}
                   </span>
                 </span>
@@ -261,25 +261,33 @@ export function CaseDetailSurface({
     evidenceCount: item.archiveScope.recordIds.length,
     findingCount: findings.length,
   });
-  const findingItem = (finding: CustodianFinding) => ({
-    id: finding.id,
-    title: finding.title,
-    meta: `${finding.analysisMode} · ${finding.status} · ${finding.originKind}${
-      findingEvidence.some(
-        (link) => link.findingId === finding.id && link.relationshipKind === "contrary",
-      )
-        ? " · contrary material"
-        : ""
-    }`,
-    sourceRecord: finding.sourceRecordId ? recordsById.get(finding.sourceRecordId) : undefined,
-    details: (
-      <FindingDetails
-        finding={finding}
-        evidence={evidence}
-        evidenceLinks={findingEvidence.filter((link) => link.findingId === finding.id)}
-      />
-    ),
-  });
+  const findingItem = (finding: CustodianFinding) => {
+    const hasContraryMaterial = findingEvidence.some(
+      (link) => link.findingId === finding.id && link.relationshipKind === "contrary",
+    );
+    return {
+      id: finding.id,
+      title: finding.title,
+      meta: (
+        <MetaFields
+          fields={[
+            ["Analysis mode", finding.analysisMode],
+            ["Status", finding.status],
+            ["Origin", finding.originKind],
+            ...(hasContraryMaterial ? [["Evidence", "Contrary material linked"] as const] : []),
+          ]}
+        />
+      ),
+      sourceRecord: finding.sourceRecordId ? recordsById.get(finding.sourceRecordId) : undefined,
+      details: (
+        <FindingDetails
+          finding={finding}
+          evidence={evidence}
+          evidenceLinks={findingEvidence.filter((link) => link.findingId === finding.id)}
+        />
+      ),
+    };
+  };
 
   return (
     <div className="space-y-8">
@@ -456,7 +464,14 @@ export function CaseDetailSurface({
             items={claims.map((claim) => ({
               id: claim.id,
               title: claim.statement,
-              meta: `${claim.status} · ${claim.confidence}% confidence`,
+              meta: (
+                <MetaFields
+                  fields={[
+                    ["Status", claim.status],
+                    ["Confidence", `${claim.confidence}%`],
+                  ]}
+                />
+              ),
               sourceRecord: claim.sourceRecordId
                 ? recordsById.get(claim.sourceRecordId)
                 : undefined,
@@ -469,7 +484,14 @@ export function CaseDetailSurface({
             items={evidence.map((entry) => ({
               id: entry.id,
               title: entry.title || "Untitled evidence",
-              meta: `${entry.sourceClassification} · captured ${formatRecordDate(entry.capturedAt)}`,
+              meta: (
+                <MetaFields
+                  fields={[
+                    ["Source", entry.sourceClassification],
+                    ["Captured", formatRecordDate(entry.capturedAt)],
+                  ]}
+                />
+              ),
               sourceRecord: entry.sourceRecordId
                 ? recordsById.get(entry.sourceRecordId)
                 : undefined,
@@ -482,7 +504,14 @@ export function CaseDetailSurface({
             items={actions.map((action) => ({
               id: action.id,
               title: action.title,
-              meta: `${action.status} · priority ${action.priority}`,
+              meta: (
+                <MetaFields
+                  fields={[
+                    ["Status", action.status],
+                    ["Priority", action.priority],
+                  ]}
+                />
+              ),
             }))}
           />
           <CaseCollection
@@ -492,7 +521,14 @@ export function CaseDetailSurface({
             items={members.map((member) => ({
               id: member.id,
               title: member.displayName,
-              meta: `${member.roleLabel || "Role not recorded"} · ${member.lifecycleStatus}`,
+              meta: (
+                <MetaFields
+                  fields={[
+                    ["Role", member.roleLabel || "Role not recorded"],
+                    ["Status", member.lifecycleStatus],
+                  ]}
+                />
+              ),
             }))}
           />
           <Section
@@ -756,13 +792,13 @@ function CaseEditor({
             onChange={(recordIds) => setArchiveScope((scope) => ({ ...scope, recordIds }))}
             disabled={archiveLoading || !archiveReady}
           />
-          <span className="text-xs text-muted-foreground">
+          <span className="text-sm text-muted-foreground">
             Select owner-visible canonical archive records in reading order. Maximum{" "}
             {CASE_ARCHIVE_SCOPE_MAX_RECORDS}; Case Reading is bounded at{" "}
             {CASE_READING_MAX_CHARS.toLocaleString()} serialized characters.
           </span>
           {archiveScope.recordIds.length && !archiveReady ? (
-            <span className="text-xs text-risk" role="alert">
+            <span className="text-sm text-risk" role="alert">
               Load the archive before saving selected evidence.
             </span>
           ) : null}
@@ -779,7 +815,7 @@ function CaseEditor({
             className="border border-luminous-gold/30 bg-background px-3 py-2"
             aria-label="Owner context (not archive evidence)"
           />
-          <span className="text-xs text-muted-foreground">
+          <span className="text-sm text-muted-foreground">
             Explicit context stays attached to the Case and is never represented as an archive
             record. {archiveScope.freeTextContext.length.toLocaleString()}/
             {CASE_ARCHIVE_CONTEXT_MAX_CHARS.toLocaleString()} characters.
@@ -821,7 +857,7 @@ function CaseField({
         {required ? <span className="text-luminous-gold"> *</span> : null}
       </span>
       {children}
-      {hint ? <span className="text-xs text-muted-foreground">{hint}</span> : null}
+      {hint ? <span className="text-sm text-muted-foreground">{hint}</span> : null}
     </label>
   );
 }
@@ -841,7 +877,7 @@ function CaseCollection({
   items: readonly {
     id: string;
     title: string;
-    meta: string;
+    meta: ReactNode;
     sourceRecord?: ArchiveRecord;
     details?: ReactNode;
   }[];
@@ -865,11 +901,9 @@ function CaseCollection({
                   ) : (
                     <span className="block text-sm text-white-gold">{item.title}</span>
                   )}
-                  <span className="mt-1 block font-mono text-[10px] text-muted-foreground">
-                    {item.meta}
-                  </span>
+                  <div className="mt-1">{item.meta}</div>
                   {item.sourceRecord ? (
-                    <span className="mt-1 block text-[10px] text-muted-foreground">
+                    <span className="mt-1 block text-sm leading-6 text-muted-foreground">
                       Source record: {item.sourceRecord.title}
                     </span>
                   ) : null}
@@ -884,6 +918,23 @@ function CaseCollection({
         <p className="p-5 text-sm text-muted-foreground">{empty}</p>
       )}
     </Section>
+  );
+}
+
+function MetaFields({
+  fields,
+}: {
+  fields: readonly (readonly [label: string, value: ReactNode])[];
+}) {
+  return (
+    <dl className="flex flex-wrap gap-x-4 gap-y-1 text-sm leading-6 text-muted-foreground">
+      {fields.map(([label, value]) => (
+        <div key={label} className="flex min-w-0 gap-1">
+          <dt className="font-medium text-[color:var(--mist)]">{label}:</dt>
+          <dd className="break-words">{value}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
@@ -907,12 +958,16 @@ export function FindingDetails({
   ] as const;
   const evidenceTitles = (links: readonly CustodianFindingEvidence[]) =>
     links
-      .map((link) => evidenceById.get(link.evidenceId)?.title ?? `Unavailable · ${link.evidenceId}`)
+      .map(
+        (link) =>
+          evidenceById.get(link.evidenceId)?.title ??
+          `Unavailable evidence (ID: ${link.evidenceId})`,
+      )
       .join(", ");
 
   return (
     <div className="space-y-3 border-l border-luminous-gold/30 pl-3 text-sm leading-6 text-muted-foreground">
-      <p className="text-xs text-muted-foreground">
+      <p className="text-sm text-muted-foreground">
         Custodian Finding — an attributable interpretation. This is not Owner Judgment (Review).
       </p>
       <p className="break-words whitespace-pre-wrap">
@@ -953,21 +1008,35 @@ export function FindingDetails({
         <summary className="min-h-11 cursor-pointer font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
           Analysis details
         </summary>
-        <div className="space-y-2 break-words pb-2 pt-1 text-xs">
+        <div className="space-y-2 break-words pb-2 pt-1 text-sm leading-6">
           <p>
             <span className="font-medium text-foreground">Numeric confidence:</span>{" "}
             {finding.confidence}% (not a calibrated probability)
           </p>
           <p>
             <span className="font-medium text-foreground">Origin:</span> {finding.originKind}
-            {finding.analysisOutcome ? ` · ${finding.analysisOutcome}` : ""}
           </p>
-          {finding.originKind === "analysis" ? (
-            <p className="font-mono text-[10px]">
-              Run {finding.originRunId ?? "unavailable"} · synthesis step{" "}
-              {finding.originStepId ?? "unavailable"} · candidate{" "}
-              {finding.candidateIndex ?? "unavailable"}
+          {finding.analysisOutcome ? (
+            <p>
+              <span className="font-medium text-foreground">Analysis outcome:</span>{" "}
+              {finding.analysisOutcome}
             </p>
+          ) : null}
+          {finding.originKind === "analysis" ? (
+            <dl className="space-y-1 text-sm leading-6">
+              <div>
+                <dt className="font-medium text-foreground">Run ID</dt>
+                <dd className="break-all">{finding.originRunId ?? "Unavailable"}</dd>
+              </div>
+              <div>
+                <dt className="font-medium text-foreground">Synthesis step ID</dt>
+                <dd className="break-all">{finding.originStepId ?? "Unavailable"}</dd>
+              </div>
+              <div>
+                <dt className="font-medium text-foreground">Candidate index</dt>
+                <dd>{finding.candidateIndex ?? "Unavailable"}</dd>
+              </div>
+            </dl>
           ) : null}
         </div>
       </details>
@@ -978,8 +1047,8 @@ export function FindingDetails({
 function CaseValue({ label, value }: { label: string; value?: string | number | null }) {
   return (
     <span className="hidden min-w-0 md:block">
-      <span className="block text-[10px] uppercase tracking-wide text-luminous-gold">{label}</span>
-      <span className="mt-1 block truncate text-xs text-foreground">
+      <span className="block text-sm font-medium text-[color:var(--candlelight)]">{label}</span>
+      <span className="mt-1 block truncate text-sm text-foreground">
         {valueOrNotRecorded(value)}
       </span>
     </span>
@@ -989,7 +1058,7 @@ function CaseValue({ label, value }: { label: string; value?: string | number | 
 function CaseDetail({ label, value }: { label: string; value?: string | number | null }) {
   return (
     <div>
-      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dt className="text-sm text-muted-foreground">{label}</dt>
       <dd className="mt-1 text-sm text-white-gold">{valueOrNotRecorded(value)}</dd>
     </div>
   );
