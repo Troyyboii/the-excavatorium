@@ -11,6 +11,7 @@ import type {
 } from "./types";
 import { documentDataSchema } from "./document";
 import { isValidProjectRoute } from "./project-route";
+import { findSupersessionCycle } from "./record-reading";
 import {
   CONFIDENCE_LEVELS,
   DECISION_STATUSES,
@@ -378,6 +379,24 @@ export function validateBackup(raw: unknown): ValidationResult {
         };
       if (targ.id === rec.id)
         return { ok: false, error: `records[${i}].supersedesDecisionId cannot reference itself` };
+    }
+  }
+
+  // Reject supersession cycles across the imported decision set.
+  {
+    const decisionById = new Map<string, ArchiveRecord>();
+    for (const r of o.records as ArchiveRecord[]) {
+      if (r.recordType === "decision") decisionById.set(r.id, r);
+    }
+    for (const [i, r] of (o.records as ArchiveRecord[]).entries()) {
+      if (r.recordType !== "decision" || !r.recordData.supersedesDecisionId) continue;
+      const invalid = findSupersessionCycle(r.id, r.recordData.supersedesDecisionId, decisionById);
+      if (invalid?.kind === "cycle") {
+        return {
+          ok: false,
+          error: `records[${i}].supersedesDecisionId creates a supersession cycle`,
+        };
+      }
     }
   }
 

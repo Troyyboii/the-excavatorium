@@ -1,4 +1,4 @@
-const SHELL_CACHE = "excavatorium-static-v3-ossuary";
+const SHELL_CACHE = "excavatorium-static-v4-night-crypt";
 const SHELL_URLS = [
   "/",
   "/offline.html",
@@ -11,6 +11,9 @@ const SHELL_URLS = [
   "/lantern-icon-192-maskable.png",
   "/lantern-icon-512-maskable.png",
   "/lantern-apple-touch-icon.png",
+  "/character/custodian-cutout.webp",
+  "/character/custodian-portrait.webp",
+  "/character/custodian-lantern.webp",
 ];
 
 const PRIVATE_PATH_PREFIXES = [
@@ -51,6 +54,9 @@ function isStaticAsset(request, url) {
       "/lantern-icon-512-maskable.png",
       "/lantern-icon-512.png",
       "/brand/excavatorium-lantern.png",
+      "/character/custodian-cutout.webp",
+      "/character/custodian-portrait.webp",
+      "/character/custodian-lantern.webp",
     ].includes(url.pathname)
   );
 }

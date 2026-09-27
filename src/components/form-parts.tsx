@@ -20,18 +20,18 @@ export function Field({
 }) {
   return (
     <div className="space-y-1.5">
-      <label htmlFor={htmlFor} className="block text-sm text-foreground">
+      <label htmlFor={htmlFor} className="block text-base font-medium text-foreground">
         {label}
-        {required ? <span className="ml-1 text-[color:var(--destructive)]">*</span> : null}
+        {required ? <span className="ml-1 text-[color:var(--candlelight)]">*</span> : null}
       </label>
       {children}
-      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
+      {hint ? <p className="text-sm text-muted-foreground">{hint}</p> : null}
     </div>
   );
 }
 
 const baseInput =
-  "w-full min-h-11 rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-ring disabled:opacity-60";
+  "w-full min-h-11 rounded-sm border border-input bg-[color:var(--vault-deep)] px-3 py-2 text-base text-foreground outline-none placeholder:text-[color:var(--ash)] focus:border-ring disabled:opacity-60";
 
 export function TextInput(props: InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} className={`${baseInput} ${props.className ?? ""}`} />;
@@ -56,8 +56,8 @@ export function Select({ children, ...rest }: SelectHTMLAttributes<HTMLSelectEle
 
 export function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="rounded-lg border border-border bg-card p-4 md:p-6">
-      <h2 className="mb-4 font-serif text-lg tracking-tight text-foreground">{title}</h2>
+    <section className="border border-border bg-card p-4 md:p-6">
+      <h2 className="mb-4 font-serif text-[1.5rem] text-foreground">{title}</h2>
       <div className="space-y-4">{children}</div>
     </section>
   );

@@ -5,8 +5,8 @@
     "": {
       "name": "tanstack_start_ts",
       "dependencies": {
-        "@fontsource-variable/geist": "5.3.0",
-        "@fontsource/libre-caslon-text": "5.3.0",
+        "@fontsource/alegreya-sans": "5.3.0",
+        "@fontsource/im-fell-english": "5.3.0",
         "@hookform/resolvers": "^5.2.2",
         "@lovable.dev/mcp-js": "^0.26.1",
         "@phosphor-icons/react": "^2.1.10",
@@ -217,9 +217,9 @@
 
     "@floating-ui/utils": ["@floating-ui/utils@0.2.11", "", {}, "sha512-RiB/yIh78pcIxl6lLMG0CgBXAZ2Y0eVHqMPYugu+9U0AeT6YBeiJpf7lbdJNIugFP5SIjwNRgo4DhR1Qxi26Gg=="],
 
-    "@fontsource-variable/geist": ["@fontsource-variable/geist@5.3.0", "", {}, "sha512-j0m+vLQuG5XAYoHtGCVu0spvlGreR3EzpECUVzkFmI1mTVnAO38l/NEPDCFgZ177JxzYJCLSmTQibIiYPilGrA=="],
+    "@fontsource/alegreya-sans": ["@fontsource/alegreya-sans@5.3.0", "", {}, "sha512-Uf0RbuwzhSS3NQrBFcRzEUm7TxDQW3qdAbQ6JIOhsIW6V+YN2dqlR99lhfEE38R3GHgMCMJBzqSp7aJxhNXSOw=="],
 
-    "@fontsource/libre-caslon-text": ["@fontsource/libre-caslon-text@5.3.0", "", {}, "sha512-zuGBMEtekNBbeH4YIbL2sUu8BZKFGr1o6b41v/QPnWaEAOgZHSf4ZFdr90YmRbE3uB5G1oAEIIACgwnFRk/F7w=="],
+    "@fontsource/im-fell-english": ["@fontsource/im-fell-english@5.3.0", "", {}, "sha512-FcgdWfY9WeUM2gQkfmwhn4Ed9LVtlll8LSSZvHfbsUrnHK5tHHnGg6BgwAfHogp52adU3eE89J/3B52qV3b+Vw=="],
 
     "@hono/node-server": ["@hono/node-server@1.19.17", "https://europe-west4-npm.pkg.dev/lovable-core-prod/sandbox-npm-cache/@hono/node-server/-/node-server-1.19.17.tgz", { "peerDependencies": { "hono": "^4" } }, "sha512-dSneS5qhiauZWGDCeK4o695Xd9nUNjviSZCMQrj10eetr8Uln1ucn6bbphOM6UynAMMtNIzZNSpL9vnASJwrPQ=="],
 

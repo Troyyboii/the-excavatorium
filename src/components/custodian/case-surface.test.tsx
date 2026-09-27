@@ -122,7 +122,12 @@ describe("Case Finding details", () => {
     expect(analysisDetails?.hasAttribute("open")).toBe(false);
     fireEvent.click(screen.getByText("Analysis details"));
     expect(analysisDetails?.hasAttribute("open")).toBe(true);
-    expect(screen.getByText(/Run run-1 · synthesis step step-1 · candidate 0/)).not.toBeNull();
+    expect(screen.getByText("Run ID")).not.toBeNull();
+    expect(screen.getByText("run-1")).not.toBeNull();
+    expect(screen.getByText("Synthesis step ID")).not.toBeNull();
+    expect(screen.getByText("step-1")).not.toBeNull();
+    expect(screen.getByText("Candidate index")).not.toBeNull();
+    expect(screen.getByText("0")).not.toBeNull();
     expect(screen.getByText(/Numeric confidence:/)).not.toBeNull();
   });
 });

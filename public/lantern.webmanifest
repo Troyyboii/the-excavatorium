@@ -6,8 +6,8 @@
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "theme_color": "#111412",
-  "background_color": "#111412",
+  "theme_color": "#11131b",
+  "background_color": "#11131b",
   "icons": [
     {
       "src": "/brand/excavatorium-lantern-app-icon.png",
