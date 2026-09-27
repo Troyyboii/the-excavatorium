@@ -6,6 +6,7 @@ import { RecordList } from "@/components/record-list";
 import type { ArchiveRecord, RecordType } from "@/lib/types";
 import { RECORD_TYPES, RECORD_TYPE_PLURAL } from "@/lib/types";
 import { ArchiveViewNav } from "@/components/archive-view-nav";
+import { toSearchableText } from "@/lib/archive-search";
 
 export const Route = createFileRoute("/search")({
   component: Page,
@@ -14,70 +15,6 @@ export const Route = createFileRoute("/search")({
   validateSearch: (search: Record<string, unknown>): { q?: string } =>
     typeof search.q === "string" && search.q ? { q: search.q } : {},
 });
-
-// Fields searched: every user-entered string. Excludes IDs, timestamps,
-// booleans, seed keys, and enum machine keys per spec §15.
-function toSearchableText(r: ArchiveRecord): string {
-  const parts: string[] = [r.title, r.summary, r.tags.join(" ")];
-  const d = r.recordData as Record<string, unknown>;
-  if (r.recordType === "tool") {
-    parts.push(r.recordData.category, r.recordData.status);
-    parts.push(
-      r.recordData.whatCaughtMyEye,
-      r.recordData.whatItPromised,
-      r.recordData.whatActuallyHappened,
-      r.recordData.whatWorked,
-      r.recordData.whatFailed,
-      r.recordData.whyIKeptOrStoppedUsingIt,
-      r.recordData.revisitCondition,
-      r.recordData.finalVerdict,
-    );
-  } else if (r.recordType === "repository") {
-    parts.push(
-      r.recordData.githubUrl,
-      r.recordData.whatCaughtMyEye,
-      r.recordData.whatItClaims,
-      r.recordData.whatItActuallyDoes,
-      r.recordData.maintenanceImpression,
-      r.recordData.finalVerdict,
-      r.recordData.recommendedAction ?? "",
-    );
-  } else if (r.recordType === "conversation") {
-    parts.push(
-      r.recordData.projectRoute ?? "",
-      r.recordData.highSignalFindings,
-      r.recordData.decisionsMade,
-      r.recordData.openLoops,
-      r.recordData.reusablePrompts,
-      r.recordData.memoryCandidates,
-      r.recordData.rawConversationText,
-    );
-  } else if (r.recordType === "decision") {
-    parts.push(
-      r.recordData.reason,
-      r.recordData.trigger,
-      r.recordData.whatWouldChangeMyMind,
-      r.recordData.status,
-      r.recordData.confidence,
-    );
-  } else if (r.recordType === "document") {
-    const insights = [
-      ...r.recordData.highSignalFindings,
-      ...r.recordData.keyClaims,
-      ...r.recordData.contradictions,
-      ...r.recordData.uncertainties,
-    ];
-    parts.push(
-      r.recordData.originalFileName ?? "",
-      r.recordData.documentDate ?? "",
-      r.recordData.projectRoute ?? "",
-      ...insights.flatMap((item) => [item.text, ...item.sourceReferenceIds]),
-      ...r.recordData.sourceReferences.flatMap((ref) => [ref.label, ref.note, ref.locator]),
-    );
-  }
-  void d;
-  return parts.join("\n").toLowerCase();
-}
 
 function Page() {
   const q = useArchive(true);
