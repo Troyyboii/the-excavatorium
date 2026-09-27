@@ -7,7 +7,13 @@ import type { ArchiveRecord, RecordType } from "@/lib/types";
 import { RECORD_TYPES, RECORD_TYPE_PLURAL } from "@/lib/types";
 import { ArchiveViewNav } from "@/components/archive-view-nav";
 
-export const Route = createFileRoute("/search")({ component: Page, ssr: false });
+export const Route = createFileRoute("/search")({
+  component: Page,
+  ssr: false,
+  // Optional starting text, e.g. from the Home search box.
+  validateSearch: (search: Record<string, unknown>): { q?: string } =>
+    typeof search.q === "string" && search.q ? { q: search.q } : {},
+});
 
 // Fields searched: every user-entered string. Excludes IDs, timestamps,
 // booleans, seed keys, and enum machine keys per spec §15.
@@ -75,7 +81,8 @@ function toSearchableText(r: ArchiveRecord): string {
 
 function Page() {
   const q = useArchive(true);
-  const [text, setText] = useState("");
+  const { q: initialText } = Route.useSearch();
+  const [text, setText] = useState(initialText ?? "");
 
   const indexed = useMemo(() => {
     const items = q.data?.records ?? [];

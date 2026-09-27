@@ -246,10 +246,13 @@ export function CaptureMenu({
   online,
   mobile = false,
   label = "Capture",
+  quiet = false,
 }: {
   online: boolean;
   mobile?: boolean;
   label?: string;
+  /** Secondary, outlined trigger for in-page use (the header keeps candlelight). */
+  quiet?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<"choice" | "material">("choice");
@@ -303,9 +306,11 @@ export function CaptureMenu({
       className={cn(
         "inline-flex h-11 items-center justify-center gap-2 rounded-sm bg-[color:var(--candlelight)] px-[18px] text-base font-bold text-[color:var(--candle-ink)] transition-colors hover:bg-[color:var(--moonbone)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--moonbone)] focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50",
         mobile && "-mt-7 h-16 w-16 rounded-full px-0 shadow-[0_6px_18px_rgba(0,0,0,0.45)]",
+        quiet &&
+          "min-h-12 gap-2.5 border border-[color:var(--mortar-strong)] bg-transparent font-normal text-foreground hover:border-[color:var(--candlelight)] hover:bg-transparent",
       )}
     >
-      <CryptIcon glyph="shovel" size={mobile ? 28 : 20} />
+      <CryptIcon glyph="shovel" size={mobile ? 28 : 20} className={quiet ? CANDLE : undefined} />
       {mobile ? <span className="sr-only">Add or capture material</span> : <span>{label}</span>}
     </button>
   );

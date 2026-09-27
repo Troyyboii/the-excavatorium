@@ -76,7 +76,8 @@ function dateFor(record: ArchiveRecord): string {
   return record.updatedAt;
 }
 
-function needsAttention(record: ArchiveRecord): boolean {
+/** The saved-field checks that put a record on the Home attention list. */
+export function needsAttention(record: ArchiveRecord): boolean {
   if (record.recordType === "repository") return record.recordData.recommendedAction === null;
   if (record.recordType === "conversation") return record.recordData.openLoops.trim() !== "";
   if (record.recordType === "decision") return record.recordData.status === "Tentative";
