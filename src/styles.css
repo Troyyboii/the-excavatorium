@@ -334,6 +334,18 @@
   }
 }
 
+/* The arched niche's well carries the screen's single lantern glow. */
+.custodian-niche-well {
+  background:
+    radial-gradient(
+      ellipse 70% 45% at 30% 72%,
+      rgb(242 184 87 / 0.26) 0%,
+      rgb(242 184 87 / 0.05) 55%,
+      rgb(242 184 87 / 0) 80%
+    ),
+    #0c0e14;
+}
+
 /* Legacy Custodian crop: soften the crop edges so it never reads as a pasted
    rectangle. Removed once the Night Crypt cut-out replaces it. */
 .custodian-figure {
