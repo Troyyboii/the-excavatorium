@@ -71,14 +71,21 @@ export async function handleExcavateDocument(
     return jsonResult(await run(file, ctx));
   } catch (error) {
     if (error instanceof DocumentIngestionError) {
+      const diagnostic = safeDocumentIngestionDiagnostic(error.diagnostic);
       console.warn("mcp.excavate_document.failure", {
         code: error.code,
-        diagnostic: safeDocumentIngestionDiagnostic(error.diagnostic),
+        diagnostic,
       });
       return errorResult(
         error.code,
-        documentIngestionErrorMessage(error.code, error.diagnostic),
-        errorOptions,
+        documentIngestionErrorMessage(error.code, error.diagnostic, error.retryAfterSeconds),
+        {
+          ...errorOptions,
+          diagnostic,
+          ...(error.retryAfterSeconds !== undefined
+            ? { retryAfterSeconds: error.retryAfterSeconds }
+            : {}),
+        },
       );
     }
     console.warn("mcp.excavate_document.failure", {

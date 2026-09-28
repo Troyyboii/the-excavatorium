@@ -52,4 +52,16 @@ describe("document excavation function errors", () => {
       }),
     ).toBeNull();
   });
+
+  test("preserves a non-size 413 diagnostic without calling it a file-size error", async () => {
+    const context = new Response(
+      JSON.stringify({
+        error: "The document exceeds a bounded limit.",
+        diagnostic: "analysis_chunk_limit",
+      }),
+      { status: 413, headers: { "Content-Type": "application/json" } },
+    );
+
+    expect(await sanitizedFunctionErrorDiagnostic({ context })).toBe("analysis_chunk_limit");
+  });
 });

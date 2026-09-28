@@ -107,6 +107,19 @@ describe("excavate_document tool", () => {
     expect(failure.structuredContent).toBeUndefined();
     expect(failure.content[0]?.text).toContain("diagnostic: network_fetch_failure");
     expect(JSON.stringify(failure)).not.toContain(file.download_url);
+
+    const limited = await handleExcavateDocument(
+      { file },
+      context(true, allowedClientId),
+      async () => {
+        throw new DocumentIngestionError("QUOTA_EXCEEDED", undefined, "quota_exceeded", 5);
+      },
+    );
+    const quotaError = JSON.parse(limited.content[0]!.text).error;
+    expect(quotaError.code).toBe("QUOTA_EXCEEDED");
+    expect(quotaError.diagnostic).toBe("quota_exceeded");
+    expect(quotaError.retryAfterSeconds).toBe(5);
+    expect(quotaError.message).toContain("Retry in approximately 5 seconds.");
   });
 
   test("normalizes tags using the browser save behavior", () => {

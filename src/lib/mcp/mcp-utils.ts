@@ -112,6 +112,8 @@ export type ToolErrorPayload = {
   error: {
     code: ErrorCode;
     message: string;
+    diagnostic?: string;
+    retryAfterSeconds?: number;
   };
 };
 
@@ -123,6 +125,8 @@ export type JsonToolResult = {
 
 export type ErrorResultOptions = {
   includeStructuredContent?: boolean;
+  diagnostic?: string;
+  retryAfterSeconds?: number;
 };
 
 const SAFE_ERROR_MESSAGES: Record<ErrorCode, string> = {
@@ -154,7 +158,16 @@ export function errorResult(
   message = SAFE_ERROR_MESSAGES[code],
   options: ErrorResultOptions = {},
 ): JsonToolResult {
-  const payload: ToolErrorPayload = { error: { code, message } };
+  const payload: ToolErrorPayload = {
+    error: {
+      code,
+      message,
+      ...(options.diagnostic ? { diagnostic: options.diagnostic } : {}),
+      ...(options.retryAfterSeconds !== undefined
+        ? { retryAfterSeconds: options.retryAfterSeconds }
+        : {}),
+    },
+  };
   return {
     content: [{ type: "text", text: JSON.stringify(payload) }],
     ...(options.includeStructuredContent === false ? {} : { structuredContent: payload }),
