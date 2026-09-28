@@ -416,7 +416,9 @@ Deno.test("admits sequential valid excavations through the configured quota RPC"
         resolveFunding: async () => ({ ok: true, apiKey: "test-key", model: "test-model" }),
         fetchProvider: async (_input, init) => {
           providerCalls += 1;
-          const requestBody = JSON.parse(String(init?.body));
+          const body = init && "body" in init ? init.body : undefined;
+          assert(typeof body === "string", "expected a JSON provider request body");
+          const requestBody = JSON.parse(body);
           const schemaName = requestBody.text.format.name;
           return providerResponse(
             schemaName === "document_chunk_analysis" ? chunkResult : synthesisResult,
@@ -544,3 +546,4 @@ Deno.test("classifies OpenAi failures without retaining upstream details", () =>
     "expected service classification",
   );
 });
+
