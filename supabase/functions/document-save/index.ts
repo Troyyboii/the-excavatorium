@@ -9,6 +9,7 @@ import {
 import {
   declaredLengthTooLarge,
   displayFileName,
+  DocumentInputError,
   DOCUMENT_MAX_NORMALIZED_BYTES,
   DOCUMENT_MAX_REQUEST_BYTES,
   normalizeDocumentFile,
@@ -169,8 +170,14 @@ export function createDocumentSaveHandler(
       return new Response("ok", { headers: responseHeaders(origin) });
     if (request.method !== "POST")
       return jsonResponse({ error: "Method not allowed." }, 405, origin);
-    if (declaredLengthTooLarge(request.headers.get("content-length"), DOCUMENT_MAX_REQUEST_BYTES))
-      return jsonResponse({ error: "Request is too large." }, 413, origin);
+    if (declaredLengthTooLarge(request.headers.get("content-length"), DOCUMENT_MAX_REQUEST_BYTES)) {
+      logDiagnostic("request", "input", { status: 413, reason: "declared_request_too_large" });
+      return jsonResponse(
+        { error: "Request is too large.", diagnostic: "declared_request_too_large" },
+        413,
+        origin,
+      );
+    }
 
     let auth: AuthenticatedSupabase | null;
     try {
@@ -302,10 +309,16 @@ export function createDocumentSaveHandler(
               origin,
             );
           createdPaths.push(newPaths.original);
-          const normalizedBytes = new TextEncoder().encode(JSON.stringify(normalized));
+          // A Blob body makes storage-js send the metadata as a multipart body
+          // field. A byte-array body would base64 it into an `x-metadata`
+          // header, whose size grows with the source-reference ID list (7.6 KB
+          // for a 326-section document) and can exceed platform header limits.
+          const normalizedBlob = new Blob([JSON.stringify(normalized)], {
+            type: "application/json",
+          });
           const extractedUpload = await auth.client.storage
             .from(BUCKET)
-            .upload(newPaths.extracted, normalizedBytes, {
+            .upload(newPaths.extracted, normalizedBlob, {
               contentType: "application/json",
               metadata: {
                 document_version: "1",
@@ -453,10 +466,13 @@ export function createDocumentSaveHandler(
         typeof (error as { status?: unknown }).status === "number"
       ) {
         const input = error as { message?: unknown; status: number };
-        logDiagnostic("request", "input", { status: input.status, durationMs });
+        const diagnostic =
+          error instanceof DocumentInputError ? error.diagnostic : "unclassified_input";
+        logDiagnostic("request", "input", { status: input.status, durationMs, reason: diagnostic });
         return jsonResponse(
           {
             error: typeof input.message === "string" ? input.message : "Document input is invalid.",
+            diagnostic,
           },
           input.status,
           origin,
