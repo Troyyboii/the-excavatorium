@@ -15,7 +15,12 @@ import {
   orderSourceReferenceIds,
 } from "../_shared/document-draft.ts";
 import { type AuthenticatedSupabase } from "../_shared/http.ts";
-import { classifyOpenAiFailure, handleDocumentExtract } from "./index.ts";
+import {
+  boundedText,
+  classifyOpenAiFailure,
+  extractAssistantOutputText,
+  handleDocumentExtract,
+} from "./index.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -41,13 +46,17 @@ function extractionAuth(onQuota: () => Promise<unknown>) {
   } as unknown as AuthenticatedSupabase;
 }
 
-async function documentExtractRequest(bytes: Uint8Array, name = "notes.md") {
+async function documentExtractRequest(
+  bytes: Uint8Array,
+  name = "notes.md",
+  type = "text/markdown",
+) {
   const digest = await crypto.subtle.digest("SHA-256", toBinaryData(bytes));
   const contentHash = Array.from(new Uint8Array(digest), (byte) =>
     byte.toString(16).padStart(2, "0"),
   ).join("");
   const form = new FormData();
-  form.set("file", new File([toBinaryData(bytes)], name, { type: "text/markdown" }));
+  form.set("file", new File([toBinaryData(bytes)], name, { type }));
   form.set("contentHash", contentHash);
   form.set("candidateRecords", "[]");
   return new Request("https://example.test", { method: "POST", body: form });
@@ -545,4 +554,412 @@ Deno.test("classifies OpenAi failures without retaining upstream details", () =>
     classifyOpenAiFailure(503, null) === "upstream_service_failure",
     "expected service classification",
   );
+});
+
+// ---------------------------------------------------------------------------
+// Structured-output contract. Strict Structured Outputs enforce types, required
+// keys, additionalProperties and array/integer bounds. They do not enforce
+// maxLength, citation membership, or date format, so model output that is
+// legal for the provider must not fail the whole excavation on those alone.
+
+function loreMarkdownFixture(targetBytes = 71_800): Uint8Array {
+  const encoder = new TextEncoder();
+  let text =
+    "---\ntitle: Synthetic Kingdom — Expanded Lore\nrevision: 2026-09-28\n---\n\n# Synthetic Kingdom\n\n> “Salt remembers what stone forgets.”\n\n";
+  for (let index = 1; encoder.encode(text).byteLength < targetBytes - 600; index += 1) {
+    text +=
+      `## Province ${index}: Žumberak\n\nIn year ${index} of the Crowned Era the Ban ceded the saltworks. Chroniclers disagree.\n\n` +
+      `| Holding | Tithe |\n| --- | --- |\n| Solana ${index} | ${index * 3} marks |\n\n- Banner: argent, a wolf sable\n\n` +
+      `### Customs ${index}\n\nThe feast of Sveti Vlaho is kept with bonfires.\n\n`;
+  }
+  while (encoder.encode(text).byteLength < targetBytes) text += ".";
+  return encoder.encode(text);
+}
+
+function providerEnvelope(messages: Array<{ text: string; phase?: string }>): Response {
+  return new Response(
+    JSON.stringify({
+      status: "completed",
+      output: messages.map(({ text, phase }) => ({
+        type: "message",
+        role: "assistant",
+        ...(phase ? { phase } : {}),
+        content: [{ type: "output_text", text }],
+      })),
+    }),
+    { status: 200, headers: { "content-type": "application/json", "x-request-id": "req_test123" } },
+  );
+}
+
+type ProviderScript = {
+  chunk?: (ids: string[], index: number) => unknown;
+  synthesis?: (allIds: string[]) => unknown;
+  raw?: (schemaName: string) => Response | undefined;
+};
+
+const emptyAnalysis = {
+  highSignalFindings: [],
+  keyClaims: [],
+  contradictions: [],
+  uncertainties: [],
+};
+
+function groundedChunk(ids: string[]) {
+  return {
+    ...emptyAnalysis,
+    highSignalFindings: [{ text: "The Crown holds the saltworks.", sourceReferenceIds: [ids[0]] }],
+    keyClaims: [{ text: "The Ban ceded the saltworks.", sourceReferenceIds: [ids[1] ?? ids[0]] }],
+  };
+}
+
+function groundedSynthesis(ids: string[]) {
+  return {
+    title: "Synthetic Kingdom",
+    summary: "An expanded lore book.",
+    tags: ["lore"],
+    documentDate: null,
+    pageCount: null,
+    highSignalFindings: [{ text: "The Crown holds the saltworks.", sourceReferenceIds: [ids[0]] }],
+    keyClaims: [{ text: "The Ban ceded the saltworks.", sourceReferenceIds: [ids[1] ?? ids[0]] }],
+    contradictions: [],
+    uncertainties: [],
+    sourceReferences: [{ id: ids[0], note: "Opening section." }],
+    suggestedRecordIds: [],
+  };
+}
+
+async function runExtraction(
+  bytes: Uint8Array,
+  script: ProviderScript = {},
+  name = "lore.md",
+): Promise<{
+  status: number;
+  body: Record<string, unknown>;
+  logs: string[];
+  providerCalls: number;
+}> {
+  const mimeType = name.endsWith(".txt") ? "text/plain" : "text/markdown";
+  const normalized = await normalizeDocumentFile(bytes, name, mimeType);
+  const allIds = normalized.units.map((unit) => unit.id);
+  const logs: string[] = [];
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => logs.push(JSON.stringify(args));
+  let chunkIndex = 0;
+  let providerCalls = 0;
+  try {
+    const request = await documentExtractRequest(bytes, name, mimeType);
+    const response = await handleDocumentExtract(request, {
+      authenticate: async () =>
+        extractionAuth(async () => ({
+          data: { allowed: true, remaining: 9, retryAfterSeconds: 0 },
+          error: null,
+        })),
+      resolveFunding: async () => ({ ok: true, apiKey: "test-key", model: "test-model" }),
+      fetchProvider: async (_input, init) => {
+        providerCalls += 1;
+        const body = init && "body" in init ? init.body : undefined;
+        assert(typeof body === "string", "expected a JSON provider request body");
+        const requestBody = JSON.parse(body);
+        const schemaName = requestBody.text.format.name as string;
+        const raw = script.raw?.(schemaName);
+        if (raw) return raw;
+        if (schemaName === "document_chunk_analysis") {
+          const ids = JSON.parse(requestBody.input[1].content).sourceReferenceIds as string[];
+          const value = (script.chunk ?? groundedChunk)(ids, chunkIndex++);
+          return providerEnvelope([{ text: JSON.stringify(value) }]);
+        }
+        return providerEnvelope([
+          { text: JSON.stringify((script.synthesis ?? groundedSynthesis)(allIds)) },
+        ]);
+      },
+    });
+    return { status: response.status, body: await response.json(), logs, providerCalls };
+  } finally {
+    console.error = originalError;
+  }
+}
+
+Deno.test("excavates a 71,800-byte heading-dense Markdown lore book end to end", async () => {
+  const bytes = loreMarkdownFixture();
+  const normalized = await normalizeDocumentFile(bytes, "lore.md", "text/markdown");
+  assert(bytes.byteLength === 71_800, "expected the 71,800-byte fixture");
+  assert(normalized.units.length > 128, "fixture must exceed the removed 128-unit cap");
+  const chunkCount = chunkUnits(normalized.units).length;
+  assert(chunkCount > 4, "fixture must need more than one analysis batch");
+
+  const result = await runExtraction(bytes);
+  assert(result.status === 200, `expected success, got ${result.status}`);
+  assert(result.providerCalls === chunkCount + 1, "expected every chunk and one synthesis");
+  assert(result.body.title === "Synthetic Kingdom", "expected the synthesized title");
+  assert(result.body.fileSizeBytes === 71_800, "expected the real byte size on the draft");
+  assert(result.body.mimeType === "text/markdown", "expected the Markdown MIME type");
+});
+
+Deno.test("excavates small Markdown and UTF-8 plain text", async () => {
+  const markdown = await runExtraction(new TextEncoder().encode("# A\n\nOne.\n\n## B\n\nTwo."));
+  assert(markdown.status === 200, "expected small Markdown to succeed");
+  const text = await runExtraction(
+    new TextEncoder().encode("Čćžšđ — plain UTF-8 text.\nLine two."),
+    {},
+    "notes.txt",
+  );
+  assert(text.status === 200, "expected UTF-8 text to succeed");
+  assert(text.body.mimeType === "text/plain", "expected the plain-text MIME type");
+});
+
+Deno.test(
+  "normalizes provider-legal values the schema cannot length- or format-limit",
+  async () => {
+    for (const documentDate of ["", "Year 412 of the Crowned Era", "2026-09", "2026-02-30"]) {
+      const result = await runExtraction(loreMarkdownFixture(), {
+        synthesis: (ids) => ({ ...groundedSynthesis(ids), documentDate }),
+      });
+      assert(result.status === 200, `expected ${JSON.stringify(documentDate)} to be accepted`);
+      assert(result.body.documentDate === null, "a non-calendar date must become null");
+    }
+    const dated = await runExtraction(loreMarkdownFixture(), {
+      synthesis: (ids) => ({ ...groundedSynthesis(ids), documentDate: "2026-09-28" }),
+    });
+    assert(dated.body.documentDate === "2026-09-28", "a real ISO date must be kept");
+
+    const result = await runExtraction(loreMarkdownFixture(), {
+      synthesis: (ids) => ({
+        ...groundedSynthesis(ids),
+        title: "Title ".repeat(60),
+        summary: "Lore of the realm. ".repeat(60),
+        tags: ["x".repeat(60), " lore ", "lore", ""],
+        suggestedRecordIds: ["22222222-2222-4222-8222-222222222222"],
+      }),
+    });
+    assert(result.status === 200, "expected provider-legal bounds overflow to be normalized");
+    assert((result.body.title as string).length <= 240, "title must be bounded");
+    assert((result.body.summary as string).length <= 800, "summary must be bounded");
+    assert((result.body.summary as string).endsWith("…"), "a bounded summary is marked truncated");
+    assert(JSON.stringify(result.body.tags) === JSON.stringify(["lore"]), "tags must be cleaned");
+    assert(
+      JSON.stringify(result.body.suggestedRecordIds) === "[]",
+      "suggestions outside caller-owned candidates must be dropped",
+    );
+  },
+);
+
+Deno.test("drops individually unverifiable insights and keeps grounded ones", async () => {
+  const result = await runExtraction(loreMarkdownFixture(), {
+    chunk: (ids, index) =>
+      index === 1
+        ? {
+            ...groundedChunk(ids),
+            uncertainties: [
+              { text: "Cites another chunk.", sourceReferenceIds: [ids[0], "ref_00000001"] },
+            ],
+          }
+        : groundedChunk(ids),
+    synthesis: (ids) => ({
+      ...groundedSynthesis(ids),
+      contradictions: [{ text: "Invented citation.", sourceReferenceIds: ["ref_ffffffff"] }],
+      sourceReferences: [
+        { id: ids[0], note: "Opening section." },
+        { id: "ref_ffffffff", note: "Unknown." },
+      ],
+    }),
+  });
+  assert(result.status === 200, "a minority of unverifiable items must not fail the excavation");
+  assert(JSON.stringify(result.body.contradictions) === "[]", "unverifiable item must be dropped");
+  assert((result.body.highSignalFindings as unknown[]).length === 1, "grounded item must be kept");
+  const references = result.body.sourceReferences as Array<{ id: string }>;
+  assert(
+    references.every((reference) => reference.id !== "ref_ffffffff"),
+    "an unknown reference must never be materialized",
+  );
+  assert(
+    result.logs.some((line) => line.includes("unverifiable_items_dropped")),
+    "dropped items must be counted in diagnostics",
+  );
+  assert(
+    !result.logs.some((line) => line.includes("Invented citation")),
+    "diagnostics must not contain model or document text",
+  );
+});
+
+Deno.test("still fails mostly unverifiable output with a logged schema diagnostic", async () => {
+  const chunkFailure = await runExtraction(loreMarkdownFixture(), {
+    chunk: (ids, index) =>
+      index === 0
+        ? {
+            ...emptyAnalysis,
+            keyClaims: [
+              { text: "Invented.", sourceReferenceIds: ["ref_ffffffff"] },
+              { text: "Grounded.", sourceReferenceIds: [ids[0]] },
+              { text: " ", sourceReferenceIds: [ids[0]] },
+            ],
+          }
+        : groundedChunk(ids),
+  });
+  assert(chunkFailure.status === 502, "majority-unverifiable chunk output must fail");
+  assert(
+    chunkFailure.body.diagnostic === "schema_validation_failure",
+    "expected schema diagnostic",
+  );
+  assert(
+    chunkFailure.logs.some(
+      (line) =>
+        line.includes("document_chunk_analysis") &&
+        line.includes("unverifiable_items") &&
+        line.includes('"dropped":2'),
+    ),
+    "the chunk-stage failure must be logged with its reason and counts",
+  );
+
+  const synthesisFailure = await runExtraction(loreMarkdownFixture(), {
+    synthesis: (ids) => ({
+      ...groundedSynthesis(ids),
+      highSignalFindings: [{ text: "Invented.", sourceReferenceIds: ["ref_ffffffff"] }],
+      keyClaims: [],
+    }),
+  });
+  assert(synthesisFailure.status === 502, "unverifiable synthesis output must fail");
+  assert(
+    synthesisFailure.logs.some(
+      (line) => line.includes("document_synthesis") && line.includes("unverifiable_items"),
+    ),
+    "the synthesis-stage failure must be logged",
+  );
+});
+
+Deno.test("fails structural violations and distinguishes null from absent fields", async () => {
+  const cases: Array<[string, (ids: string[]) => unknown]> = [
+    ["unexpected key", (ids) => ({ ...groundedSynthesis(ids), recordType: "document" })],
+    ["wrong type", (ids) => ({ ...groundedSynthesis(ids), summary: 7 })],
+    [
+      "absent required field",
+      (ids) => {
+        const { documentDate: _omitted, ...rest } = groundedSynthesis(ids);
+        return rest;
+      },
+    ],
+    ["array over its bound", (ids) => ({ ...groundedSynthesis(ids), tags: Array(9).fill("t") })],
+  ];
+  for (const [label, synthesis] of cases) {
+    const result = await runExtraction(loreMarkdownFixture(), { synthesis });
+    assert(result.status === 502, `expected ${label} to fail`);
+    assert(result.body.diagnostic === "schema_validation_failure", `expected ${label} diagnostic`);
+    assert(
+      result.logs.some((line) => line.includes("output_shape")),
+      `expected ${label} to log an output_shape reason`,
+    );
+  }
+  const explicitNull = await runExtraction(loreMarkdownFixture(), {
+    synthesis: (ids) => ({ ...groundedSynthesis(ids), documentDate: null }),
+  });
+  assert(explicitNull.status === 200, "an explicit null optional value must be accepted");
+});
+
+Deno.test("selects the final structured answer from multi-message provider output", () => {
+  const completed = (output: unknown[]) => ({ status: "completed", output });
+  const message = (text: string, phase?: string) => ({
+    type: "message",
+    role: "assistant",
+    ...(phase ? { phase } : {}),
+    content: [{ type: "output_text", text }],
+  });
+  const single = extractAssistantOutputText(
+    completed([
+      { type: "reasoning", summary: [] },
+      {
+        type: "message",
+        role: "assistant",
+        content: [
+          { type: "output_text", text: '{"a":' },
+          { type: "output_text", text: "1}" },
+        ],
+      },
+    ]),
+  );
+  assert(single.ok && single.text === '{"a":1}', "parts of one message must be joined");
+  const preamble = extractAssistantOutputText(
+    completed([message("Reviewing the source."), message('{"a":1}')]),
+  );
+  assert(preamble.ok && preamble.text === '{"a":1}', "a preamble message must not be joined");
+  const phased = extractAssistantOutputText(
+    completed([message('{"a":1}', "final_answer"), message("Done.", "commentary")]),
+  );
+  assert(phased.ok && phased.text === '{"a":1}', "the final_answer phase must win");
+  const refusal = extractAssistantOutputText(
+    completed([
+      { type: "message", role: "assistant", content: [{ type: "refusal", refusal: "no" }] },
+    ]),
+  );
+  assert(!refusal.ok && refusal.reason === "refusal", "a refusal must be distinguished");
+  const incomplete = extractAssistantOutputText({ status: "incomplete", output: [] });
+  assert(!incomplete.ok, "an incomplete response must not yield text");
+});
+
+Deno.test("reports malformed provider output as invalid_output with a stage log", async () => {
+  const result = await runExtraction(new TextEncoder().encode("# A\n\nOne."), {
+    raw: (schemaName) =>
+      schemaName === "document_chunk_analysis"
+        ? providerEnvelope([{ text: '{"highSignalFindings": [' }])
+        : undefined,
+  });
+  assert(result.status === 502, "malformed output must fail");
+  assert(result.body.diagnostic === "invalid_output", "expected invalid_output");
+  assert(
+    result.logs.some(
+      (line) =>
+        line.includes("document_chunk_analysis") &&
+        line.includes("output_parse") &&
+        line.includes("req_test123"),
+    ),
+    "the parse failure must be logged with stage and provider request id",
+  );
+  assert(!result.logs.some((line) => line.includes("highSignalFindings")), "no output text logged");
+
+  const refused = await runExtraction(new TextEncoder().encode("# A\n\nOne."), {
+    raw: () =>
+      new Response(
+        JSON.stringify({
+          status: "completed",
+          output: [
+            { type: "message", role: "assistant", content: [{ type: "refusal", refusal: "no" }] },
+          ],
+        }),
+        { status: 200 },
+      ),
+  });
+  assert(refused.body.diagnostic === "invalid_output", "a refusal remains invalid output");
+  assert(
+    refused.logs.some((line) => line.includes("output_shape") && line.includes("refusal")),
+    "a refusal must be logged distinctly",
+  );
+});
+
+Deno.test(
+  "reports a provider abort during body read as a timeout, not invalid output",
+  async () => {
+    const result = await runExtraction(new TextEncoder().encode("# A\n\nOne."), {
+      raw: () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.error(new DOMException("The signal has been aborted", "AbortError"));
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    });
+    assert(result.status === 504, "expected a gateway timeout status");
+    assert(result.body.diagnostic === "extraction_timeout", "expected extraction_timeout");
+    assert(
+      result.logs.some((line) => line.includes("body_read_aborted")),
+      "expected the body-read abort stage in diagnostics",
+    );
+  },
+);
+
+Deno.test("bounds free text at a word boundary within the limit", () => {
+  assert(boundedText("  short  ", 10) === "short", "short text is only trimmed");
+  const bounded = boundedText("alpha beta gamma delta", 12);
+  assert(bounded.length <= 12, "bounded text must respect the limit");
+  assert(bounded === "alpha beta…", "bounded text cuts at a word boundary");
+  assert(boundedText("x".repeat(30), 10).length === 10, "unbroken text is hard-cut");
 });
