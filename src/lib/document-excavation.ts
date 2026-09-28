@@ -29,7 +29,15 @@ type SafeFunctionDiagnostic =
   | "schema_validation_failure"
   | "content_hash_failure"
   | "source_reference_validation_failure"
-  | "unknown_extraction_failure";
+  | "unknown_extraction_failure"
+  | "request_too_large"
+  | "file_too_large"
+  | "unsupported_document"
+  | "malformed_document"
+  | "extracted_text_limit"
+  | "normalized_structure_limit"
+  | "analysis_chunk_limit"
+  | "synthesis_input_limit";
 
 const SAFE_FUNCTION_DIAGNOSTICS: ReadonlySet<string> = new Set([
   "authentication_unavailable",
@@ -47,11 +55,30 @@ const SAFE_FUNCTION_DIAGNOSTICS: ReadonlySet<string> = new Set([
   "content_hash_failure",
   "source_reference_validation_failure",
   "unknown_extraction_failure",
+  "request_too_large",
+  "file_too_large",
+  "unsupported_document",
+  "malformed_document",
+  "extracted_text_limit",
+  "normalized_structure_limit",
+  "analysis_chunk_limit",
+  "synthesis_input_limit",
 ]);
 
 function browserMessageForDiagnostic(diagnostic: SafeFunctionDiagnostic): string {
   if (diagnostic === "quota_exceeded")
     return "File excavation is temporarily rate limited. Please retry later.";
+  if (diagnostic === "file_too_large") return "The selected file exceeds the 10 MB document limit.";
+  if (
+    diagnostic === "request_too_large" ||
+    diagnostic === "unsupported_document" ||
+    diagnostic === "malformed_document" ||
+    diagnostic === "extracted_text_limit" ||
+    diagnostic === "normalized_structure_limit" ||
+    diagnostic === "analysis_chunk_limit" ||
+    diagnostic === "synthesis_input_limit"
+  )
+    return "The document is malformed or exceeds a supported processing limit.";
   if (diagnostic === "extraction_timeout") return GENERIC_TIMEOUT_MESSAGE;
   if (
     diagnostic === "authentication_unavailable" ||

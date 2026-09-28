@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { DocumentData } from "../types";
+import { fingerprintFile, validateSelectedDocumentFile } from "../document";
+import type { DocumentDraft } from "../document";
 import {
   DocumentIngestionError,
   documentIngestionErrorMessage,
@@ -176,6 +178,24 @@ describe("ChatGPT temporary document downloads", () => {
       );
       expect(await file.text()).toBe("hello world");
     }
+  });
+
+  test("matches direct File size, MIME, hash, and validation after MCP materialization", async () => {
+    const bytes = new TextEncoder().encode("# Shared semantics\n\nA neutral source passage.");
+    const directFile = new File([bytes.buffer], "notes.md", { type: "text/markdown" });
+    const materialized = await downloadChatGptDocument(reference, {
+      fetch: (async () =>
+        response(bytes, {
+          headers: { "content-type": "text/markdown" },
+        })) as typeof globalThis.fetch,
+    });
+
+    expect(validateSelectedDocumentFile(directFile)).toBeNull();
+    expect(validateSelectedDocumentFile(materialized)).toBeNull();
+    expect(materialized.size).toBe(directFile.size);
+    expect(materialized.type).toBe(directFile.type);
+    expect(await fingerprintFile(materialized)).toBe(await fingerprintFile(directFile));
+    expect(await materialized.arrayBuffer()).toEqual(await directFile.arrayBuffer());
   });
 
   test("uses credential-free manual redirects and revalidates each target", async () => {
@@ -412,21 +432,120 @@ describe("document ingestion orchestration", () => {
     expect(JSON.stringify(result)).not.toContain("storagePath");
   });
 
+  test("a failed pre-save attempt followed by a successful retry calls save once", async () => {
+    const source = "hello world!";
+    const fetch = (async () =>
+      response(source, {
+        headers: { "content-type": "text/markdown" },
+      })) as typeof globalThis.fetch;
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(source));
+    const hash = Array.from(new Uint8Array(digest), (byte) =>
+      byte.toString(16).padStart(2, "0"),
+    ).join("");
+    let extractCalls = 0;
+    let saveCalls = 0;
+    const dependencies = {
+      fetch,
+      client: client({
+        invoke: async (name) => {
+          if (name === "document-extract") {
+            extractCalls += 1;
+            return extractCalls === 1
+              ? {
+                  data: null,
+                  error: {
+                    context: response(
+                      JSON.stringify({
+                        error: "private input detail",
+                        diagnostic: "malformed_document",
+                      }),
+                      { status: 400, headers: { "content-type": "application/json" } },
+                    ),
+                  },
+                }
+              : { data: draft(hash), error: null };
+          }
+          saveCalls += 1;
+          return { data: { id: "22222222-2222-4222-8222-222222222222", isNew: true }, error: null };
+        },
+      }),
+      mapDraft: (extraction: DocumentDraft, allowed: ReadonlySet<string>) => ({
+        title: extraction.title,
+        summary: extraction.summary,
+        tags: extraction.tags,
+        recordData: { ...data, contentHash: extraction.contentHash },
+        selectedTargetIds: extraction.suggestedRecordIds.filter((id) => allowed.has(id)),
+      }),
+    };
+
+    await expectCode(excavateAndSaveChatGptDocument(reference, dependencies), "INVALID_INPUT");
+    const result = await excavateAndSaveChatGptDocument(reference, dependencies);
+    expect(result.isNew).toBe(true);
+    expect(extractCalls).toBe(2);
+    expect(saveCalls).toBe(1);
+  });
+
   test("maps quota, hash, invalid-owner-link, and save failures without surfacing upstream detail", async () => {
     const fetch = (async () =>
       response("hello world!", {
         headers: { "content-type": "text/markdown" },
       })) as typeof globalThis.fetch;
-    const quota = client({
-      invoke: async () => ({
-        error: { context: new Response("private upstream", { status: 429 }) },
-        data: null,
-      }),
-    });
+    for (const retryAfter of ["5", "3600"]) {
+      try {
+        await excavateAndSaveChatGptDocument(reference, {
+          client: client({
+            invoke: async () => ({
+              error: {
+                context: response(
+                  JSON.stringify({
+                    error: "private local quota detail",
+                    diagnostic: "quota_exceeded",
+                  }),
+                  {
+                    status: 429,
+                    headers: { "content-type": "application/json", "retry-after": retryAfter },
+                  },
+                ),
+              },
+              data: null,
+            }),
+          }),
+          fetch,
+          mapDraft: () => ({
+            title: "",
+            summary: "",
+            tags: [],
+            recordData: data,
+            selectedTargetIds: [],
+          }),
+        });
+        throw new Error("Expected local quota to reject the request");
+      } catch (error) {
+        expect(error).toBeInstanceOf(DocumentIngestionError);
+        const ingestionError = error as DocumentIngestionError;
+        expect(ingestionError.code).toBe("QUOTA_EXCEEDED");
+        expect(ingestionError.diagnostic).toBe("quota_exceeded");
+        expect(ingestionError.retryAfterSeconds).toBe(Number(retryAfter));
+        expect(
+          documentIngestionErrorMessage(
+            ingestionError.code,
+            ingestionError.diagnostic,
+            ingestionError.retryAfterSeconds,
+          ),
+        ).toContain(`Retry in approximately ${retryAfter} seconds.`);
+        expect(ingestionError.message).not.toContain("private local quota detail");
+      }
+    }
+
     await expectCode(
       excavateAndSaveChatGptDocument(reference, {
-        client: quota,
         fetch,
+        client: client({
+          invoke: async () => ({
+            data: null,
+            error: { context: response("private upstream", { status: 429 }) },
+          }),
+        }),
         mapDraft: () => ({
           title: "",
           summary: "",
@@ -435,7 +554,8 @@ describe("document ingestion orchestration", () => {
           selectedTargetIds: [],
         }),
       }),
-      "QUOTA_EXCEEDED",
+      "EXTRACTION_FAILED",
+      "document_extract_failure",
     );
 
     const mismatch = client();
@@ -482,6 +602,111 @@ describe("document ingestion orchestration", () => {
       }),
       "EXTRACTION_FAILED",
       "upstream_rate_limit",
+    );
+
+    await expectCode(
+      excavateAndSaveChatGptDocument(reference, {
+        fetch,
+        client: client({
+          invoke: async () => ({
+            data: null,
+            error: {
+              context: response(
+                JSON.stringify({
+                  error: "private provider quota detail",
+                  diagnostic: "upstream_quota",
+                }),
+                {
+                  status: 429,
+                  headers: { "content-type": "application/json", "retry-after": "99" },
+                },
+              ),
+            },
+          }),
+        }),
+        mapDraft: () => ({
+          title: "",
+          summary: "",
+          tags: [],
+          recordData: data,
+          selectedTargetIds: [],
+        }),
+      }),
+      "EXTRACTION_FAILED",
+      "upstream_quota",
+    );
+
+    await expectCode(
+      excavateAndSaveChatGptDocument(reference, {
+        fetch,
+        client: client({
+          invoke: async () => ({
+            data: null,
+            error: {
+              context: response(
+                JSON.stringify({ error: "bounded structure", diagnostic: "analysis_chunk_limit" }),
+                { status: 413, headers: { "content-type": "application/json" } },
+              ),
+            },
+          }),
+        }),
+        mapDraft: () => ({
+          title: "",
+          summary: "",
+          tags: [],
+          recordData: data,
+          selectedTargetIds: [],
+        }),
+      }),
+      "INVALID_INPUT",
+      "analysis_chunk_limit",
+    );
+
+    await expectCode(
+      excavateAndSaveChatGptDocument(reference, {
+        fetch,
+        client: client({
+          invoke: async () => ({
+            data: null,
+            error: { context: response("bounded input", { status: 413 }) },
+          }),
+        }),
+        mapDraft: () => ({
+          title: "",
+          summary: "",
+          tags: [],
+          recordData: data,
+          selectedTargetIds: [],
+        }),
+      }),
+      "EXTRACTION_FAILED",
+      "document_extract_failure",
+    );
+
+    await expectCode(
+      excavateAndSaveChatGptDocument(reference, {
+        fetch,
+        client: client({
+          invoke: async () => ({
+            data: null,
+            error: {
+              context: response(
+                JSON.stringify({ error: "file too large", diagnostic: "file_too_large" }),
+                { status: 413, headers: { "content-type": "application/json" } },
+              ),
+            },
+          }),
+        }),
+        mapDraft: () => ({
+          title: "",
+          summary: "",
+          tags: [],
+          recordData: data,
+          selectedTargetIds: [],
+        }),
+      }),
+      "FILE_TOO_LARGE",
+      "file_too_large",
     );
 
     await expectCode(

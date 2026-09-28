@@ -29,6 +29,7 @@ export type ChatGptFileReference = {
 export type DocumentIngestionErrorCode =
   | "FILE_UNAVAILABLE"
   | "FILE_TOO_LARGE"
+  | "INVALID_INPUT"
   | "UNSUPPORTED_FILE"
   | "QUOTA_EXCEEDED"
   | "EXTRACTION_FAILED"
@@ -61,12 +62,21 @@ export type DocumentIngestionDiagnostic =
   | "content_hash_failure"
   | "source_reference_validation_failure"
   | "unknown_extraction_failure"
+  | "request_too_large"
+  | "file_too_large"
+  | "unsupported_document"
+  | "malformed_document"
+  | "extracted_text_limit"
+  | "normalized_structure_limit"
+  | "analysis_chunk_limit"
+  | "synthesis_input_limit"
   | "document_save_failure"
   | "unexpected_failure";
 
 const SAFE_MESSAGES: Record<DocumentIngestionErrorCode, string> = {
   FILE_UNAVAILABLE: "The uploaded file is unavailable. Attach it again and retry.",
   FILE_TOO_LARGE: "The uploaded file exceeds the 10 MB document limit.",
+  INVALID_INPUT: "The document is malformed or exceeds a supported processing limit.",
   UNSUPPORTED_FILE: "Supported files are PDF, Markdown (.md), and plain text (.txt).",
   QUOTA_EXCEEDED: "Document excavation is temporarily rate limited. Please retry later.",
   EXTRACTION_FAILED: "The document could not be excavated.",
@@ -102,6 +112,14 @@ const DOCUMENT_INGESTION_DIAGNOSTICS: ReadonlySet<string> = new Set([
   "unknown_extraction_failure",
   "document_save_failure",
   "unexpected_failure",
+  "request_too_large",
+  "file_too_large",
+  "unsupported_document",
+  "malformed_document",
+  "extracted_text_limit",
+  "normalized_structure_limit",
+  "analysis_chunk_limit",
+  "synthesis_input_limit",
 ]);
 
 export class DocumentIngestionError extends Error {
@@ -109,6 +127,7 @@ export class DocumentIngestionError extends Error {
     readonly code: DocumentIngestionErrorCode,
     message = SAFE_MESSAGES[code],
     readonly diagnostic: DocumentIngestionDiagnostic = "unexpected_failure",
+    readonly retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = "DocumentIngestionError";
@@ -124,8 +143,17 @@ export function safeDocumentIngestionDiagnostic(value: unknown): DocumentIngesti
 export function documentIngestionErrorMessage(
   code: DocumentIngestionErrorCode,
   diagnostic: unknown,
+  retryAfterSeconds?: number,
 ): string {
-  return `${SAFE_MESSAGES[code]} [diagnostic: ${safeDocumentIngestionDiagnostic(diagnostic)}]`;
+  const retry =
+    code === "QUOTA_EXCEEDED" &&
+    typeof retryAfterSeconds === "number" &&
+    Number.isInteger(retryAfterSeconds) &&
+    retryAfterSeconds >= 1 &&
+    retryAfterSeconds <= 3_600
+      ? ` Retry in approximately ${retryAfterSeconds} seconds.`
+      : "";
+  return `${SAFE_MESSAGES[code]}${retry} [diagnostic: ${safeDocumentIngestionDiagnostic(diagnostic)}]`;
 }
 
 export type DocumentCandidate = {
@@ -714,15 +742,45 @@ async function loadOwnerCandidates(client: DocumentIngestionClient): Promise<Doc
 async function classifyExtractionFailure(error: unknown): Promise<DocumentIngestionError> {
   const status = responseStatus(error);
   const diagnostic = await responseDiagnostic(error);
-  if (diagnostic === "quota_exceeded" || (status === 429 && !diagnostic))
-    return new DocumentIngestionError("QUOTA_EXCEEDED", undefined, "quota_exceeded");
-  if (status === 413)
-    return new DocumentIngestionError("FILE_TOO_LARGE", undefined, "document_extract_failure");
+  if (diagnostic === "quota_exceeded") {
+    return new DocumentIngestionError(
+      "QUOTA_EXCEEDED",
+      undefined,
+      "quota_exceeded",
+      safeRetryAfterSeconds(error),
+    );
+  }
+  if (diagnostic === "file_too_large")
+    return new DocumentIngestionError("FILE_TOO_LARGE", undefined, diagnostic);
+  if (
+    diagnostic &&
+    [
+      "request_too_large",
+      "unsupported_document",
+      "malformed_document",
+      "extracted_text_limit",
+      "normalized_structure_limit",
+      "analysis_chunk_limit",
+      "synthesis_input_limit",
+    ].includes(diagnostic)
+  ) {
+    return new DocumentIngestionError("INVALID_INPUT", undefined, diagnostic);
+  }
   return new DocumentIngestionError(
     "EXTRACTION_FAILED",
     undefined,
     diagnostic ?? "document_extract_failure",
   );
+}
+
+function safeRetryAfterSeconds(error: unknown): number | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const context = (error as { context?: unknown }).context;
+  if (!context || typeof context !== "object") return undefined;
+  const response = context as Partial<Response>;
+  const value = response.headers?.get("Retry-After");
+  if (!value || !/^\d+$/.test(value)) return undefined;
+  return Math.min(3_600, Math.max(1, Number(value)));
 }
 
 async function responseDiagnostic(error: unknown): Promise<DocumentIngestionDiagnostic | null> {

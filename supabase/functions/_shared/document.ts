@@ -4,7 +4,6 @@ export const DOCUMENT_MAX_FILE_BYTES = 10_000_000;
 export const DOCUMENT_MAX_REQUEST_BYTES = 12_000_000;
 export const DOCUMENT_MAX_EXTRACTED_CHARS = 400_000;
 export const DOCUMENT_MAX_CHUNKS = 24;
-export const DOCUMENT_MAX_SOURCE_UNITS = 128;
 export const DOCUMENT_MAX_CHUNK_CHARS = 14_000;
 export const DOCUMENT_MAX_PAGE_COUNT = 1_000;
 export const DOCUMENT_MAX_NORMALIZED_BYTES = 1_000_000;
@@ -170,7 +169,7 @@ export async function readBoundedBody(
       size += value.byteLength;
       if (size > maxBytes) {
         await reader.cancel();
-        throw new DocumentInputError("Request is too large.", 413);
+        throw new DocumentInputError("Request is too large.", 413, "request_too_large");
       }
       chunks.push(value);
     }
@@ -202,18 +201,24 @@ export async function normalizeDocumentFile(
   mimeType: string,
   expectedHash?: string,
 ): Promise<NormalizedDocument> {
-  if (fileBytes.byteLength === 0) throw new DocumentInputError("The selected file is empty.", 400);
+  if (fileBytes.byteLength === 0)
+    throw new DocumentInputError("The selected file is empty.", 400, "malformed_document");
   if (fileBytes.byteLength > DOCUMENT_MAX_FILE_BYTES)
-    throw new DocumentInputError("The selected file is too large.", 413);
+    throw new DocumentInputError("The selected file is too large.", 413, "file_too_large");
   const kind = kindFor(fileName, mimeType);
   if (!kind)
     throw new DocumentInputError(
       "The file type is not supported or does not match its extension.",
       400,
+      "unsupported_document",
     );
   const contentHash = await sha256(fileBytes);
   if (expectedHash !== undefined && (!isHash(expectedHash) || expectedHash !== contentHash)) {
-    throw new DocumentInputError("The selected file changed before it was processed.", 400);
+    throw new DocumentInputError(
+      "The selected file changed before it was processed.",
+      400,
+      "malformed_document",
+    );
   }
 
   let normalized: NormalizedDocument;
@@ -224,10 +229,14 @@ export async function normalizeDocumentFile(
     try {
       text = new TextDecoder("utf-8", { fatal: true }).decode(fileBytes);
     } catch {
-      throw new DocumentInputError("The text file is not valid UTF-8.", 400);
+      throw new DocumentInputError("The text file is not valid UTF-8.", 400, "malformed_document");
     }
     if (text.includes("\u0000"))
-      throw new DocumentInputError("The document contains unsupported binary content.", 400);
+      throw new DocumentInputError(
+        "The document contains unsupported binary content.",
+        400,
+        "malformed_document",
+      );
     normalized = normalizeText(text.replace(/\r\n?/g, "\n"), kind, contentHash);
   }
   if (normalized.extractedCharacterCount === 0) {
@@ -237,15 +246,41 @@ export async function normalizeDocumentFile(
     );
   }
   if (normalized.extractedCharacterCount > DOCUMENT_MAX_EXTRACTED_CHARS) {
-    throw new DocumentInputError("The extracted document text exceeds the supported limit.", 413);
-  }
-  if (normalized.units.length === 0 || normalized.units.length > DOCUMENT_MAX_SOURCE_UNITS) {
     throw new DocumentInputError(
-      "The document has too many source sections for bounded excavation.",
+      "The extracted document text exceeds the supported limit.",
       413,
+      "extracted_text_limit",
     );
   }
+  if (normalized.units.length === 0) {
+    throw new DocumentInputError(
+      "No usable text was found. Scanned or image-only PDFs are not supported.",
+      422,
+      "malformed_document",
+    );
+  }
+  assertNormalizedDocumentBounds(normalized);
   return normalized;
+}
+
+export function assertNormalizedDocumentBounds(document: NormalizedDocument): void {
+  if (
+    new TextEncoder().encode(JSON.stringify(document)).byteLength > DOCUMENT_MAX_NORMALIZED_BYTES
+  ) {
+    throw new DocumentInputError(
+      "The normalized document structure exceeds the supported limit.",
+      413,
+      "normalized_structure_limit",
+    );
+  }
+  const chunks = chunkUnits(document.units);
+  if (chunks.length === 0 || chunks.length > DOCUMENT_MAX_CHUNKS) {
+    throw new DocumentInputError(
+      "The document exceeds the bounded analysis chunk limit.",
+      413,
+      "analysis_chunk_limit",
+    );
+  }
 }
 
 function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
@@ -272,7 +307,6 @@ export function validateNormalizedDocument(value: unknown): value is NormalizedD
     !isHash(document.contentHash) ||
     !Array.isArray(document.units) ||
     document.units.length === 0 ||
-    document.units.length > DOCUMENT_MAX_SOURCE_UNITS ||
     !Number.isInteger(document.extractedCharacterCount) ||
     (document.extractedCharacterCount as number) < 1 ||
     (document.extractedCharacterCount as number) > DOCUMENT_MAX_EXTRACTED_CHARS
@@ -310,7 +344,12 @@ export function validateNormalizedDocument(value: unknown): value is NormalizedD
     characterCount += unit.text.length;
     if (characterCount > DOCUMENT_MAX_EXTRACTED_CHARS) return false;
   }
-  return characterCount === document.extractedCharacterCount;
+  return (
+    characterCount === document.extractedCharacterCount &&
+    new TextEncoder().encode(JSON.stringify(document)).byteLength <=
+      DOCUMENT_MAX_NORMALIZED_BYTES &&
+    chunkUnits(document.units).length <= DOCUMENT_MAX_CHUNKS
+  );
 }
 
 function normalizeText(
@@ -394,6 +433,7 @@ async function normalizePdf(bytes: Uint8Array, contentHash: string): Promise<Nor
     throw new DocumentInputError(
       "The PDF could not be read. It may be malformed or encrypted.",
       422,
+      "malformed_document",
     );
   }
   if (
@@ -401,7 +441,11 @@ async function normalizePdf(bytes: Uint8Array, contentHash: string): Promise<Nor
     pdf.numPages < 1 ||
     pdf.numPages > DOCUMENT_MAX_PAGE_COUNT
   ) {
-    throw new DocumentInputError("The PDF has too many pages for bounded excavation.", 413);
+    throw new DocumentInputError(
+      "The PDF has too many pages for bounded excavation.",
+      413,
+      "normalized_structure_limit",
+    );
   }
   const units: SourceUnit[] = [];
   let extractedCharacterCount = 0;
@@ -600,10 +644,21 @@ export function validateDocumentRecordData(value: unknown): value is DocumentRec
   return true;
 }
 
+export type DocumentInputDiagnostic =
+  | "request_too_large"
+  | "file_too_large"
+  | "unsupported_document"
+  | "malformed_document"
+  | "extracted_text_limit"
+  | "normalized_structure_limit"
+  | "analysis_chunk_limit"
+  | "synthesis_input_limit";
+
 export class DocumentInputError extends Error {
   constructor(
     message: string,
     public readonly status: 400 | 413 | 422,
+    public readonly diagnostic: DocumentInputDiagnostic = "malformed_document",
   ) {
     super(message);
   }

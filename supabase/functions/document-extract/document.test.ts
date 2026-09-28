@@ -1,9 +1,11 @@
 import {
   chunkUnits,
   DOCUMENT_MAX_CHUNKS,
-  DOCUMENT_MAX_SOURCE_UNITS,
+  DOCUMENT_MAX_FILE_BYTES,
+  DOCUMENT_MAX_NORMALIZED_BYTES,
   mapInBatches,
   normalizeDocumentFile,
+  toBinaryData,
   type NormalizedDocument,
   validateNormalizedDocument,
 } from "../_shared/document.ts";
@@ -17,6 +19,54 @@ import { classifyOpenAiFailure, handleDocumentExtract } from "./index.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
+}
+
+function extractionAuth(onQuota: () => Promise<unknown>) {
+  const client = {
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({ data: { model_name: "test-model" }, error: null }),
+          }),
+        }),
+      }),
+    }),
+    rpc: async () => await onQuota(),
+  };
+  return {
+    client,
+    user: { id: "11111111-1111-4111-8111-111111111111" },
+    authorization: "Bearer test",
+  } as unknown as AuthenticatedSupabase;
+}
+
+async function documentExtractRequest(bytes: Uint8Array, name = "notes.md") {
+  const digest = await crypto.subtle.digest("SHA-256", toBinaryData(bytes));
+  const contentHash = Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+  const form = new FormData();
+  form.set("file", new File([toBinaryData(bytes)], name, { type: "text/markdown" }));
+  form.set("contentHash", contentHash);
+  form.set("candidateRecords", "[]");
+  return new Request("https://example.test", { method: "POST", body: form });
+}
+
+function providerResponse(value: unknown): Response {
+  return new Response(
+    JSON.stringify({
+      status: "completed",
+      output: [
+        {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: JSON.stringify(value) }],
+        },
+      ],
+    }),
+    { status: 200, headers: { "content-type": "application/json" } },
+  );
 }
 
 function syntheticResearchDocument(): NormalizedDocument {
@@ -93,10 +143,6 @@ Deno.test("retains all source units for a 55-page research-sized document", () =
 
   assert(normalized.units.length === 55, "expected one source unit per synthetic page");
   assert(
-    normalized.units.length <= DOCUMENT_MAX_SOURCE_UNITS,
-    "source-unit cap must remain explicit",
-  );
-  assert(
     normalized.extractedCharacterCount > 16 * 7_000,
     "fixture must exceed the old 16-chunk, 7,000-character policy",
   );
@@ -113,6 +159,63 @@ Deno.test("retains all source units for a 55-page research-sized document", () =
     "expected every source reference to be retained",
   );
 });
+
+Deno.test("accepts a 71,800-byte Markdown file with 195 heading-derived units", async () => {
+  const sectionCount = 195;
+  const sections = Array.from(
+    { length: sectionCount },
+    (_, index) =>
+      `## Neutral section ${index + 1}\n\nSection ${index + 1} records synthetic evidence and a short neutral observation.\n\n`,
+  );
+  let text = sections.join("");
+  const targetBytes = 71_800;
+  const encoder = new TextEncoder();
+  while (encoder.encode(text).byteLength + 16 <= targetBytes) text += "Neutral filler. ";
+  text += "x".repeat(targetBytes - encoder.encode(text).byteLength);
+  const bytes = encoder.encode(text);
+
+  const normalized = await normalizeDocumentFile(bytes, "heading-rich.md", "text/markdown");
+  const chunks = chunkUnits(normalized.units);
+  assert(bytes.byteLength === targetBytes, "expected the fixture to be 71,800 bytes");
+  assert((text.match(/^#{1,6}\s+/gm) ?? []).length === sectionCount, "expected 195 headings");
+  assert(normalized.units.length > 128, "expected more than 128 heading-derived units");
+  assert(normalized.extractedCharacterCount < 400_000, "expected text below extraction bound");
+  assert(chunks.length <= DOCUMENT_MAX_CHUNKS, "expected bounded analysis workload");
+  assert(
+    validateNormalizedDocument(normalized),
+    "expected heading-rich normalized input to validate",
+  );
+  assert(
+    encoder.encode(JSON.stringify(normalized)).byteLength <= DOCUMENT_MAX_NORMALIZED_BYTES,
+    "expected normalized representation under its byte bound",
+  );
+  assert(
+    normalized.units.every((unit) => unit.locator.includes("Lines")),
+    "expected line provenance",
+  );
+});
+
+Deno.test(
+  "rejects a real file larger than the 10 MB limit with a file-size diagnostic",
+  async () => {
+    let error: unknown;
+    try {
+      await normalizeDocumentFile(
+        new Uint8Array(DOCUMENT_MAX_FILE_BYTES + 1),
+        "oversized.md",
+        "text/markdown",
+      );
+    } catch (caught) {
+      error = caught;
+    }
+    assert(error instanceof Error, "expected oversized file to be rejected");
+    assert(error.message === "The selected file is too large.", "expected the true size error");
+    assert(
+      "diagnostic" in error && error.diagnostic === "file_too_large",
+      "expected the actual byte limit diagnostic",
+    );
+  },
+);
 
 Deno.test("rejects empty, unsupported, and binary text input", async () => {
   let rejected = false;
@@ -205,6 +308,156 @@ Deno.test("keeps missing authentication at 401", async () => {
   );
   assert(response.status === 401, "expected missing authentication to remain unauthorized");
 });
+
+Deno.test("does not consume quota when deterministic document preflight fails", async () => {
+  let quotaCalls = 0;
+  let providerCalls = 0;
+  const auth = extractionAuth(async () => {
+    quotaCalls += 1;
+    return { data: { allowed: true, remaining: 9, retryAfterSeconds: 0 }, error: null };
+  });
+  const response = await handleDocumentExtract(
+    await documentExtractRequest(new Uint8Array([0xff, 0xfe])),
+    {
+      authenticate: async () => auth,
+      resolveFunding: async () => ({ ok: true, apiKey: "test-key", model: "test-model" }),
+      fetchProvider: async () => {
+        providerCalls += 1;
+        return providerResponse({});
+      },
+    },
+  );
+  const body = await response.json();
+  assert(response.status === 400, "expected malformed UTF-8 to fail as input");
+  assert(body.diagnostic === "malformed_document", "expected a safe input diagnostic");
+  assert(quotaCalls === 0, "preflight rejection must not consume quota");
+  assert(providerCalls === 0, "preflight rejection must not call the provider");
+});
+
+Deno.test("rejects an excessive chunk workload without consuming quota", async () => {
+  let quotaCalls = 0;
+  let providerCalls = 0;
+  const auth = extractionAuth(async () => {
+    quotaCalls += 1;
+    return { data: { allowed: true, remaining: 9, retryAfterSeconds: 0 }, error: null };
+  });
+  const text = "bounded workload ".repeat(21_000);
+  const response = await handleDocumentExtract(
+    await documentExtractRequest(new TextEncoder().encode(text)),
+    {
+      authenticate: async () => auth,
+      resolveFunding: async () => ({ ok: true, apiKey: "test-key", model: "test-model" }),
+      fetchProvider: async () => {
+        providerCalls += 1;
+        return providerResponse({});
+      },
+    },
+  );
+  const body = await response.json();
+  assert(response.status === 413, "expected the analysis chunk bound to reject the input");
+  assert(body.diagnostic === "analysis_chunk_limit", "expected a chunk-bound diagnostic");
+  assert(quotaCalls === 0, "bounded input failure must not consume quota");
+  assert(providerCalls === 0, "bounded input failure must not call the provider");
+});
+
+Deno.test("rejects actual files over 10 MB before quota admission", async () => {
+  let quotaCalls = 0;
+  const auth = extractionAuth(async () => {
+    quotaCalls += 1;
+    return { data: { allowed: true, remaining: 9, retryAfterSeconds: 0 }, error: null };
+  });
+  const response = await handleDocumentExtract(
+    await documentExtractRequest(new Uint8Array(DOCUMENT_MAX_FILE_BYTES + 1)),
+    {
+      authenticate: async () => auth,
+      resolveFunding: async () => ({ ok: true, apiKey: "test-key", model: "test-model" }),
+    },
+  );
+  const body = await response.json();
+  assert(response.status === 413, "expected HTTP 413 for an actual oversized file");
+  assert(body.diagnostic === "file_too_large", "expected the actual file-size diagnostic");
+  assert(quotaCalls === 0, "oversized files must not consume quota");
+});
+
+Deno.test("admits sequential valid excavations through the configured quota RPC", async () => {
+  let quotaCalls = 0;
+  let providerCalls = 0;
+  const auth = extractionAuth(async () => {
+    quotaCalls += 1;
+    return {
+      data: { allowed: true, remaining: 10 - quotaCalls, retryAfterSeconds: 0 },
+      error: null,
+    };
+  });
+  const chunkResult = {
+    highSignalFindings: [],
+    keyClaims: [],
+    contradictions: [],
+    uncertainties: [],
+  };
+  const synthesisResult = {
+    title: "Excavated notes",
+    summary: "A short neutral source.",
+    tags: [],
+    documentDate: null,
+    pageCount: null,
+    highSignalFindings: [],
+    keyClaims: [],
+    contradictions: [],
+    uncertainties: [],
+    sourceReferences: [],
+    suggestedRecordIds: [],
+  };
+  for (let index = 0; index < 2; index += 1) {
+    const response = await handleDocumentExtract(
+      await documentExtractRequest(new TextEncoder().encode(`Valid document ${index + 1}.`)),
+      {
+        authenticate: async () => auth,
+        resolveFunding: async () => ({ ok: true, apiKey: "test-key", model: "test-model" }),
+        fetchProvider: async (_input, init) => {
+          providerCalls += 1;
+          const requestBody = JSON.parse(String(init?.body));
+          const schemaName = requestBody.text.format.name;
+          return providerResponse(
+            schemaName === "document_chunk_analysis" ? chunkResult : synthesisResult,
+          );
+        },
+      },
+    );
+    assert(response.status === 200, "expected each valid sequential excavation to complete");
+  }
+  assert(quotaCalls === 2, "each accepted excavation must consume one quota slot");
+  assert(providerCalls === 4, "each document must run analysis and synthesis");
+});
+
+Deno.test(
+  "returns bounded retry metadata for local cooldown and rolling-hour denials",
+  async () => {
+    for (const retryAfterSeconds of [5, 3_600]) {
+      const auth = extractionAuth(async () => ({
+        data: { allowed: false, remaining: retryAfterSeconds === 5 ? 9 : 0, retryAfterSeconds },
+        error: null,
+      }));
+      const response = await handleDocumentExtract(
+        await documentExtractRequest(new TextEncoder().encode("Valid document.")),
+        {
+          authenticate: async () => auth,
+          resolveFunding: async () => ({ ok: true, apiKey: "test-key", model: "test-model" }),
+          fetchProvider: async () => {
+            throw new Error("quota rejection must happen before provider calls");
+          },
+        },
+      );
+      const body = await response.json();
+      assert(response.status === 429, "expected local quota denials to remain 429");
+      assert(body.diagnostic === "quota_exceeded", "expected the local quota diagnostic");
+      assert(
+        response.headers.get("Retry-After") === String(retryAfterSeconds),
+        "expected a bounded Retry-After header",
+      );
+    }
+  },
+);
 
 Deno.test("reports missing owner funding before provider contact", async () => {
   const auth = {
