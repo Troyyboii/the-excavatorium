@@ -113,20 +113,42 @@ export function isQuotaDecision(
   );
 }
 
+const DIAGNOSTIC_COUNT_FIELDS = ["messages", "outputBytes", "returned", "dropped"] as const;
+const DIAGNOSTIC_TOKEN_RE = /^[A-Za-z0-9_.:-]{1,128}$/;
+
+export type DiagnosticDetail = {
+  status?: number;
+  durationMs?: number;
+  /** Provider request identifier (for example OpenAI's x-request-id). */
+  requestId?: string | null;
+  /** A fixed reason token chosen by the caller, never upstream or document text. */
+  reason?: string;
+} & { [key in (typeof DIAGNOSTIC_COUNT_FIELDS)[number]]?: number };
+
 /**
- * Emits one bounded diagnostic line. Only phase, category, status and timing
- * metadata are ever recorded — never API keys, prompts, file contents, record
- * data, or upstream payloads.
+ * Emits one bounded diagnostic line. Only phase, category, status, timing,
+ * counts, fixed reason tokens and provider request identifiers are ever
+ * recorded — never API keys, prompts, file contents, record data, or upstream
+ * payloads.
  */
 export function logDiagnostic(
   phase: string,
   category: string,
-  detail: { status?: number; durationMs?: number } = {},
+  detail: DiagnosticDetail = {},
 ): void {
   const entry: Record<string, string | number> = { phase, category };
   if (typeof detail.status === "number" && Number.isFinite(detail.status))
     entry.status = detail.status;
   if (typeof detail.durationMs === "number" && Number.isFinite(detail.durationMs))
     entry.durationMs = Math.round(detail.durationMs);
+  for (const field of DIAGNOSTIC_COUNT_FIELDS) {
+    const value = detail[field];
+    if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0)
+      entry[field] = value;
+  }
+  for (const field of ["requestId", "reason"] as const) {
+    const value = detail[field];
+    if (typeof value === "string" && DIAGNOSTIC_TOKEN_RE.test(value)) entry[field] = value;
+  }
   console.error("document-diagnostic", entry);
 }
