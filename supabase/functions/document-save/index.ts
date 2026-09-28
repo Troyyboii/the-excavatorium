@@ -159,6 +159,44 @@ async function loadStoredNormalized(
   return validateNormalizedDocument(value) && value.contentHash === expectedHash ? value : null;
 }
 
+/**
+ * Finds the caller's oldest Document whose stored file has this verified
+ * content hash. Scoped by the owner filter and by row-level security, so
+ * another owner's identical file is never visible here.
+ */
+async function findOwnedDocumentByHash(
+  auth: AuthenticatedSupabase,
+  contentHash: string,
+): Promise<{ id: string; title?: string } | null | "unavailable"> {
+  const { data, error } = await auth.client
+    .from("records")
+    .select("id,title,record_type,record_data")
+    .eq("user_id", auth.user.id)
+    .eq("record_type", "document")
+    .eq("record_data->>contentHash", contentHash)
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true })
+    .limit(1);
+  if (error || !Array.isArray(data)) return "unavailable";
+  const row = data[0] as
+    | { id?: unknown; title?: unknown; record_type?: unknown; record_data?: unknown }
+    | undefined;
+  if (!row) return null;
+  const stored = row.record_data as { contentHash?: unknown } | null;
+  if (
+    !isUuid(row.id) ||
+    row.record_type !== "document" ||
+    !stored ||
+    stored.contentHash !== contentHash
+  )
+    return "unavailable";
+  const title =
+    typeof row.title === "string" && row.title.trim().length > 0 && row.title.length <= 240
+      ? row.title
+      : undefined;
+  return { id: row.id.toLowerCase(), ...(title ? { title } : {}) };
+}
+
 export function createDocumentSaveHandler(
   authenticate: (request: Request) => Promise<AuthenticatedSupabase | null> = authenticatedSupabase,
 ) {
@@ -200,12 +238,18 @@ export function createDocumentSaveHandler(
       const payload = parsePayload(parseJson(form.get("record")), file !== null);
       const targetIds = parseTargetIds(parseJson(form.get("selectedTargetIds")));
       const removeFile = form.get("removeFile") === "true";
+      const duplicatePolicy = form.get("duplicatePolicy");
       if (
         !payload ||
         !targetIds ||
-        (!file && !removeFile && payload.recordData.storagePath === null)
+        (!file && !removeFile && payload.recordData.storagePath === null) ||
+        (duplicatePolicy !== null && duplicatePolicy !== "reuse_existing")
       )
         return jsonResponse({ error: "Document save input is invalid." }, 400, origin);
+      // Opt-in for implicit ingestion (the MCP connector): a new file whose
+      // verified hash the owner already archived returns that Document
+      // unchanged. An explicit record id is always an update, never a reuse.
+      const reuseExistingFile = duplicatePolicy === "reuse_existing" && !payload.id;
 
       const recordId = payload.id?.toLowerCase() ?? crypto.randomUUID();
       let existingData: DocumentRecordData | null = null;
@@ -264,6 +308,19 @@ export function createDocumentSaveHandler(
             400,
             origin,
           );
+        }
+        if (reuseExistingFile) {
+          const existing = await findOwnedDocumentByHash(auth, normalized.contentHash);
+          if (existing === "unavailable")
+            return jsonResponse(
+              { error: "Existing documents could not be checked. Nothing was saved." },
+              503,
+              origin,
+            );
+          if (existing) {
+            logDiagnostic("request", "existing_document_reused", { status: 200 });
+            return jsonResponse({ ...existing, isNew: false }, 200, origin);
+          }
         }
         const reusablePath =
           existingData &&

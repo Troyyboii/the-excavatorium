@@ -7,6 +7,7 @@ import {
   documentIngestionErrorMessage,
   type ChatGptFileReference,
   type DocumentIngestionClient,
+  createDocumentIngestionClient,
   downloadChatGptDocument,
   excavateAndSaveChatGptDocument,
 } from "./document-ingestion";
@@ -835,5 +836,199 @@ describe("document ingestion orchestration", () => {
         expect(String(error)).not.toContain(upstreamMessage);
       }
     }
+  });
+});
+
+describe("content-hash idempotency for implicit excavation", () => {
+  const source = "hello world!";
+  const fetch = (async () =>
+    response(source, { headers: { "content-type": "text/markdown" } })) as typeof globalThis.fetch;
+  const existingId = "33333333-3333-4333-8333-333333333333";
+
+  async function sourceHash(): Promise<string> {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(source));
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join(
+      "",
+    );
+  }
+
+  function mapDraft(extraction: DocumentDraft, allowed: ReadonlySet<string>) {
+    return {
+      title: extraction.title,
+      summary: extraction.summary,
+      tags: extraction.tags,
+      recordData: { ...data, contentHash: extraction.contentHash },
+      selectedTargetIds: extraction.suggestedRecordIds.filter((id) => allowed.has(id)),
+    };
+  }
+
+  test("returns the owner's existing Document without extraction, quota, or save", async () => {
+    const hash = await sourceHash();
+    const invoked: string[] = [];
+    let candidateLookups = 0;
+    const lookups: string[] = [];
+    const result = await excavateAndSaveChatGptDocument(reference, {
+      fetch,
+      mapDraft,
+      client: client({
+        listRecentCandidates: async () => {
+          candidateLookups += 1;
+          return { data: [], error: null };
+        },
+        findDocumentByContentHash: async (contentHash) => {
+          lookups.push(contentHash);
+          return {
+            data: [
+              {
+                id: existingId,
+                title: "Owner-edited title",
+                record_type: "document",
+                record_data: { contentHash, originalFileName: "original-name.md" },
+              },
+            ],
+            error: null,
+          };
+        },
+        invoke: async (name) => {
+          invoked.push(name);
+          return { data: null, error: { message: "must not be called" } };
+        },
+      }),
+    });
+
+    expect(lookups).toEqual([hash]);
+    expect(invoked).toEqual([]);
+    expect(candidateLookups).toBe(0);
+    expect(result).toEqual({
+      id: existingId,
+      isNew: false,
+      title: "Owner-edited title",
+      recordType: "document",
+      originalFileName: "original-name.md",
+      contentHash: hash,
+    });
+  });
+
+  test("a first excavation creates the Document and opts the save into reuse", async () => {
+    const hash = await sourceHash();
+    const requests: Array<{ name: string; body: FormData }> = [];
+    const result = await excavateAndSaveChatGptDocument(reference, {
+      fetch,
+      mapDraft,
+      client: client({
+        findDocumentByContentHash: async () => ({ data: [], error: null }),
+        invoke: async (name, body) => {
+          requests.push({ name, body });
+          return name === "document-extract"
+            ? { data: draft(hash), error: null }
+            : { data: { id: "22222222-2222-4222-8222-222222222222", isNew: true }, error: null };
+        },
+      }),
+    });
+    expect(requests.map((request) => request.name)).toEqual(["document-extract", "document-save"]);
+    expect(requests[1]?.body.get("duplicatePolicy")).toBe("reuse_existing");
+    expect(result.isNew).toBe(true);
+    expect(result.title).toBe("Excavated notes");
+  });
+
+  test("reports the stored title when the save layer reuses a Document created meanwhile", async () => {
+    const hash = await sourceHash();
+    const result = await excavateAndSaveChatGptDocument(reference, {
+      fetch,
+      mapDraft,
+      client: client({
+        findDocumentByContentHash: async () => ({ data: [], error: null }),
+        invoke: async (name) =>
+          name === "document-extract"
+            ? { data: draft(hash), error: null }
+            : { data: { id: existingId, isNew: false, title: "Stored title" }, error: null },
+      }),
+    });
+    expect(result).toMatchObject({ id: existingId, isNew: false, title: "Stored title" });
+  });
+
+  test("fails closed when the existing-document lookup is unavailable or inconsistent", async () => {
+    const hash = await sourceHash();
+    const invoked: string[] = [];
+    const invoke: DocumentIngestionClient["invoke"] = async (name) => {
+      invoked.push(name);
+      return { data: null, error: null };
+    };
+    await expectCode(
+      excavateAndSaveChatGptDocument(reference, {
+        fetch,
+        mapDraft,
+        client: client({
+          findDocumentByContentHash: async () => ({ data: null, error: { message: "down" } }),
+          invoke,
+        }),
+      }),
+      "DATA_UNAVAILABLE",
+      "existing_document_lookup_failure",
+    );
+    await expectCode(
+      excavateAndSaveChatGptDocument(reference, {
+        fetch,
+        mapDraft,
+        client: client({
+          findDocumentByContentHash: async () => ({
+            data: [
+              {
+                id: existingId,
+                title: "Mismatched",
+                record_type: "document",
+                record_data: { contentHash: "b".repeat(64) },
+              },
+            ],
+            error: null,
+          }),
+          invoke,
+        }),
+      }),
+      "DATA_UNAVAILABLE",
+      "existing_document_lookup_failure",
+    );
+    expect(hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(invoked).toEqual([]);
+  });
+
+  test("the production client queries the owner's oldest Document by content hash", async () => {
+    const calls: Array<[string, ...unknown[]]> = [];
+    const query = {
+      eq: (column: string, value: string) => {
+        calls.push(["eq", column, value]);
+        return query;
+      },
+      order: (column: string, options: { ascending: boolean }) => {
+        calls.push(["order", column, options.ascending]);
+        return query;
+      },
+      limit: async (count: number) => {
+        calls.push(["limit", count]);
+        return { data: [], error: null };
+      },
+    };
+    const ingestionClient = createDocumentIngestionClient({
+      from: (table) => {
+        calls.push(["from", table]);
+        return {
+          select: (columns) => {
+            calls.push(["select", columns]);
+            return query;
+          },
+        };
+      },
+      functions: { invoke: async () => ({ data: null, error: null }) },
+    });
+    await ingestionClient.findDocumentByContentHash?.("c".repeat(64));
+    expect(calls).toEqual([
+      ["from", "records"],
+      ["select", "id,title,record_type,record_data"],
+      ["eq", "record_type", "document"],
+      ["eq", "record_data->>contentHash", "c".repeat(64)],
+      ["order", "created_at", true],
+      ["order", "id", true],
+      ["limit", 1],
+    ]);
   });
 });
