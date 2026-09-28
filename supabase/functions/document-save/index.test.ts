@@ -168,7 +168,13 @@ async function mcpSaveRequest(
   name: string,
   type: string,
   cited: string[],
-  options: { recordId?: string; fileless?: boolean; recordData?: Record<string, unknown> } = {},
+  options: {
+    recordId?: string;
+    fileless?: boolean;
+    recordData?: Record<string, unknown>;
+    title?: string;
+    duplicatePolicy?: string;
+  } = {},
 ): Promise<Request> {
   const contentHash = await sha256Hex(bytes);
   const form = new FormData();
@@ -177,7 +183,7 @@ async function mcpSaveRequest(
     JSON.stringify({
       ...(options.recordId ? { id: options.recordId } : {}),
       recordType: "document",
-      title: "Synthetic Kingdom",
+      title: options.title ?? "Synthetic Kingdom",
       summary: "An expanded lore book.",
       tags: ["lore"],
       recordData: {
@@ -209,6 +215,8 @@ async function mcpSaveRequest(
   );
   form.append("selectedTargetIds", "[]");
   form.append("removeFile", "false");
+  if (options.duplicatePolicy !== undefined)
+    form.append("duplicatePolicy", options.duplicatePolicy);
   if (!options.fileless) {
     form.append("contentHash", contentHash);
     form.append("file", new File([toBinaryData(bytes)], name, { type }));
@@ -218,34 +226,85 @@ async function mcpSaveRequest(
 
 type Upload = { path: string; body: unknown; options: Record<string, unknown> };
 
+type StoredRecord = {
+  id: string;
+  user_id: string;
+  record_type: string;
+  title: string;
+  record_data: Record<string, unknown>;
+  created_at: string;
+};
+
+/**
+ * In-memory stand-in for the owner-scoped client. The records table applies
+ * the same filters the handler sends (owner, type, id, JSON content hash), so
+ * lookups exercise real matching rather than canned answers.
+ */
 function recordingAuth(
   options: {
     existing?: Record<string, unknown>;
     storedNormalized?: string;
+    records?: StoredRecord[];
+    failLookup?: boolean;
+    failSave?: boolean;
   } = {},
 ) {
   const uploads: Upload[] = [];
   const removals: string[][] = [];
   const saves: Array<Record<string, unknown>> = [];
+  const records: StoredRecord[] = [...(options.records ?? [])];
+  if (options.existing) {
+    records.push({
+      id: options.existing.id as string,
+      user_id: userId,
+      record_type: "document",
+      title: "Existing",
+      record_data: options.existing.data as Record<string, unknown>,
+      created_at: "2026-01-01T00:00:00Z",
+    });
+  }
+  const valueAt = (record: StoredRecord, column: string): unknown =>
+    column.startsWith("record_data->>")
+      ? record.record_data[column.slice("record_data->>".length)]
+      : (record as unknown as Record<string, unknown>)[column];
+  const query = () => {
+    const filters: Array<[string, string]> = [];
+    const orders: Array<[string, boolean]> = [];
+    const rows = () =>
+      records
+        .filter((record) => filters.every(([column, value]) => valueAt(record, column) === value))
+        .sort((left, right) => {
+          for (const [column, ascending] of orders) {
+            const a = String(valueAt(left, column));
+            const b = String(valueAt(right, column));
+            if (a !== b) return (a < b ? -1 : 1) * (ascending ? 1 : -1);
+          }
+          return 0;
+        });
+    const builder = {
+      eq(column: string, value: string) {
+        filters.push([column, value]);
+        return builder;
+      },
+      order(column: string, orderOptions: { ascending: boolean }) {
+        orders.push([column, orderOptions.ascending]);
+        return builder;
+      },
+      async limit(count: number) {
+        return options.failLookup
+          ? { data: null, error: { message: "lookup unavailable" } }
+          : { data: rows().slice(0, count), error: null };
+      },
+      async maybeSingle() {
+        return { data: rows()[0] ?? null, error: null };
+      },
+    };
+    return builder;
+  };
   const auth = {
     client: {
       from() {
-        return {
-          select: () => ({
-            eq: () => ({
-              maybeSingle: async () => ({
-                data: options.existing
-                  ? {
-                      id: options.existing.id,
-                      record_type: "document",
-                      record_data: options.existing.data,
-                    }
-                  : null,
-                error: null,
-              }),
-            }),
-          }),
-        };
+        return { select: () => query() };
       },
       storage: {
         from() {
@@ -268,13 +327,33 @@ function recordingAuth(
       },
       async rpc(_name: string, args: Record<string, unknown>) {
         saves.push(args);
-        return { data: { id: crypto.randomUUID(), isNew: !options.existing }, error: null };
+        if (options.failSave) return { data: null, error: { message: "record save unavailable" } };
+        const payload = args.record_payload as {
+          id: string;
+          title: string;
+          recordData: Record<string, unknown>;
+        };
+        const existing = records.find((record) => record.id === payload.id);
+        if (existing) {
+          existing.title = payload.title;
+          existing.record_data = payload.recordData;
+          return { data: { id: payload.id, isNew: false }, error: null };
+        }
+        records.push({
+          id: payload.id,
+          user_id: userId,
+          record_type: "document",
+          title: payload.title,
+          record_data: payload.recordData,
+          created_at: new Date(Date.now() + records.length).toISOString(),
+        });
+        return { data: { id: payload.id, isNew: true }, error: null };
       },
     },
     user: { id: userId },
     authorization: "Bearer test",
   } as unknown as AuthenticatedSupabase;
-  return { auth, uploads, removals, saves };
+  return { auth, uploads, removals, saves, records };
 }
 
 async function captureErrors<T>(run: () => Promise<T>): Promise<{ result: T; logs: string[] }> {
@@ -479,4 +558,149 @@ Deno.test("re-saves a stored 326-section document without re-uploading it", asyn
   assert((await response.json()).isNew === false, "a re-save must update, not duplicate");
   assert(uploads.length === 0, "a re-save must not upload the file again");
   assert(saves.length === 1, "expected one archive update");
+});
+
+// ---------------------------------------------------------------------------
+// Content-hash idempotency for implicit ingestion. The MCP connector sends
+// duplicatePolicy=reuse_existing without a record id; a file whose verified
+// hash the owner already archived must return that Document unchanged.
+
+const otherOwner = "99999999-9999-4999-8999-999999999999";
+
+async function implicitSave(
+  store: ReturnType<typeof recordingAuth>,
+  bytes: Uint8Array,
+  options: { name?: string; title?: string; duplicatePolicy?: string | null } = {},
+) {
+  const response = await createDocumentSaveHandler(async () => store.auth)(
+    await mcpSaveRequest(bytes, options.name ?? "notes.md", "text/markdown", ["ref_00000001"], {
+      title: options.title,
+      ...(options.duplicatePolicy === null
+        ? {}
+        : { duplicatePolicy: options.duplicatePolicy ?? "reuse_existing" }),
+    }),
+  );
+  return { status: response.status, body: await response.json() };
+}
+
+function storedDocument(overrides: Partial<StoredRecord> & { contentHash: string }): StoredRecord {
+  return {
+    id: overrides.id ?? crypto.randomUUID(),
+    user_id: overrides.user_id ?? userId,
+    record_type: "document",
+    title: overrides.title ?? "Stored document",
+    record_data: { contentHash: overrides.contentHash, originalFileName: "stored.md" },
+    created_at: overrides.created_at ?? "2026-01-01T00:00:00Z",
+  };
+}
+
+Deno.test("an implicit retry of the same file returns the first Document unchanged", async () => {
+  const bytes = encoder.encode("# A\n\nOne.");
+  const store = recordingAuth();
+
+  const first = await implicitSave(store, bytes, { title: "First run title" });
+  assert(first.status === 200 && first.body.isNew === true, "first excavation must create");
+  assert(store.records.length === 1 && store.uploads.length === 2, "one record, two objects");
+
+  const second = await implicitSave(store, bytes, {
+    name: "renamed-copy.md",
+    title: "A different model title",
+  });
+  assert(second.status === 200, `expected the retry to succeed, got ${second.status}`);
+  assert(second.body.id === first.body.id, "the retry must return the same record id");
+  assert(second.body.isNew === false, "the retry must report isNew false");
+  assert(second.body.title === "First run title", "the retry must report the stored title");
+  assert(store.records.length === 1, "the retry must not create a second record");
+  assert(store.saves.length === 1, "the retry must not call the archive write");
+  assert(store.uploads.length === 2, "the retry must not upload duplicate objects");
+  assert(store.records[0].title === "First run title", "the stored title must not change");
+});
+
+Deno.test("an implicit retry never overwrites an owner's edits to the Document", async () => {
+  const bytes = encoder.encode("# A\n\nOne.");
+  const contentHash = await sha256Hex(bytes);
+  const edited = storedDocument({ contentHash, title: "Owner's edited title" });
+  edited.record_data = { ...edited.record_data, keyClaims: ["owner annotation"] };
+  const snapshot = JSON.stringify(edited);
+  const store = recordingAuth({ records: [edited] });
+
+  const result = await implicitSave(store, bytes, { title: "Regenerated title" });
+  assert(result.body.id === edited.id && result.body.isNew === false, "expected the edited record");
+  assert(JSON.stringify(store.records[0]) === snapshot, "the edited record must be untouched");
+  assert(store.saves.length === 0 && store.uploads.length === 0, "no write may happen");
+});
+
+Deno.test("another owner's Document with the same hash is never returned", async () => {
+  const bytes = encoder.encode("# A\n\nOne.");
+  const contentHash = await sha256Hex(bytes);
+  const foreign = storedDocument({ contentHash, user_id: otherOwner, title: "Private title" });
+  const store = recordingAuth({ records: [foreign] });
+
+  const result = await implicitSave(store, bytes);
+  assert(result.status === 200 && result.body.isNew === true, "the caller gets their own record");
+  assert(result.body.id !== foreign.id, "another owner's id must never be returned");
+  assert(!JSON.stringify(result.body).includes("Private title"), "nothing foreign may leak");
+  assert(store.records.length === 2, "the caller's own record is created alongside");
+});
+
+Deno.test("a different file creates a distinct Document", async () => {
+  const store = recordingAuth();
+  const first = await implicitSave(store, encoder.encode("# A\n\nOne."));
+  const second = await implicitSave(store, encoder.encode("# A\n\nTwo."));
+  assert(first.body.isNew === true && second.body.isNew === true, "both files are new");
+  assert(first.body.id !== second.body.id, "distinct files must create distinct records");
+  assert(store.records.length === 2, "expected two records");
+});
+
+Deno.test("the oldest owned Document is chosen deterministically", async () => {
+  const bytes = encoder.encode("# A\n\nOne.");
+  const contentHash = await sha256Hex(bytes);
+  const older = storedDocument({ contentHash, created_at: "2026-01-01T00:00:00Z" });
+  const newer = storedDocument({ contentHash, created_at: "2026-06-01T00:00:00Z" });
+  const store = recordingAuth({ records: [newer, older] });
+  const result = await implicitSave(store, bytes);
+  assert(result.body.id === older.id, "legacy duplicates must resolve to the oldest record");
+});
+
+Deno.test("a failed first save leaves nothing behind and a retry creates normally", async () => {
+  const bytes = encoder.encode("# A\n\nOne.");
+  const failing = recordingAuth({ failSave: true });
+  const failed = await implicitSave(failing, bytes);
+  assert(failed.status === 502, "expected the failed save to report an error");
+  assert(failing.records.length === 0, "a failed save must not leave a record");
+  assert(failing.removals.flat().length === 2, "both uploaded objects must be cleaned up");
+
+  const retry = recordingAuth({ records: failing.records });
+  const created = await implicitSave(retry, bytes);
+  assert(created.status === 200 && created.body.isNew === true, "the retry must create normally");
+});
+
+Deno.test("reuse keeps provenance validation and fails closed when lookup fails", async () => {
+  const bytes = encoder.encode("# A\n\nOne.");
+  const contentHash = await sha256Hex(bytes);
+  const store = recordingAuth({ records: [storedDocument({ contentHash })] });
+  const mismatch = await createDocumentSaveHandler(async () => store.auth)(
+    await mcpSaveRequest(bytes, "notes.md", "text/markdown", ["ref_ffffffff"], {
+      duplicatePolicy: "reuse_existing",
+    }),
+  );
+  assert(mismatch.status === 400, "mismatched provenance must still be rejected");
+
+  const unavailable = recordingAuth({ failLookup: true });
+  const failed = await implicitSave(unavailable, bytes);
+  assert(failed.status === 503, "an unavailable lookup must fail closed");
+  assert(unavailable.uploads.length === 0 && unavailable.saves.length === 0, "nothing saved");
+
+  const invalid = await implicitSave(recordingAuth(), bytes, { duplicatePolicy: "overwrite" });
+  assert(invalid.status === 400, "an unknown duplicate policy must be rejected");
+});
+
+Deno.test("saves without the reuse policy keep their existing behavior", async () => {
+  const bytes = encoder.encode("# A\n\nOne.");
+  const contentHash = await sha256Hex(bytes);
+  const existing = storedDocument({ contentHash });
+  const store = recordingAuth({ records: [existing] });
+  const result = await implicitSave(store, bytes, { duplicatePolicy: null });
+  assert(result.body.isNew === true && result.body.id !== existing.id, "web saves still create");
+  assert(store.records.length === 2, "the reuse policy is opt-in");
 });

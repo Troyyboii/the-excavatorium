@@ -46,6 +46,7 @@ export type DocumentIngestionDiagnostic =
   | "http_non_success"
   | "body_read_failure"
   | "candidate_lookup_failure"
+  | "existing_document_lookup_failure"
   | "document_extract_failure"
   | "authentication_unavailable"
   | "configuration_unavailable"
@@ -94,6 +95,7 @@ const DOCUMENT_INGESTION_DIAGNOSTICS: ReadonlySet<string> = new Set([
   "http_non_success",
   "body_read_failure",
   "candidate_lookup_failure",
+  "existing_document_lookup_failure",
   "document_extract_failure",
   "authentication_unavailable",
   "configuration_unavailable",
@@ -163,9 +165,22 @@ export type DocumentCandidate = {
 };
 
 type CandidateRow = { id: unknown; title: unknown; record_type: unknown };
+type ExistingDocumentRow = {
+  id: unknown;
+  title: unknown;
+  record_type: unknown;
+  record_data: unknown;
+};
 
 export type DocumentIngestionClient = {
   listRecentCandidates: () => Promise<{ data: CandidateRow[] | null; error: unknown }>;
+  /**
+   * Returns the caller's oldest Document whose stored file has this content
+   * hash. Row-level security scopes the query to the authenticated owner.
+   */
+  findDocumentByContentHash?: (
+    contentHash: string,
+  ) => Promise<{ data: ExistingDocumentRow[] | null; error: unknown }>;
   invoke: (
     functionName: "document-extract" | "document-save",
     body: FormData,
@@ -315,6 +330,10 @@ export async function excavateAndSaveChatGptDocument(
     timeoutMs: dependencies.timeoutMs,
   });
   const contentHash = await fingerprintFile(file);
+  // An implicit excavation of a file the owner already archived returns that
+  // Document unchanged, before any extraction, quota use, or model call.
+  const existing = await findExistingDocument(dependencies.client, contentHash, file.name);
+  if (existing) return existing;
   const candidates = await loadOwnerCandidates(dependencies.client);
 
   const extractionBody = new FormData();
@@ -365,6 +384,9 @@ export async function excavateAndSaveChatGptDocument(
   );
   saveBody.append("selectedTargetIds", JSON.stringify(mapped.selectedTargetIds));
   saveBody.append("removeFile", "false");
+  // Closes the window between the lookup above and the save: document-save
+  // re-checks the verified hash and returns an existing Document instead.
+  saveBody.append("duplicatePolicy", "reuse_existing");
   saveBody.append("contentHash", contentHash);
   saveBody.append("file", file, file.name);
   let saved: { data: unknown; error: unknown };
@@ -383,9 +405,64 @@ export async function excavateAndSaveChatGptDocument(
   return {
     id: saved.data.id,
     isNew: saved.data.isNew,
-    title: mapped.title,
+    title: !saved.data.isNew && saved.data.title ? saved.data.title : mapped.title,
     recordType: "document",
     originalFileName: draft.data.originalFileName,
+    contentHash,
+  };
+}
+
+async function findExistingDocument(
+  client: DocumentIngestionClient,
+  contentHash: string,
+  fileName: string,
+): Promise<ExcavatedDocumentResult | null> {
+  if (!client.findDocumentByContentHash) return null;
+  let result: { data: ExistingDocumentRow[] | null; error: unknown };
+  try {
+    result = await client.findDocumentByContentHash(contentHash);
+  } catch {
+    throw new DocumentIngestionError(
+      "DATA_UNAVAILABLE",
+      undefined,
+      "existing_document_lookup_failure",
+    );
+  }
+  if (result.error || !result.data) {
+    throw new DocumentIngestionError(
+      "DATA_UNAVAILABLE",
+      undefined,
+      "existing_document_lookup_failure",
+    );
+  }
+  const row = result.data[0];
+  if (!row) return null;
+  const recordData: Record<string, unknown> = isObject(row.record_data) ? row.record_data : {};
+  if (
+    typeof row.id !== "string" ||
+    !UUID_RE.test(row.id) ||
+    row.record_type !== "document" ||
+    recordData.contentHash !== contentHash ||
+    typeof row.title !== "string" ||
+    row.title.trim().length === 0 ||
+    row.title.length > 240
+  ) {
+    throw new DocumentIngestionError(
+      "DATA_UNAVAILABLE",
+      undefined,
+      "existing_document_lookup_failure",
+    );
+  }
+  const storedName = recordData.originalFileName;
+  return {
+    id: row.id,
+    isNew: false,
+    title: row.title,
+    recordType: "document",
+    originalFileName:
+      typeof storedName === "string" && storedName.length > 0 && storedName.length <= 240
+        ? storedName
+        : fileName,
     contentHash,
   };
 }
@@ -417,6 +494,17 @@ function documentFileFromBytes(
   return file;
 }
 
+/**
+ * The filter chain used by the content-hash lookup. It is reached through a
+ * cast because Postgrest's generic filter signatures cannot be matched
+ * structurally without unbounded type instantiation.
+ */
+type ContentHashQuery = {
+  eq: (column: string, value: string) => ContentHashQuery;
+  order: (column: string, options: { ascending: boolean }) => ContentHashQuery;
+  limit: (count: number) => PromiseLike<{ data: ExistingDocumentRow[] | null; error: unknown }>;
+};
+
 export function createDocumentIngestionClient(supabase: {
   from: (table: "records") => {
     select: (columns: string) => {
@@ -447,6 +535,17 @@ export function createDocumentIngestionClient(supabase: {
         .select("id,title,record_type")
         .order("updated_at", { ascending: false })
         .limit(MAX_CANDIDATE_RECORDS),
+    findDocumentByContentHash: async (contentHash) =>
+      await (
+        supabase
+          .from("records")
+          .select("id,title,record_type,record_data") as unknown as ContentHashQuery
+      )
+        .eq("record_type", "document")
+        .eq("record_data->>contentHash", contentHash)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .limit(1),
     invoke: (functionName, body) => supabase.functions.invoke(functionName, { body }),
     fetchDocument: async (reference, signal) => {
       return await supabase.functions.invoke("document-fetch", {
@@ -823,14 +922,16 @@ function validMappedDraft(
   );
 }
 
-function isSaveResult(value: unknown): value is { id: string; isNew: boolean } {
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isSaveResult(value: unknown): value is { id: string; isNew: boolean; title?: string } {
+  if (!isObject(value)) return false;
+  const title = value.title;
   return (
-    Boolean(value) &&
-    typeof value === "object" &&
-    typeof (value as { id?: unknown }).id === "string" &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      (value as { id: string }).id,
-    ) &&
-    typeof (value as { isNew?: unknown }).isNew === "boolean"
+    typeof value.id === "string" &&
+    UUID_RE.test(value.id) &&
+    typeof value.isNew === "boolean" &&
+    (title === undefined ||
+      (typeof title === "string" && title.trim().length > 0 && title.length <= 240))
   );
 }
