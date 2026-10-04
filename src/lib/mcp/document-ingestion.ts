@@ -11,6 +11,9 @@ const DOWNLOAD_TIMEOUT_MS = 20_000;
 const DOCUMENT_FETCH_FUNCTION_TIMEOUT_MS = DOWNLOAD_TIMEOUT_MS + 2_000;
 const MAX_DOWNLOAD_REDIRECTS = 2;
 const MAX_CANDIDATE_RECORDS = 75;
+// Upper bound for text supplied inline through MCP. The 64 KiB MCP request
+// gate bounds the whole envelope; this leaves room for JSON framing.
+export const MAX_MCP_TEXT_BYTES = 60_000;
 const SUPPORTED_RECORD_TYPES: readonly RecordType[] = [
   "tool",
   "repository",
@@ -317,6 +320,42 @@ export async function downloadChatGptDocument(
 }
 
 /**
+ * Builds the document-fetch reference for a caller-supplied https URL. The
+ * file_id is synthetic and deterministic (sha256 of the URL); identity and
+ * duplicate reuse always come from the content hash of the fetched bytes.
+ */
+export async function fileReferenceForUrl(url: string): Promise<ChatGptFileReference> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(url));
+  const hex = [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+  return { download_url: url, file_id: `url-${hex.slice(0, 32)}` };
+}
+
+/**
+ * Builds an in-memory File from caller-supplied text, without touching the
+ * document-fetch path. The caller-chosen fileName decides the MIME type.
+ */
+export function fileFromText(text: string, fileName: string): File {
+  const bytes = new TextEncoder().encode(text);
+  if (bytes.byteLength === 0) {
+    throw new DocumentIngestionError("INVALID_INPUT", undefined, "malformed_document");
+  }
+  if (bytes.byteLength > MAX_MCP_TEXT_BYTES) {
+    throw new DocumentIngestionError("INVALID_INPUT", undefined, "request_too_large");
+  }
+  const mime = fileName.toLowerCase().endsWith(".md") ? "text/markdown" : "text/plain";
+  const file = new File([bytes], fileName, { type: mime });
+  const validationError = validateSelectedDocumentFile(file);
+  if (validationError) {
+    throw new DocumentIngestionError(
+      validationError.includes("10 MB") ? "FILE_TOO_LARGE" : "UNSUPPORTED_FILE",
+    );
+  }
+  return file;
+}
+
+/**
  * Composes the existing authenticated document-extract and document-save
  * contracts. It never writes archive tables or Storage directly.
  */
@@ -329,6 +368,22 @@ export async function excavateAndSaveChatGptDocument(
     fetch: dependencies.fetch,
     timeoutMs: dependencies.timeoutMs,
   });
+  return excavateAndSaveFile(file, dependencies);
+}
+
+/**
+ * Runs the extraction/save pipeline for an already-materialized File,
+ * regardless of how its bytes were obtained. Duplicate reuse is keyed on the
+ * content hash of the final bytes, so identical content reuses the owner's
+ * existing Document in every mode.
+ */
+export async function excavateAndSaveFile(
+  file: File,
+  dependencies: {
+    client: DocumentIngestionClient;
+    mapDraft: DocumentDraftMapper;
+  },
+): Promise<ExcavatedDocumentResult> {
   const contentHash = await fingerprintFile(file);
   // An implicit excavation of a file the owner already archived returns that
   // Document unchanged, before any extraction, quota use, or model call.

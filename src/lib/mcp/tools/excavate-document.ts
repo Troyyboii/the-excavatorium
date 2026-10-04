@@ -11,7 +11,10 @@ import {
   createDocumentIngestionClient,
   DocumentIngestionError,
   documentIngestionErrorMessage,
-  excavateAndSaveChatGptDocument,
+  downloadChatGptDocument,
+  excavateAndSaveFile,
+  fileFromText,
+  fileReferenceForUrl,
   safeDocumentIngestionDiagnostic,
   type ChatGptFileReference,
   type ExcavatedDocumentResult,
@@ -28,20 +31,31 @@ const fileSchema = z
   })
   .strict();
 
-type ExcavationRunner = (
-  reference: ChatGptFileReference,
-  ctx: ToolContext,
-) => Promise<ExcavatedDocumentResult>;
+export type ExcavateDocumentInput = {
+  file?: ChatGptFileReference;
+  url?: string;
+  text?: string;
+  fileName?: string;
+};
+
+type ExcavationRunner = (file: File, ctx: ToolContext) => Promise<ExcavatedDocumentResult>;
+
+type DocumentDownloader = (reference: ChatGptFileReference, ctx: ToolContext) => Promise<File>;
 
 async function defaultExcavationRunner(
-  reference: ChatGptFileReference,
+  file: File,
   ctx: ToolContext,
 ): Promise<ExcavatedDocumentResult> {
   const client = createDocumentIngestionClient(supabaseForUser(ctx));
-  return excavateAndSaveChatGptDocument(reference, {
+  return excavateAndSaveFile(file, {
     client,
     mapDraft: mapDraftForSave,
   });
+}
+
+async function defaultDownloader(reference: ChatGptFileReference, ctx: ToolContext): Promise<File> {
+  const client = createDocumentIngestionClient(supabaseForUser(ctx));
+  return downloadChatGptDocument(reference, { fetchDocument: client.fetchDocument });
 }
 
 export function mapDraftForSave(draft: DocumentDraft, ownerCandidateIds: ReadonlySet<string>) {
@@ -59,16 +73,33 @@ export function mapDraftForSave(draft: DocumentDraft, ownerCandidateIds: Readonl
   };
 }
 
+function isTextFileName(name: string): boolean {
+  const trimmed = name.trim();
+  return trimmed.length >= 4 && trimmed.length <= 240 && /\.md$|\.txt$/i.test(trimmed);
+}
+
 export async function handleExcavateDocument(
-  { file }: { file: ChatGptFileReference },
+  { file, url, text, fileName }: ExcavateDocumentInput,
   ctx: ToolContext,
   run: ExcavationRunner = defaultExcavationRunner,
+  download: DocumentDownloader = defaultDownloader,
 ): Promise<JsonToolResult> {
   const errorOptions = { includeStructuredContent: false } as const;
   const authError = await authResult(ctx, errorOptions);
   if (authError) return authError;
+  const modes = [file !== undefined, url !== undefined, text !== undefined].filter(Boolean).length;
+  if (modes !== 1) return errorResult("INVALID_INPUT", undefined, errorOptions);
   try {
-    return jsonResult(await run(file, ctx));
+    if (file !== undefined) return jsonResult(await run(await download(file, ctx), ctx));
+    if (url !== undefined) {
+      const reference = await fileReferenceForUrl(url);
+      return jsonResult(await run(await download(reference, ctx), ctx));
+    }
+    const name = (fileName ?? "").trim();
+    if (text === undefined || !isTextFileName(name)) {
+      return errorResult("INVALID_INPUT", undefined, errorOptions);
+    }
+    return jsonResult(await run(fileFromText(text, name), ctx));
   } catch (error) {
     if (error instanceof DocumentIngestionError) {
       const diagnostic = safeDocumentIngestionDiagnostic(error.diagnostic);
@@ -100,8 +131,29 @@ export default defineTool({
   name: "excavate_document",
   title: "Excavate and save document",
   description:
-    "Use only when the user supplies a file to archive. Key input: file with download_url, file_id, and optional mime_type/file_name for a PDF, Markdown (.md), or plain-text (.txt) file up to 10 MB. Excavates it through the existing File Excavation system and saves the resulting document in the authenticated owner's archive. Returns id, isNew, title, recordType document, originalFileName, and contentHash. This is the only mutation; every other tool is read-only.",
-  inputSchema: { file: fileSchema },
+    "Use to archive a document from exactly one source per call: file for a ChatGPT-supplied file reference (download_url, file_id, optional mime_type/file_name); url for a public https URL up to 2048 chars, fetched server-side through the guarded document-fetch path (10 MB cap, no private hosts); text for pasting up to 60,000 UTF-8 bytes directly with a required fileName ending .md or .txt (max 240 chars). Every mode spends the owner's extraction quota, and already-archived content (matched by content hash) returns the existing document with isNew false instead of re-excavating. Returns id, isNew, title, recordType document, originalFileName, and contentHash. This is the only mutation; every other tool is read-only.",
+  inputSchema: {
+    file: fileSchema.optional(),
+    url: z
+      .string()
+      .trim()
+      .url()
+      .max(2048)
+      .refine((value) => value.startsWith("https://"), "Only https URLs are supported.")
+      .optional()
+      .describe("Public https URL of a PDF, Markdown, or text document to fetch and archive."),
+    text: z
+      .string()
+      .optional()
+      .describe("Raw Markdown or plain-text content to archive (max 60,000 UTF-8 bytes)."),
+    fileName: z
+      .string()
+      .trim()
+      .min(1)
+      .max(240)
+      .optional()
+      .describe("File name for text, must end .md or .txt."),
+  },
   outputSchema: {
     id: z.string().uuid(),
     isNew: z.boolean(),

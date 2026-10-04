@@ -251,15 +251,16 @@ export function isSupportedDocumentFile(file: Pick<File, "name" | "type" | "size
   const extension = fileExtension(file.name);
   if (!(DOCUMENT_EXTENSIONS as readonly string[]).includes(extension)) return false;
   if (file.size <= 0 || file.size > DOCUMENT_MAX_FILE_BYTES) return false;
+  // Compare the MIME essence only: some runtimes append parameters
+  // (e.g. text/plain;charset=utf-8) that must not change the verdict.
+  const essence = file.type.split(";", 1)[0]?.trim().toLowerCase() ?? "";
   if (extension === ".pdf")
     return (
-      file.type === "application/pdf" ||
-      file.type === "" ||
-      file.type === "application/octet-stream"
+      essence === "application/pdf" || essence === "" || essence === "application/octet-stream"
     );
   if (extension === ".md")
-    return ["text/markdown", "text/plain", "application/octet-stream", ""].includes(file.type);
-  return ["text/plain", "application/octet-stream", ""].includes(file.type);
+    return ["text/markdown", "text/plain", "application/octet-stream", ""].includes(essence);
+  return ["text/plain", "application/octet-stream", ""].includes(essence);
 }
 
 export function validateSelectedDocumentFile(file: File): string | null {

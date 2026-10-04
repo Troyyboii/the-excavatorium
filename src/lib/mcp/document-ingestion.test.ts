@@ -10,6 +10,10 @@ import {
   createDocumentIngestionClient,
   downloadChatGptDocument,
   excavateAndSaveChatGptDocument,
+  excavateAndSaveFile,
+  fileFromText,
+  fileReferenceForUrl,
+  MAX_MCP_TEXT_BYTES,
 } from "./document-ingestion";
 
 const reference: ChatGptFileReference = {
@@ -1030,5 +1034,136 @@ describe("content-hash idempotency for implicit excavation", () => {
       ["order", "id", true],
       ["limit", 1],
     ]);
+  });
+});
+
+describe("any-source ingestion", () => {
+  test("derives a deterministic synthetic file_id from the url", async () => {
+    const first = await fileReferenceForUrl("https://example.com/notes.md");
+    const second = await fileReferenceForUrl("https://example.com/notes.md");
+    expect(first).toEqual(second);
+    expect(first.download_url).toBe("https://example.com/notes.md");
+    expect(first.file_id).toMatch(/^url-[0-9a-f]{32}$/);
+    const other = await fileReferenceForUrl("https://example.com/other.md");
+    expect(other.file_id).not.toBe(first.file_id);
+  });
+
+  test("builds validated files from pasted text", () => {
+    const md = fileFromText("# hi", "notes.md");
+    expect(md).toBeInstanceOf(File);
+    expect(md.name).toBe("notes.md");
+    expect(md.type).toBe("text/markdown");
+    const txt = fileFromText("hi", "NOTES.TXT");
+    expect(txt.type.split(";")[0]).toBe("text/plain");
+    expect(txt.name).toBe("NOTES.TXT");
+    expect(MAX_MCP_TEXT_BYTES).toBe(60_000);
+    const exactly = fileFromText("x".repeat(MAX_MCP_TEXT_BYTES), "notes.md");
+    expect(exactly.size).toBe(MAX_MCP_TEXT_BYTES);
+  });
+
+  test("rejects empty and oversized text", async () => {
+    await expectCode(
+      Promise.resolve().then(() => fileFromText("", "notes.md")),
+      "INVALID_INPUT",
+      "malformed_document",
+    );
+    await expectCode(
+      Promise.resolve().then(() => fileFromText("x".repeat(MAX_MCP_TEXT_BYTES + 1), "notes.md")),
+      "INVALID_INPUT",
+      "request_too_large",
+    );
+  });
+
+  function reuseClient(hash: string, existingId: string, saveId: string, invoked: string[]) {
+    let lookups = 0;
+    return {
+      lookups: () => lookups,
+      client: client({
+        findDocumentByContentHash: async (contentHash) => {
+          lookups += 1;
+          expect(contentHash).toBe(hash);
+          if (lookups === 1) return { data: [], error: null };
+          return {
+            data: [
+              {
+                id: existingId,
+                title: "Hello",
+                record_type: "document",
+                record_data: { contentHash: hash, originalFileName: "hello.md" },
+              },
+            ],
+            error: null,
+          };
+        },
+        invoke: async (name) => {
+          invoked.push(name);
+          return name === "document-extract"
+            ? { data: draft(hash), error: null }
+            : { data: { id: saveId, isNew: true }, error: null };
+        },
+      }),
+    };
+  }
+
+  function reuseMapDraft(extraction: DocumentDraft) {
+    return {
+      title: extraction.title,
+      summary: extraction.summary,
+      tags: extraction.tags,
+      recordData: { ...data, contentHash: extraction.contentHash },
+      selectedTargetIds: [],
+    };
+  }
+
+  test("reuses the existing document when the same text is excavated twice", async () => {
+    const file = fileFromText("# hello world", "hello.md");
+    const hash = await fingerprintFile(file);
+    const invoked: string[] = [];
+    const { client: stub } = reuseClient(
+      hash,
+      "55555555-5555-4555-8555-555555555555",
+      "66666666-6666-4666-8666-666666666666",
+      invoked,
+    );
+    const first = await excavateAndSaveFile(file, { client: stub, mapDraft: reuseMapDraft });
+    expect(first).toMatchObject({ isNew: true, contentHash: hash });
+    const second = await excavateAndSaveFile(file, { client: stub, mapDraft: reuseMapDraft });
+    expect(second).toEqual({
+      id: "55555555-5555-4555-8555-555555555555",
+      isNew: false,
+      title: "Hello",
+      recordType: "document",
+      originalFileName: "hello.md",
+      contentHash: hash,
+    });
+    expect(invoked).toEqual(["document-extract", "document-save"]);
+  });
+
+  test("reuses the existing document when the same url content is excavated twice", async () => {
+    const bytes = new TextEncoder().encode("# fetched markdown");
+    const hash = await fingerprintFile(new File([bytes], "notes.md", { type: "text/markdown" }));
+    const invoked: string[] = [];
+    const { client: stub } = reuseClient(
+      hash,
+      "77777777-7777-4777-8777-777777777777",
+      "88888888-8888-4888-8888-888888888888",
+      invoked,
+    );
+    const reference: ChatGptFileReference = {
+      download_url: "https://example.com/notes.md",
+      file_id: "url-0123456789abcdef0123456789abcdef",
+      mime_type: "text/markdown",
+      file_name: "notes.md",
+    };
+    const dependencies = {
+      fetchDocument: async () => ({ data: bytes, error: null }),
+      mapDraft: reuseMapDraft,
+      client: stub,
+    };
+    const first = await excavateAndSaveChatGptDocument(reference, dependencies);
+    expect(first).toMatchObject({ isNew: true, contentHash: hash });
+    const second = await excavateAndSaveChatGptDocument(reference, dependencies);
+    expect(second).toMatchObject({ isNew: false, contentHash: hash });
+    expect(invoked).toEqual(["document-extract", "document-save"]);
   });
 });

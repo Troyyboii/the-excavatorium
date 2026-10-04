@@ -17,7 +17,8 @@ The server exposes bounded, owner-scoped archive and Custodian tools:
 - `list_tags`, `list_recent`, and `get_decisions` (with its resolved supersedes chain)
 - `list_cases`, `get_case`, and `get_findings` when the owner-RLS case foundation is available
 - `get_pending_approvals` and `get_run` when the Custodian runtime foundation is available
-- `excavate_document`, the explicit supplied-file excavation/save exception that can persist a Document
+- `excavate_document`, the supplied-file excavation/save exception that can persist a Document,
+  now also from a public https URL or pasted Markdown/text (exactly one source per call)
 
 The ordinary archive and Custodian retrieval tools are read-oriented. Archive mutation is not generally
 exposed; `excavate_document` is the explicit persistence exception and the only mutation.
