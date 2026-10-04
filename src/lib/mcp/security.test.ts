@@ -4,10 +4,19 @@ import {
   MAX_MCP_REQUEST_BYTES,
   limitMcpRequestBody,
   evaluateMcpClientAccess,
+  isMcpPolicyConfigValid,
   mcpErrorResponseForRequest,
   parseMcpAllowedClientIds,
+  parseMcpClientPolicy,
+  parseMcpDeniedClientIds,
 } from "./security";
-import { performOAuthDecision, safeOAuthConsentError } from "@/lib/oauth-consent";
+import { CLIENT_POLICY_VECTORS } from "./client-policy-vectors.ts";
+import {
+  consentRedirectHost,
+  consentRedirectNotice,
+  performOAuthDecision,
+  safeOAuthConsentError,
+} from "@/lib/oauth-consent";
 import { authResult } from "./mcp-utils";
 
 const ALLOWED_CLIENT = "11111111-1111-4111-8111-111111111111";
@@ -26,15 +35,57 @@ describe("MCP client allow-list", () => {
     if (!allowed.ok) throw new Error("expected configured client ids");
 
     expect(allowed.ids.has(ALLOWED_CLIENT)).toBe(true);
-    expect(evaluateMcpClientAccess(ALLOWED_CLIENT, ALLOWED_CLIENT)).toBe("allowed");
-    expect(evaluateMcpClientAccess(undefined, ALLOWED_CLIENT)).toBe("configuration_invalid");
-    expect(evaluateMcpClientAccess("not-a-uuid", ALLOWED_CLIENT)).toBe("configuration_invalid");
-    expect(evaluateMcpClientAccess(ALLOWED_CLIENT, undefined)).toBe("client_missing");
-    expect(evaluateMcpClientAccess(ALLOWED_CLIENT, "not-a-uuid")).toBe("client_malformed");
-    expect(evaluateMcpClientAccess(ALLOWED_CLIENT, "22222222-2222-4222-8222-222222222222")).toBe(
-      "client_unapproved",
+    const config = (allowedClientIds?: string) => ({ allowedClientIds });
+    expect(evaluateMcpClientAccess(config(ALLOWED_CLIENT), ALLOWED_CLIENT)).toBe("allowed");
+    expect(evaluateMcpClientAccess(config(undefined), ALLOWED_CLIENT)).toBe(
+      "configuration_invalid",
     );
+    expect(evaluateMcpClientAccess(config("not-a-uuid"), ALLOWED_CLIENT)).toBe(
+      "configuration_invalid",
+    );
+    expect(evaluateMcpClientAccess(config(ALLOWED_CLIENT), undefined)).toBe("client_missing");
+    expect(evaluateMcpClientAccess(config(ALLOWED_CLIENT), "not-a-uuid")).toBe("client_malformed");
+    expect(
+      evaluateMcpClientAccess(config(ALLOWED_CLIENT), "22222222-2222-4222-8222-222222222222"),
+    ).toBe("client_unapproved");
     expect(allowed.ids.has("22222222-2222-4222-8222-222222222222")).toBe(false);
+  });
+});
+
+describe("MCP client policy", () => {
+  it("parses the policy and deny list", () => {
+    expect(parseMcpClientPolicy(undefined)).toEqual({ ok: true, policy: "allowlist" });
+    expect(parseMcpClientPolicy("allowlist")).toEqual({ ok: true, policy: "allowlist" });
+    expect(parseMcpClientPolicy("Consent")).toEqual({ ok: true, policy: "consent" });
+    expect(parseMcpClientPolicy("open")).toEqual({ ok: false });
+    expect(parseMcpDeniedClientIds(undefined)).toEqual({ ok: true, ids: new Set() });
+    const denied = parseMcpDeniedClientIds(` ${ALLOWED_CLIENT} `);
+    expect(denied.ok).toBe(true);
+    if (!denied.ok) throw new Error("expected parsed deny list");
+    expect(denied.ids.has(ALLOWED_CLIENT)).toBe(true);
+    expect(parseMcpDeniedClientIds("not-a-uuid").ok).toBe(false);
+    expect(parseMcpDeniedClientIds(`${ALLOWED_CLIENT},,${ALLOWED_CLIENT}`).ok).toBe(false);
+    expect(isMcpPolicyConfigValid({})).toBe(false);
+    expect(isMcpPolicyConfigValid({ allowedClientIds: ALLOWED_CLIENT })).toBe(true);
+    expect(isMcpPolicyConfigValid({ policy: "consent" })).toBe(true);
+    expect(isMcpPolicyConfigValid({ policy: "consent", allowedClientIds: "bogus" })).toBe(true);
+    expect(isMcpPolicyConfigValid({ policy: "open" })).toBe(false);
+  });
+
+  it("matches the shared policy vector matrix", () => {
+    for (const vector of CLIENT_POLICY_VECTORS) {
+      expect(
+        evaluateMcpClientAccess(
+          {
+            policy: vector.policy,
+            allowedClientIds: vector.allowedClientIds,
+            deniedClientIds: vector.deniedClientIds,
+          },
+          vector.clientId,
+        ),
+        vector.name,
+      ).toBe(vector.expected);
+    }
   });
 });
 
@@ -111,6 +162,61 @@ describe("MCP handler authorization", () => {
     } finally {
       if (previous === undefined) delete process.env.MCP_ALLOWED_CLIENT_IDS;
       else process.env.MCP_ALLOWED_CLIENT_IDS = previous;
+    }
+  });
+
+  it("enforces consent mode and the deny list at the request gate", async () => {
+    const previous = {
+      policy: process.env.MCP_CLIENT_POLICY,
+      allowed: process.env.MCP_ALLOWED_CLIENT_IDS,
+      denied: process.env.MCP_DENIED_CLIENT_IDS,
+    };
+    const request = new Request("https://example.test/mcp", {
+      method: "POST",
+      headers: { authorization: "Bearer opaque-token" },
+      body: "{}",
+    });
+    const restore = () => {
+      if (previous.policy === undefined) delete process.env.MCP_CLIENT_POLICY;
+      else process.env.MCP_CLIENT_POLICY = previous.policy;
+      if (previous.allowed === undefined) delete process.env.MCP_ALLOWED_CLIENT_IDS;
+      else process.env.MCP_ALLOWED_CLIENT_IDS = previous.allowed;
+      if (previous.denied === undefined) delete process.env.MCP_DENIED_CLIENT_IDS;
+      else process.env.MCP_DENIED_CLIENT_IDS = previous.denied;
+    };
+    try {
+      // Consent mode needs no allowlist: any verified UUID client passes.
+      process.env.MCP_CLIENT_POLICY = "consent";
+      delete process.env.MCP_ALLOWED_CLIENT_IDS;
+      delete process.env.MCP_DENIED_CLIENT_IDS;
+      expect(
+        await authorizeMcpClientRequest(request, "jsonrpc", async () => ALLOWED_CLIENT),
+      ).toBeNull();
+      // A broken policy fails closed before any bearer inspection.
+      process.env.MCP_CLIENT_POLICY = "open";
+      expect(
+        (
+          await authorizeMcpClientRequest(
+            new Request("https://example.test/mcp", { method: "POST", body: "{}" }),
+            "jsonrpc",
+            async () => ALLOWED_CLIENT,
+          )
+        )?.status,
+      ).toBe(500);
+      // The deny list wins over consent and allowlist approvals alike.
+      process.env.MCP_CLIENT_POLICY = "consent";
+      process.env.MCP_DENIED_CLIENT_IDS = ALLOWED_CLIENT;
+      expect(
+        (await authorizeMcpClientRequest(request, "jsonrpc", async () => ALLOWED_CLIENT))?.status,
+      ).toBe(403);
+      delete process.env.MCP_CLIENT_POLICY;
+      process.env.MCP_ALLOWED_CLIENT_IDS = `${ALLOWED_CLIENT},22222222-2222-4222-8222-222222222222`;
+      expect(
+        (await authorizeMcpClientRequest(request, "jsonrpc", async () => ALLOWED_CLIENT))?.status,
+      ).toBe(403);
+      expect(await authResult(authenticatedContext(ALLOWED_CLIENT))).not.toBeNull();
+    } finally {
+      restore();
     }
   });
 });
@@ -212,5 +318,46 @@ describe("OAuth consent errors", () => {
       redirect: null,
       error: "This authorization request could not be completed. Please try again.",
     });
+  });
+});
+
+describe("OAuth consent redirect host", () => {
+  it("prefers the pending redirect_uri and shows only the host", () => {
+    expect(consentRedirectHost({ redirect_uri: "https://claude.ai/api/mcp/auth_callback" })).toBe(
+      "claude.ai",
+    );
+    // redirect_url stays as the already-consented fallback.
+    expect(
+      consentRedirectHost({
+        redirect_uri: "https://claude.ai/callback",
+        redirect_url: "https://example.test/cb?code=abc",
+      }),
+    ).toBe("claude.ai");
+    expect(consentRedirectHost({ redirect_url: "https://example.test:8443/cb" })).toBe(
+      "example.test:8443",
+    );
+    expect(consentRedirectHost(null)).toBeNull();
+    expect(consentRedirectHost({})).toBeNull();
+    expect(consentRedirectHost({ redirect_url: "not a url at all !!" })).toBeNull();
+    expect(consentRedirectHost({ redirect_url: "/relative/callback" })).toBeNull();
+  });
+
+  it("never renders query strings or fragments", () => {
+    const host = consentRedirectHost({
+      redirect_uri: "https://claude.ai/callback?code=secret-code&state=xyz#fragment",
+    });
+    expect(host).toBe("claude.ai");
+    expect(host).not.toContain("secret-code");
+    expect(host).not.toContain("#");
+  });
+
+  it("warns visibly when no destination is declared", () => {
+    expect(consentRedirectNotice({ redirect_uri: "https://claude.ai/callback" })).toEqual({
+      kind: "return",
+      host: "claude.ai",
+    });
+    expect(consentRedirectNotice({})).toEqual({ kind: "undeclared" });
+    expect(consentRedirectNotice(null)).toEqual({ kind: "undeclared" });
+    expect(consentRedirectNotice({ redirect_url: "bogus" })).toEqual({ kind: "undeclared" });
   });
 });

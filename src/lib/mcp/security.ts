@@ -16,6 +16,14 @@ export type McpClientAccess =
   | "client_malformed"
   | "client_unapproved";
 
+export type McpClientPolicy = "allowlist" | "consent";
+
+export type McpClientPolicyConfig = {
+  policy?: string;
+  allowedClientIds?: string;
+  deniedClientIds?: string;
+};
+
 type RuntimeGlobals = typeof globalThis & {
   process?: { env?: Record<string, string | undefined> };
 };
@@ -108,9 +116,17 @@ export async function authorizeMcpClientRequest(
   verifyIdentity: ClientIdentityVerifier = verifiedClientId,
 ): Promise<Response | null> {
   if (request.method === "OPTIONS") return null;
-  const configured = await serverEnvironment("MCP_ALLOWED_CLIENT_IDS");
-  const allowed = parseMcpAllowedClientIds(configured);
-  if (!allowed.ok) return responseFor(format, 500, "authorization configuration unavailable");
+  const config: McpClientPolicyConfig = {
+    policy: await serverEnvironment("MCP_CLIENT_POLICY"),
+    allowedClientIds: await serverEnvironment("MCP_ALLOWED_CLIENT_IDS"),
+    deniedClientIds: await serverEnvironment("MCP_DENIED_CLIENT_IDS"),
+  };
+  // Fail closed before the SDK challenge, exactly as today: a broken client
+  // policy is a 500 even when no bearer is present. In consent mode the
+  // allowlist is ignored entirely and may be unset or malformed.
+  if (!isMcpPolicyConfigValid(config)) {
+    return responseFor(format, 500, "authorization configuration unavailable");
+  }
   // Let the SDK emit its canonical OAuth discovery challenge when no usable
   // bearer is present. No archive/Supabase data request occurs on that path.
   if (!bearerToken(request)) return null;
@@ -123,10 +139,10 @@ export async function authorizeMcpClientRequest(
   if (!clientId || !UUID_PATTERN.test(clientId)) {
     return unauthorizedResponse(request, format, "unauthorized");
   }
-  if (!allowed.ids.has(clientId.toLowerCase())) {
-    return responseFor(format, 403, "client not permitted");
-  }
-  return null;
+  // The config was validated above, so only the membership decision remains.
+  return evaluateMcpClientAccess(config, clientId) === "allowed"
+    ? null
+    : responseFor(format, 403, "client not permitted");
 }
 
 export function mcpErrorResponseForRequest(request: Request): Response | null {
@@ -195,6 +211,16 @@ export async function limitMcpRequestBody(
   };
 }
 
+export function parseMcpClientPolicy(
+  value: string | undefined,
+): { ok: true; policy: McpClientPolicy } | { ok: false } {
+  if (value === undefined) return { ok: true, policy: "allowlist" };
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "" || normalized === "allowlist") return { ok: true, policy: "allowlist" };
+  if (normalized === "consent") return { ok: true, policy: "consent" };
+  return { ok: false };
+}
+
 export function parseMcpAllowedClientIds(value: string | undefined): ParsedClientIds {
   if (!value) return { ok: false };
   const ids = value.split(",").map((item) => item.trim().toLowerCase());
@@ -208,15 +234,46 @@ export function parseMcpAllowedClientIds(value: string | undefined): ParsedClien
   return { ok: true, ids: new Set(ids) };
 }
 
+export function parseMcpDeniedClientIds(value: string | undefined): ParsedClientIds {
+  if (!value) return { ok: true, ids: new Set() };
+  const ids = value.split(",").map((item) => item.trim().toLowerCase());
+  if (ids.some((id) => !UUID_PATTERN.test(id)) || new Set(ids).size !== ids.length) {
+    return { ok: false };
+  }
+  return { ok: true, ids: new Set(ids) };
+}
+
+// Whether the client policy configuration is usable at all. Checked before
+// any bearer inspection so a broken policy fails closed with a 500 even when
+// no bearer is present. In consent mode the allowlist is not consulted.
+export function isMcpPolicyConfigValid(config: McpClientPolicyConfig): boolean {
+  const policy = parseMcpClientPolicy(config.policy);
+  if (!policy.ok) return false;
+  if (!parseMcpDeniedClientIds(config.deniedClientIds).ok) return false;
+  return policy.policy === "consent" || parseMcpAllowedClientIds(config.allowedClientIds).ok;
+}
+
 export function evaluateMcpClientAccess(
-  configuredClientIds: string | undefined,
+  config: McpClientPolicyConfig,
   clientId: string | undefined,
 ): McpClientAccess {
-  const allowed = parseMcpAllowedClientIds(configuredClientIds);
-  if (!allowed.ok) return "configuration_invalid";
+  const policy = parseMcpClientPolicy(config.policy);
+  if (!policy.ok) return "configuration_invalid";
+  const denied = parseMcpDeniedClientIds(config.deniedClientIds);
+  if (!denied.ok) return "configuration_invalid";
+  // In allowlist mode the allowlist is parsed before any client inspection,
+  // exactly as before: a broken allowlist is configuration_invalid even when
+  // no usable client identity is present.
+  const allowed =
+    policy.policy === "consent" ? null : parseMcpAllowedClientIds(config.allowedClientIds);
+  if (allowed !== null && !allowed.ok) return "configuration_invalid";
   if (!clientId) return "client_missing";
   if (!UUID_PATTERN.test(clientId)) return "client_malformed";
-  return allowed.ids.has(clientId.toLowerCase()) ? "allowed" : "client_unapproved";
+  const normalized = clientId.toLowerCase();
+  // The deny list wins over every approval path in both modes.
+  if (denied.ids.has(normalized)) return "client_unapproved";
+  if (allowed === null || allowed.ids.has(normalized)) return "allowed";
+  return "client_unapproved";
 }
 
 async function serverEnvironment(name: string): Promise<string | undefined> {
@@ -236,7 +293,11 @@ async function serverEnvironment(name: string): Promise<string | undefined> {
 
 export async function mcpClientAccess(ctx: ToolContext): Promise<McpClientAccess> {
   return evaluateMcpClientAccess(
-    await serverEnvironment("MCP_ALLOWED_CLIENT_IDS"),
+    {
+      policy: await serverEnvironment("MCP_CLIENT_POLICY"),
+      allowedClientIds: await serverEnvironment("MCP_ALLOWED_CLIENT_IDS"),
+      deniedClientIds: await serverEnvironment("MCP_DENIED_CLIENT_IDS"),
+    },
     ctx.getClientId(),
   );
 }

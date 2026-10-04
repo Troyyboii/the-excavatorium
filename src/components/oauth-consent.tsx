@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { LoginScreen } from "@/components/login-screen";
 import {
+  consentRedirectNotice,
   performOAuthDecision,
   safeOAuthConsentError,
   type AuthorizationDetails,
@@ -134,6 +135,7 @@ export function OAuthConsentPage({ authorizationId }: { authorizationId: string 
   if (!signedIn) return <LoginScreen />;
 
   const clientName = details?.client?.name ?? "an application";
+  const redirectNotice = typeof window === "undefined" ? null : consentRedirectNotice(details);
 
   return (
     <main className="mx-auto max-w-md px-4 py-16">
@@ -142,6 +144,16 @@ export function OAuthConsentPage({ authorizationId }: { authorizationId: string 
         This lets {clientName} read your archive through the app&apos;s agent tools, acting as you.
         You can revoke access at any time from your account.
       </p>
+      {redirectNotice?.kind === "return" ? (
+        <p className="mt-2 text-sm text-muted-foreground">
+          After approval, you return to {redirectNotice.host}.
+        </p>
+      ) : (
+        <p className="mt-2 text-sm font-medium text-[color:var(--ember)]">
+          This application did not declare where it will send you. Only approve if you started this
+          connection.
+        </p>
+      )}
       {error ? (
         <p role="alert" className="mt-4 text-sm text-destructive">
           {error}

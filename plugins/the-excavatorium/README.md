@@ -26,6 +26,32 @@ The package also includes the `custodian` skill for retrieval discipline, source
 
 Record retrieval uses the five canonical types: `tool`, `repository`, `conversation`, `decision`, and `document`. Safe projections omit user ids, seed keys, document storage paths, and raw conversation transcripts by default.
 
+## Client policy
+
+Two server env vars control which OAuth clients may call the server, enforced
+identically at the MCP request gate and in the `document-fetch` Edge Function:
+
+- `MCP_CLIENT_POLICY` — `allowlist` (default when unset) or `consent`.
+  - `allowlist`: only clients in `MCP_ALLOWED_CLIENT_IDS` (comma-separated
+    OAuth client UUIDs, required) are allowed.
+  - `consent`: any verified token whose `client_id`/`azp` is a valid UUID is
+    allowed; `MCP_ALLOWED_CLIENT_IDS` is ignored and may be unset. Tokens with
+    no client claim are still rejected. Use this only because every client
+    reaches the server through the owner consent screen below, which names the
+    client and its redirect host before approval.
+- `MCP_DENIED_CLIENT_IDS` — optional comma-separated client UUIDs. Applies in
+  both modes and wins over every approval: a denied client is rejected even if
+  allowlisted (or in consent mode).
+
+Fail-closed rules: an unknown policy, a malformed allowlist (in `allowlist`
+mode), or a malformed deny list (empty entries, duplicates, non-UUIDs) rejects
+every client. A broken policy answers 500 before any bearer inspection.
+
+Deploy order: set the same values as MCP-host env vars **and** as
+`supabase secrets set` values for the Edge Functions, then deploy. Both
+enforcement points must agree, or `document-fetch` rejects clients the MCP
+route allows (and vice versa).
+
 ## Finish the ChatGPT connection
 
 1. In ChatGPT, open **Settings → Security and login** and enable **Developer mode**.

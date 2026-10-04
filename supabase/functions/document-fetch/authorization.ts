@@ -7,25 +7,71 @@ export type DocumentFetchClientAccess =
   | "client_malformed"
   | "client_unapproved";
 
-export function parseDocumentFetchClientAllowlist(
-  value: string | undefined,
-): ReadonlySet<string> | null {
-  if (!value) return null;
-  const ids = value
-    .split(",")
-    .map((id) => id.trim().toLowerCase())
-    .filter(Boolean);
-  if (ids.length === 0 || ids.some((id) => !UUID_PATTERN.test(id))) return null;
-  return new Set(ids);
+export type DocumentFetchClientPolicy = "allowlist" | "consent";
+
+export type DocumentFetchPolicyConfig = {
+  policy?: string;
+  allowedClientIds?: string;
+  deniedClientIds?: string;
+};
+
+type ParsedClientIds = { ok: true; ids: ReadonlySet<string> } | { ok: false };
+
+type ParsedClientPolicy = { ok: true; policy: DocumentFetchClientPolicy } | { ok: false };
+
+export function parseDocumentFetchClientPolicy(value: string | undefined): ParsedClientPolicy {
+  if (value === undefined) return { ok: true, policy: "allowlist" };
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "" || normalized === "allowlist") return { ok: true, policy: "allowlist" };
+  if (normalized === "consent") return { ok: true, policy: "consent" };
+  return { ok: false };
+}
+
+export function parseDocumentFetchClientAllowlist(value: string | undefined): ParsedClientIds {
+  if (!value) return { ok: false };
+  const ids = value.split(",").map((id) => id.trim().toLowerCase());
+  if (ids.some((id) => !UUID_PATTERN.test(id)) || new Set(ids).size !== ids.length) {
+    return { ok: false };
+  }
+  return { ok: true, ids: new Set(ids) };
+}
+
+export function parseDocumentFetchDeniedClientIds(value: string | undefined): ParsedClientIds {
+  if (!value) return { ok: true, ids: new Set() };
+  const ids = value.split(",").map((id) => id.trim().toLowerCase());
+  if (ids.some((id) => !UUID_PATTERN.test(id)) || new Set(ids).size !== ids.length) {
+    return { ok: false };
+  }
+  return { ok: true, ids: new Set(ids) };
+}
+
+// Pure client-policy decision shared with the request authorizer below. The
+// deny list wins over every approval path in both modes; in consent mode the
+// allowlist is ignored entirely and may be unset or malformed.
+export function evaluateDocumentFetchClientAccess(
+  config: DocumentFetchPolicyConfig,
+  clientId: string | undefined,
+): DocumentFetchClientAccess {
+  const policy = parseDocumentFetchClientPolicy(config.policy);
+  if (!policy.ok) return "configuration_invalid";
+  const denied = parseDocumentFetchDeniedClientIds(config.deniedClientIds);
+  if (!denied.ok) return "configuration_invalid";
+  const allowed =
+    policy.policy === "consent" ? null : parseDocumentFetchClientAllowlist(config.allowedClientIds);
+  if (allowed !== null && !allowed.ok) return "configuration_invalid";
+  if (!clientId) return "client_missing";
+  if (!UUID_PATTERN.test(clientId)) return "client_malformed";
+  const normalized = clientId.toLowerCase();
+  if (denied.ids.has(normalized)) return "client_unapproved";
+  if (allowed === null || allowed.ids.has(normalized)) return "allowed";
+  return "client_unapproved";
 }
 
 export function authorizeDocumentFetchClient(
   authorization: string | null,
   authenticatedUserId: string,
-  configuredAllowlist: string | undefined,
+  config: DocumentFetchPolicyConfig,
 ): DocumentFetchClientAccess {
-  const allowed = parseDocumentFetchClientAllowlist(configuredAllowlist);
-  if (!allowed) return "configuration_invalid";
   if (!authorization) return "client_missing";
 
   const token = /^Bearer\s+([^\s]+)$/i.exec(authorization.trim())?.[1];
@@ -40,18 +86,18 @@ export function authorizeDocumentFetchClient(
         ? claims.azp.trim().toLowerCase()
         : undefined;
   if (!clientId || !UUID_PATTERN.test(clientId)) return "client_malformed";
-  return allowed.has(clientId) ? "allowed" : "client_unapproved";
+  return evaluateDocumentFetchClientAccess(config, clientId);
 }
 
 export function authorizeDocumentFetchRequest(
   request: Request,
   authenticatedUserId: string,
-  configuredAllowlist: string | undefined,
+  config: DocumentFetchPolicyConfig,
 ): DocumentFetchClientAccess {
   return authorizeDocumentFetchClient(
     request.headers.get("authorization"),
     authenticatedUserId,
-    configuredAllowlist,
+    config,
   );
 }
 
