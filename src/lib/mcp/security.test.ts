@@ -43,23 +43,19 @@ describe("MCP handler authorization", () => {
     const previous = process.env.MCP_ALLOWED_CLIENT_IDS;
     try {
       delete process.env.MCP_ALLOWED_CLIENT_IDS;
-      expect((await authResult(authenticatedContext(ALLOWED_CLIENT)))?.structuredContent).toEqual({
-        error: {
-          code: "AUTH_CONFIGURATION_ERROR",
-          message: "MCP authorization is temporarily unavailable.",
-        },
-      });
+      const misconfigured = await authResult(authenticatedContext(ALLOWED_CLIENT));
+      expect(misconfigured?.isError).toBe(true);
+      expect(misconfigured?.structuredContent).toBeUndefined();
+      expect(misconfigured?.content[0]?.text).toContain("AUTH_CONFIGURATION_ERROR");
 
       process.env.MCP_ALLOWED_CLIENT_IDS = "not-a-uuid";
       expect((await authResult(authenticatedContext(ALLOWED_CLIENT)))?.isError).toBe(true);
 
       process.env.MCP_ALLOWED_CLIENT_IDS = ALLOWED_CLIENT;
-      expect((await authResult(authenticatedContext(undefined)))?.structuredContent).toEqual({
-        error: {
-          code: "CLIENT_NOT_ALLOWED",
-          message: "This OAuth client is not permitted to access this server.",
-        },
-      });
+      const denied = await authResult(authenticatedContext(undefined));
+      expect(denied?.isError).toBe(true);
+      expect(denied?.structuredContent).toBeUndefined();
+      expect(denied?.content[0]?.text).toContain("CLIENT_NOT_ALLOWED");
       expect(await authResult(authenticatedContext(ALLOWED_CLIENT))).toBeNull();
     } finally {
       if (previous === undefined) delete process.env.MCP_ALLOWED_CLIENT_IDS;

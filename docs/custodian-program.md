@@ -127,7 +127,7 @@ provider call is available.
 | Provider-backed analysis                                 | M4A hold storage is merged source. M4B wires one synthesis attempt in `supabase/functions/custodian-run/provider-attempt.ts`: reserve, at most one Responses request through the official OpenAI SDK, truthful settlement, M2 materialization, and boundary verification. M4D adds the readonly start contract and bounded driver. Both source gates are open. Safe provider diagnostics are recorded per attempt. | M4C Run Room is **CURRENT** and can start one readonly analysis through `{ runId, invocationKey }`. Failed attempts show safe provider metadata behind Technical details. | Two production runs reached the provider and failed; no deployed run has completed. See [`custodian-first-run-readiness.md`](./custodian-first-run-readiness.md). |
 | External or canonical execution                          | Approval and tool-event guard foundations are **CURRENT** source.                                     | No control UI is connected.                                                                                               | **BLOCKED**; current Edge runtime stops approved external execution.                                             |
 | MCP Custodian reads                                      | **CURRENT** bounded reader registrations and safe projections.                                        | `list_cases`, `get_case`, `get_findings`, `get_pending_approvals`, and `get_run` are conditional on deployed foundations; `get_findings` now projects bounded attribution and evidence descriptors. | Fresh authenticated production callability is **UNVERIFIED**.                                                    |
-| MCP run control                                          | Reserved tools exist.                                                                                 | `start_analysis` and `cancel_run` deliberately return unavailable.                                                        | **BLOCKED**, never simulated.                                                                                    |
+| MCP run control                                          | Removed from the MCP catalog in 0.4.0.                                                            | `start_analysis` and `cancel_run` no longer exist; run controls are app-only.                                         | **BLOCKED**, never simulated.                                                                                    |
 | Resident monitoring                                      | Tables and guarded automation RPCs exist.                                                             | Observatory has no live source and says so.                                                                               | **PARTIAL/FUTURE**; no scheduler or resident loop is proven operational.                                         |
 
 Important gaps and contradictions must remain visible:
@@ -500,11 +500,11 @@ archive dump. `compare_records` compares projection fields without adjudicating 
 
 Current Custodian MCP readers are `list_cases`, `get_case`, `get_findings`,
 `get_pending_approvals`, and `get_run`, conditional on the relevant deployed owner-RLS
-foundation. `start_analysis` and `cancel_run` are intentional reserved boundaries:
-they authenticate, return `RUNTIME_UNAVAILABLE`, perform no write, and never pretend
-that execution or cancellation happened. Connected ChatGPT or Codex clients must stop
-there. A live connector call requires its own fresh proof; registration or a plugin
-manifest is not proof of authentication or callability.
+foundation. `start_analysis` and `cancel_run` were removed from the MCP catalog in
+0.4.0: run controls are app-only and never happen through MCP. Connected ChatGPT
+or Codex clients must stop there. A live connector call requires its own fresh
+proof; registration or a plugin manifest is not proof of authentication or
+callability.
 
 The `custodian` plugin skill in `plugins/the-excavatorium/skills/custodian/SKILL.md`
 defines useful retrieval discipline: discover narrowly, fetch/prove provenance, compare

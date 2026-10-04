@@ -100,7 +100,7 @@ export default defineTool({
   name: "excavate_document",
   title: "Excavate and save document",
   description:
-    "Take the user-supplied PDF, Markdown document, or UTF-8 text file, excavate it through The Excavatorium's existing File Excavation system, and save the resulting Document in the authenticated owner's archive.",
+    "Use only when the user supplies a file to archive. Key input: file with download_url, file_id, and optional mime_type/file_name for a PDF, Markdown (.md), or plain-text (.txt) file up to 10 MB. Excavates it through the existing File Excavation system and saves the resulting document in the authenticated owner's archive. Returns id, isNew, title, recordType document, originalFileName, and contentHash. This is the only mutation; every other tool is read-only.",
   inputSchema: { file: fileSchema },
   outputSchema: {
     id: z.string().uuid(),

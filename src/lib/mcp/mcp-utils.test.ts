@@ -123,7 +123,18 @@ describe("MCP error mapping", () => {
     ).toBe("DATA_UNAVAILABLE");
     const result = errorResult("RUNTIME_UNAVAILABLE");
     expect(result.isError).toBe(true);
+    expect(result.structuredContent).toBeUndefined();
     expect(result.content[0].text).toContain("RUNTIME_UNAVAILABLE");
     expect(result.content[0].text).not.toContain("secret");
+    const optedIn = errorResult("RUNTIME_UNAVAILABLE", undefined, {
+      includeStructuredContent: true,
+    });
+    expect(optedIn.isError).toBe(true);
+    expect(optedIn.structuredContent).toEqual({
+      error: {
+        code: "RUNTIME_UNAVAILABLE",
+        message: "Custodian analysis runtime is not available.",
+      },
+    });
   });
 });
