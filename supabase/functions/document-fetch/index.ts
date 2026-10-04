@@ -61,11 +61,11 @@ export async function handleDocumentFetch(request: Request): Promise<Response> {
   // authenticatedSupabase has already verified this exact bearer token with
   // Supabase Auth. The helper only decodes its claims after that verification,
   // and binds the token subject to the verified user before reading client_id.
-  const access = authorizeDocumentFetchRequest(
-    request,
-    auth.user.id,
-    Deno.env.get("MCP_ALLOWED_CLIENT_IDS"),
-  );
+  const access = authorizeDocumentFetchRequest(request, auth.user.id, {
+    policy: Deno.env.get("MCP_CLIENT_POLICY"),
+    allowedClientIds: Deno.env.get("MCP_ALLOWED_CLIENT_IDS"),
+    deniedClientIds: Deno.env.get("MCP_DENIED_CLIENT_IDS"),
+  });
   if (access === "configuration_invalid")
     return jsonResponse({ error: "Document fetch authorization is unavailable." }, 500);
   if (access !== "allowed") return jsonResponse({ error: "Client is not permitted." }, 403);
