@@ -68,11 +68,12 @@ claim a live connector call from configuration alone.
 
 ## Approval boundaries
 
-`get_pending_approvals` and `get_run` are read-only status tools. `start_analysis`
-and `cancel_run` do not simulate execution or cancellation and do not perform
-direct writes. If they return `RUNTIME_UNAVAILABLE`, stop at that boundary.
-Approval is an explicit state transition owned by the runtime, not a suggestion
-to treat a request as approved.
+`get_pending_approvals` and `get_run` are read-only status tools. This connector
+cannot start, cancel, approve, or reject analysis runs; those actions happen in
+the Excavatorium app and are owned by the runtime/owner. If the user asks to run
+or cancel analysis, say it must be done in the app; do not claim a run was
+started, cancelled, or approved. Approval is an explicit state transition owned
+by the runtime, not a suggestion to treat a request as approved.
 
 ## Output discipline
 
