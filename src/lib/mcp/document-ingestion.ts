@@ -11,8 +11,9 @@ const DOWNLOAD_TIMEOUT_MS = 20_000;
 const DOCUMENT_FETCH_FUNCTION_TIMEOUT_MS = DOWNLOAD_TIMEOUT_MS + 2_000;
 const MAX_DOWNLOAD_REDIRECTS = 2;
 const MAX_CANDIDATE_RECORDS = 75;
-// Upper bound for text supplied inline through MCP. The 64 KiB MCP request
-// gate bounds the whole envelope; this leaves room for JSON framing.
+// Upper bound for text supplied inline through MCP, measured as sent: the
+// 64 KiB MCP request gate meters the serialized JSON envelope, and the two
+// framing quotes alone already exceed a decoded-bytes budget at the boundary.
 export const MAX_MCP_TEXT_BYTES = 60_000;
 const SUPPORTED_RECORD_TYPES: readonly RecordType[] = [
   "tool",
@@ -322,14 +323,37 @@ export async function downloadChatGptDocument(
 /**
  * Builds the document-fetch reference for a caller-supplied https URL. The
  * file_id is synthetic and deterministic (sha256 of the URL); identity and
- * duplicate reuse always come from the content hash of the fetched bytes.
+ * duplicate reuse always come from the content hash of the fetched bytes. A
+ * safe filename is derived from the URL path when it names a supported file,
+ * so generic content-type responses can still be classified.
  */
 export async function fileReferenceForUrl(url: string): Promise<ChatGptFileReference> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(url));
   const hex = [...new Uint8Array(digest)]
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
-  return { download_url: url, file_id: `url-${hex.slice(0, 32)}` };
+  const reference: ChatGptFileReference = { download_url: url, file_id: `url-${hex.slice(0, 32)}` };
+  const fileName = fileNameFromUrlPath(url);
+  if (fileName) reference.file_name = fileName;
+  return reference;
+}
+
+function fileNameFromUrlPath(url: string): string | undefined {
+  let segment: string;
+  try {
+    segment = new URL(url).pathname.split("/").pop()?.trim() ?? "";
+  } catch {
+    return undefined;
+  }
+  try {
+    segment = decodeURIComponent(segment);
+  } catch {
+    // Keep the raw segment rather than rejecting the URL.
+  }
+  segment = segment.trim();
+  if (segment.length < 4 || segment.length > 240) return undefined;
+  if (!/\.md$|\.txt$|\.pdf$/i.test(segment)) return undefined;
+  return segment;
 }
 
 /**
@@ -341,7 +365,11 @@ export function fileFromText(text: string, fileName: string): File {
   if (bytes.byteLength === 0) {
     throw new DocumentIngestionError("INVALID_INPUT", undefined, "malformed_document");
   }
-  if (bytes.byteLength > MAX_MCP_TEXT_BYTES) {
+  // Enforce against the JSON-encoded size: the 64 KiB MCP request gate
+  // measures the serialized envelope, so escaped text (quotes, backslashes,
+  // newlines) can exceed it well below 60,000 decoded bytes.
+  const framedBytes = new TextEncoder().encode(JSON.stringify(text)).byteLength;
+  if (framedBytes > MAX_MCP_TEXT_BYTES) {
     throw new DocumentIngestionError("INVALID_INPUT", undefined, "request_too_large");
   }
   const mime = fileName.toLowerCase().endsWith(".md") ? "text/markdown" : "text/plain";
@@ -384,15 +412,20 @@ export async function excavateAndSaveFile(
     mapDraft: DocumentDraftMapper;
   },
 ): Promise<ExcavatedDocumentResult> {
-  const contentHash = await fingerprintFile(file);
+  // Forward the MIME essence only: some runtimes append parameters
+  // (text/plain;charset=utf-8) that the Edge validators compare exactly and
+  // would reject as unsupported_document. Hashing covers the bytes, so the
+  // duplicate-reuse identity is unaffected.
+  const normalized = normalizeFileMime(file);
+  const contentHash = await fingerprintFile(normalized);
   // An implicit excavation of a file the owner already archived returns that
   // Document unchanged, before any extraction, quota use, or model call.
-  const existing = await findExistingDocument(dependencies.client, contentHash, file.name);
+  const existing = await findExistingDocument(dependencies.client, contentHash, normalized.name);
   if (existing) return existing;
   const candidates = await loadOwnerCandidates(dependencies.client);
 
   const extractionBody = new FormData();
-  extractionBody.append("file", file, file.name);
+  extractionBody.append("file", normalized, normalized.name);
   extractionBody.append("contentHash", contentHash);
   extractionBody.append("candidateRecords", JSON.stringify(candidates));
   let extraction: { data: unknown; error: unknown };
@@ -443,7 +476,7 @@ export async function excavateAndSaveFile(
   // re-checks the verified hash and returns an existing Document instead.
   saveBody.append("duplicatePolicy", "reuse_existing");
   saveBody.append("contentHash", contentHash);
-  saveBody.append("file", file, file.name);
+  saveBody.append("file", normalized, normalized.name);
   let saved: { data: unknown; error: unknown };
   try {
     saved = await dependencies.client.invoke("document-save", saveBody);
@@ -528,6 +561,16 @@ async function bytesFromFetchResult(value: unknown): Promise<Uint8Array> {
   if (value instanceof ArrayBuffer) return new Uint8Array(value);
   if (value instanceof Uint8Array) return new Uint8Array(value);
   throw new DocumentIngestionError("FILE_UNAVAILABLE", undefined, "body_read_failure");
+}
+
+// Strips MIME parameters before a File crosses the Edge boundary, where
+// validators compare file.type exactly. Bytes and name are untouched.
+// Exported for unit tests: some runtimes re-append parameters at
+// construction, so the rebuild decision is verified directly.
+export function normalizeFileMime(file: File): File {
+  const essence = file.type.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+  if (!essence || essence === file.type) return file;
+  return new File([file], file.name, { type: essence });
 }
 
 function documentFileFromBytes(

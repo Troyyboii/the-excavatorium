@@ -52,7 +52,7 @@ describe("excavate_document tool", () => {
     expect(excavateDocument.annotations).toEqual({
       readOnlyHint: false,
       destructiveHint: false,
-      openWorldHint: false,
+      openWorldHint: true,
       idempotentHint: false,
     });
     const schema = z.object(excavateDocument.inputSchema!);

@@ -131,7 +131,7 @@ export default defineTool({
   name: "excavate_document",
   title: "Excavate and save document",
   description:
-    "Use to archive a document from exactly one source per call: file for a ChatGPT-supplied file reference (download_url, file_id, optional mime_type/file_name); url for a public https URL up to 2048 chars, fetched server-side through the guarded document-fetch path (10 MB cap, no private hosts); text for pasting up to 60,000 UTF-8 bytes directly with a required fileName ending .md or .txt (max 240 chars). Every mode spends the owner's extraction quota, and already-archived content (matched by content hash) returns the existing document with isNew false instead of re-excavating. Returns id, isNew, title, recordType document, originalFileName, and contentHash. This is the only mutation; every other tool is read-only.",
+    "Use to archive a document from exactly one source per call: file for a ChatGPT-supplied file reference (download_url, file_id, optional mime_type/file_name); url for a public https URL up to 2048 chars, fetched server-side through the guarded document-fetch path (10 MB cap, no private hosts; a safe filename is derived from the URL path when the server answers with a generic content type); text for pasting document content directly (up to 60,000 bytes as sent, JSON framing counts) with a required fileName ending .md or .txt (max 240 chars). Every mode spends the owner's extraction quota, and already-archived content (matched by content hash) returns the existing document with isNew false instead of re-excavating. Returns id, isNew, title, recordType document, originalFileName, and contentHash. This is the only mutation; every other tool is read-only.",
   inputSchema: {
     file: fileSchema.optional(),
     url: z
@@ -145,7 +145,7 @@ export default defineTool({
     text: z
       .string()
       .optional()
-      .describe("Raw Markdown or plain-text content to archive (max 60,000 UTF-8 bytes)."),
+      .describe("Raw Markdown or plain-text content to archive (up to 60,000 bytes as sent)."),
     fileName: z
       .string()
       .trim()
@@ -165,7 +165,9 @@ export default defineTool({
   annotations: {
     readOnlyHint: false,
     destructiveHint: false,
-    openWorldHint: false,
+    // The url mode asks the server to fetch an arbitrary public third-party
+    // host, which is open-world interaction even though SSRF guards apply.
+    openWorldHint: true,
     idempotentHint: false,
   },
   handler: handleExcavateDocument,

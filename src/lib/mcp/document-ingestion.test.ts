@@ -14,6 +14,7 @@ import {
   fileFromText,
   fileReferenceForUrl,
   MAX_MCP_TEXT_BYTES,
+  normalizeFileMime,
 } from "./document-ingestion";
 
 const reference: ChatGptFileReference = {
@@ -1044,8 +1045,15 @@ describe("any-source ingestion", () => {
     expect(first).toEqual(second);
     expect(first.download_url).toBe("https://example.com/notes.md");
     expect(first.file_id).toMatch(/^url-[0-9a-f]{32}$/);
+    expect(first.file_name).toBe("notes.md");
     const other = await fileReferenceForUrl("https://example.com/other.md");
     expect(other.file_id).not.toBe(first.file_id);
+  });
+
+  test("leaves file_name unset when the url path names no supported file", async () => {
+    const reference = await fileReferenceForUrl("https://example.com/download?id=7");
+    expect(reference.file_name).toBeUndefined();
+    expect(reference.file_id).toMatch(/^url-[0-9a-f]{32}$/);
   });
 
   test("builds validated files from pasted text", () => {
@@ -1057,8 +1065,9 @@ describe("any-source ingestion", () => {
     expect(txt.type.split(";")[0]).toBe("text/plain");
     expect(txt.name).toBe("NOTES.TXT");
     expect(MAX_MCP_TEXT_BYTES).toBe(60_000);
-    const exactly = fileFromText("x".repeat(MAX_MCP_TEXT_BYTES), "notes.md");
-    expect(exactly.size).toBe(MAX_MCP_TEXT_BYTES);
+    // The two JSON framing quotes count: 59,998 chars frame to exactly 60,000.
+    const exactly = fileFromText("x".repeat(MAX_MCP_TEXT_BYTES - 2), "notes.md");
+    expect(exactly.size).toBe(MAX_MCP_TEXT_BYTES - 2);
   });
 
   test("rejects empty and oversized text", async () => {
@@ -1072,9 +1081,31 @@ describe("any-source ingestion", () => {
       "INVALID_INPUT",
       "request_too_large",
     );
+    // Escaped text counts framed: 40,000 newlines exceed the gate at ~80,000.
+    await expectCode(
+      Promise.resolve().then(() => fileFromText("\n".repeat(40_000), "notes.md")),
+      "INVALID_INPUT",
+      "request_too_large",
+    );
   });
 
-  function reuseClient(hash: string, existingId: string, saveId: string, invoked: string[]) {
+  test("strips MIME parameters before forwarding", () => {
+    const clean = new File(["x"], "n.md", { type: "text/markdown" });
+    expect(normalizeFileMime(clean)).toBe(clean);
+    const parameterized = new File(["x"], "n.md", { type: "text/markdown; charset=utf-8" });
+    const normalized = normalizeFileMime(parameterized);
+    expect(normalized).not.toBe(parameterized);
+    expect(normalized.type).toBe("text/markdown");
+    expect(normalized.name).toBe("n.md");
+  });
+
+  function reuseClient(
+    hash: string,
+    existingId: string,
+    saveId: string,
+    invoked: string[],
+    storedName = "hello.md",
+  ) {
     let lookups = 0;
     return {
       lookups: () => lookups,
@@ -1089,7 +1120,7 @@ describe("any-source ingestion", () => {
                 id: existingId,
                 title: "Hello",
                 record_type: "document",
-                record_data: { contentHash: hash, originalFileName: "hello.md" },
+                record_data: { contentHash: hash, originalFileName: storedName },
               },
             ],
             error: null,
@@ -1116,7 +1147,7 @@ describe("any-source ingestion", () => {
   }
 
   test("reuses the existing document when the same text is excavated twice", async () => {
-    const file = fileFromText("# hello world", "hello.md");
+    const file = fileFromText("# hello world", "hello.txt");
     const hash = await fingerprintFile(file);
     const invoked: string[] = [];
     const { client: stub } = reuseClient(
@@ -1124,6 +1155,7 @@ describe("any-source ingestion", () => {
       "55555555-5555-4555-8555-555555555555",
       "66666666-6666-4666-8666-666666666666",
       invoked,
+      "hello.txt",
     );
     const first = await excavateAndSaveFile(file, { client: stub, mapDraft: reuseMapDraft });
     expect(first).toMatchObject({ isNew: true, contentHash: hash });
@@ -1133,7 +1165,7 @@ describe("any-source ingestion", () => {
       isNew: false,
       title: "Hello",
       recordType: "document",
-      originalFileName: "hello.md",
+      originalFileName: "hello.txt",
       contentHash: hash,
     });
     expect(invoked).toEqual(["document-extract", "document-save"]);
