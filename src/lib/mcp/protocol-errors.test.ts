@@ -155,4 +155,108 @@ describe("MCP protocol error results", () => {
       server.stop(true);
     }
   });
+
+  test("an authenticated search returns the v2 success shape", async () => {
+    const { publicKey, privateKey } = await generateKeyPair("EdDSA");
+    const jwk = await exportJWK(publicKey);
+    const jwks = { keys: [{ ...jwk, kid: "protocol-errors-key", alg: "EdDSA", use: "sig" }] };
+    const server = Bun.serve({
+      port: 0,
+      fetch: (req) =>
+        new URL(req.url).pathname === "/jwks.json"
+          ? Response.json(jwks)
+          : new Response("not found", { status: 404 }),
+    });
+    try {
+      const definition = defineMcp({
+        name: "protocol-errors-search-v2",
+        title: "Protocol errors (search v2)",
+        version: "1.0.0",
+        instructions: "",
+        auth: auth.oauth.issuer({
+          issuer: ISSUER,
+          acceptedAudiences: "authenticated",
+          jwksUri: `http://localhost:${server.port}/jwks.json`,
+        }),
+        tools: mcpTools,
+        metrics: false,
+      });
+      const token = await new SignJWT({ aud: "authenticated", client_id: CLIENT_ID })
+        .setProtectedHeader({ alg: "EdDSA", kid: "protocol-errors-key", typ: "at+jwt" })
+        .setIssuer(ISSUER)
+        .setSubject(USER_ID)
+        .setExpirationTime("5m")
+        .sign(privateKey);
+
+      process.env.MCP_ALLOWED_CLIENT_IDS = CLIENT_ID;
+      globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.href
+              : (input as Request).url;
+        if (url.startsWith("http://localhost:") || url.startsWith("http://127.0.0.1:")) {
+          return originalFetch(input as never, init);
+        }
+        const parsed = new URL(url);
+        if (parsed.hostname.endsWith(".supabase.co") && parsed.pathname.startsWith("/rest/v1/")) {
+          return new Response(
+            JSON.stringify([
+              {
+                id: "00000000-0000-4000-8000-000000000001",
+                record_type: "tool",
+                title: "Lantern review",
+                summary: "A bright find",
+                tags: ["lantern", "review"],
+                is_example: false,
+                created_at: "2026-09-01T00:00:00.000Z",
+                updated_at: "2026-10-02T00:00:00.000Z",
+                record_data: { finalVerdict: "Keep it", status: "Active" },
+              },
+              {
+                id: "00000000-0000-4000-8000-000000000002",
+                record_type: "tool",
+                title: "Other notes",
+                summary: "Unrelated writing",
+                tags: ["misc"],
+                is_example: false,
+                created_at: "2026-09-01T00:00:00.000Z",
+                updated_at: "2026-09-15T00:00:00.000Z",
+                record_data: { finalVerdict: "Keep the lantern", status: "Buried" },
+              },
+            ]),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        throw new Error(`unexpected network request in protocol-errors test: ${url}`);
+      }) as typeof fetch;
+
+      const handler = createTanStackMcpHandler(definition);
+      const response = await handler({
+        request: protocolRequest(
+          {
+            jsonrpc: "2.0",
+            id: 3,
+            method: "tools/call",
+            params: { name: "search", arguments: { query: "lantern", limit: 1 } },
+          },
+          token,
+        ),
+      });
+      const result = await readCallResult(response);
+      expect(result.isError).toBeFalsy();
+      const payload = result.structuredContent as {
+        count: number;
+        records: Array<{ id: string; matchedFields: string[] }>;
+        nextCursor: string | null;
+      };
+      expect(payload.count).toBe(1);
+      expect(payload.records[0]?.matchedFields).toContain("title");
+      expect(typeof payload.nextCursor).toBe("string");
+      expect(payload.records[0]).not.toHaveProperty("record_data");
+    } finally {
+      server.stop(true);
+    }
+  });
 });

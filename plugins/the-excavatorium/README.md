@@ -8,10 +8,13 @@ Source-available under the repository [Business Source License 1.1](../../LICENS
 The server exposes bounded, owner-scoped archive and Custodian tools:
 
 - `archive_stats`
-- `search` and compatibility alias `list_records`
+- `search` and compatibility alias `list_records`, matching title, summary, exact
+  tag, and key record data fields, with tag, updatedAfter, projectRoute, and
+  cursor filters plus per-record matchedFields
 - `fetch` and compatibility alias `get_record`
 - `get_context`
 - `compare_records`
+- `list_tags`, `list_recent`, and `get_decisions` (with its resolved supersedes chain)
 - `list_cases`, `get_case`, and `get_findings` when the owner-RLS case foundation is available
 - `get_pending_approvals` and `get_run` when the Custodian runtime foundation is available
 - `excavate_document`, the explicit supplied-file excavation/save exception that can persist a Document

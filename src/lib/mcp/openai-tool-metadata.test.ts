@@ -124,7 +124,7 @@ describe("OpenAI file-tool catalog metadata", () => {
     const standardPayload = JSON.parse(event) as {
       result: { tools: Array<Record<string, unknown>> };
     };
-    expect(standardPayload.result.tools).toHaveLength(13);
+    expect(standardPayload.result.tools).toHaveLength(16);
     expect(
       standardPayload.result.tools.find((tool) => tool.name === "excavate_document")?._meta,
     ).toEqual({ "openai/fileParams": ["file"] });
@@ -134,7 +134,7 @@ describe("OpenAI file-tool catalog metadata", () => {
       await restHandler({ request: new Request("https://example.test/.mcp/list-tools") }),
     );
     const restPayload = (await rest.json()) as { tools: Array<Record<string, unknown>> };
-    expect(restPayload.tools).toHaveLength(13);
+    expect(restPayload.tools).toHaveLength(16);
     expect(restPayload.tools.find((tool) => tool.name === "excavate_document")?._meta).toEqual({
       "openai/fileParams": ["file"],
     });
@@ -147,7 +147,7 @@ describe("OpenAI file-tool catalog metadata", () => {
     const tool = manifest.mcp.tools.find(
       (candidate: { name?: string }) => candidate.name === "excavate_document",
     );
-    expect(manifest.mcp.tools).toHaveLength(13);
+    expect(manifest.mcp.tools).toHaveLength(16);
     expect(tool._meta).toEqual({ "openai/fileParams": ["file"] });
     expect(tool.inputSchema.properties.file.required).toEqual(["download_url", "file_id"]);
     expect(Object.keys(tool.inputSchema.properties.file.properties)).toEqual([
