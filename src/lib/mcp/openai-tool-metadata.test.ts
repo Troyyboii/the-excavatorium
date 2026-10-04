@@ -156,5 +156,6 @@ describe("OpenAI file-tool catalog metadata", () => {
       "mime_type",
       "file_name",
     ]);
+    expect(Object.keys(tool.inputSchema.properties)).toEqual(["file", "url", "text", "fileName"]);
   });
 });
