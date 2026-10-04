@@ -235,6 +235,54 @@ export function buildSearchFilter(query: string): string | null {
   return `title.ilike.%${safeQuery}%,summary.ilike.%${safeQuery}%,tags.cs.{${safeQuery}}`;
 }
 
+// Key record_data text fields per canonical type, matched via PostgREST ->>
+// filters. Never includes rawConversationText.
+export const SEARCHABLE_DATA_FIELDS: Record<CanonicalRecordType, readonly string[]> = {
+  tool: ["finalVerdict", "whatWorked", "whatFailed"],
+  repository: ["finalVerdict", "whatItActuallyDoes"],
+  conversation: ["highSignalFindings", "decisionsMade", "openLoops"],
+  decision: ["reason", "trigger"],
+  document: ["highSignalFindings", "keyClaims"],
+};
+
+export function buildRecordDataSearchFilter(
+  recordType: CanonicalRecordType | undefined,
+  query: string,
+): string | null {
+  const safeQuery = sanitizeSearchQuery(query);
+  if (!safeQuery) return null;
+  const types = recordType ? [recordType] : [...CANONICAL_RECORD_TYPES];
+  const fields = [...new Set(types.flatMap((type) => SEARCHABLE_DATA_FIELDS[type]))];
+  if (fields.length === 0) return null;
+  return fields.map((field) => `record_data->>${field}.ilike.%${safeQuery}%`).join(",");
+}
+
+// Narrow column list for search: base list columns plus only the searchable
+// record_data fields (and never rawConversationText) as JSON paths.
+export function buildSearchSelect(recordType: CanonicalRecordType | undefined): string {
+  const types = recordType ? [recordType] : [...CANONICAL_RECORD_TYPES];
+  const fields = [...new Set(types.flatMap((type) => SEARCHABLE_DATA_FIELDS[type]))];
+  return [RECORD_LIST_SELECT, ...fields.map((field) => `record_data->${field}`)].join(",");
+}
+
+// Projects a row returned by buildSearchSelect: the JSON-path columns arrive
+// flat, so collect the whitelisted fields back into record_data and reuse the
+// safe projection (which drops anything outside the allow-list).
+export function projectSearchRow(
+  row: Record<string, unknown>,
+  recordType: CanonicalRecordType | undefined,
+): SafeRecord {
+  const types = recordType ? [recordType] : [...CANONICAL_RECORD_TYPES];
+  const fields = new Set(types.flatMap((type) => SEARCHABLE_DATA_FIELDS[type]));
+  const recordData: Record<string, unknown> = {};
+  for (const field of fields) {
+    if (Object.prototype.hasOwnProperty.call(row, field)) {
+      recordData[field] = row[field];
+    }
+  }
+  return projectRecord({ ...row, record_data: recordData });
+}
+
 export function buildTextSearchFilter(query: string): string | null {
   const safeQuery = sanitizeSearchQuery(query);
   if (!safeQuery) return null;
@@ -327,7 +375,7 @@ function stableJson(value: unknown): string {
   return JSON.stringify(value);
 }
 
-function sanitizeSearchQuery(query: string): string {
+export function sanitizeSearchQuery(query: string): string {
   return query
     .trim()
     .replace(/[^\p{L}\p{N}\s-]/gu, " ")

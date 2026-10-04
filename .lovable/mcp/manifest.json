@@ -12,7 +12,7 @@
   "mcp": {
     "server": {
       "name": "the-excavatorium",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "title": "The Excavatorium"
     },
     "tools": [
@@ -80,7 +80,7 @@
       {
         "name": "list_records",
         "title": "List archive records",
-        "description": "Compatibility alias for search: use to discover or list the signed-in owner's records. Key inputs: query (optional here; omit to list recent records, otherwise 1-200 chars matched against title, summary, or exact tag), recordType (optional filter to one canonical type), limit (default 25, max 100). Returns count plus records summaries without record_data.",
+        "description": "Compatibility alias for search: use to discover or list the signed-in owner's records. Key inputs: query (optional here; omit to list recent records, otherwise 1-200 chars matched against title, summary, exact tag, and key record_data fields), recordType (optional filter to one canonical type), tags (optional exact-match tag list, max 10), updatedAfter (optional ISO datetime), projectRoute (optional, max 120 chars), limit (default 25, max 100), cursor (optional opaque page cursor). Returns count, record summaries with per-record matchedFields, and nextCursor (null when done).",
         "annotations": {
           "readOnlyHint": true,
           "idempotentHint": true,
@@ -104,13 +104,41 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 200,
-              "description": "Text to match in title, summary, or tags."
+              "description": "Text to match in title, summary, tags, and key record_data fields."
+            },
+            "tags": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "maxItems": 10,
+              "description": "Only return records carrying every listed tag (exact match, max 10)."
+            },
+            "updatedAfter": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100,
+              "description": "Only return records updated at or after this ISO datetime."
+            },
+            "projectRoute": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120,
+              "description": "Only return records on this project route."
             },
             "limit": {
               "type": "integer",
               "minimum": 1,
               "maximum": 100,
               "description": "Maximum rows to return (default 25)."
+            },
+            "cursor": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Opaque page cursor from a previous result's nextCursor."
             }
           },
           "additionalProperties": false,
@@ -161,6 +189,12 @@
                   },
                   "updated_at": {
                     "type": "string"
+                  },
+                  "matchedFields": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
                   }
                 },
                 "required": [
@@ -171,15 +205,23 @@
                   "tags",
                   "is_example",
                   "created_at",
-                  "updated_at"
+                  "updated_at",
+                  "matchedFields"
                 ],
                 "additionalProperties": false
               }
+            },
+            "nextCursor": {
+              "type": [
+                "string",
+                "null"
+              ]
             }
           },
           "required": [
             "count",
-            "records"
+            "records",
+            "nextCursor"
           ],
           "additionalProperties": false,
           "$schema": "http://json-schema.org/draft-07/schema#"
@@ -287,7 +329,7 @@
       {
         "name": "search",
         "title": "Search archive records",
-        "description": "Use to discover records in the signed-in owner's archive by text. Key inputs: query (required, 1-200 chars, matched against title, summary, or exact tag), recordType (optional filter to one of tool, repository, conversation, decision, document), limit (default 25, max 100). Returns count plus records summaries without record_data; call fetch or get_context for detail.",
+        "description": "Use to discover records in the signed-in owner's archive by text. Key inputs: query (required, 1-200 chars, matched against title, summary, exact tag, plus key record_data text fields such as finalVerdict, reason, or highSignalFindings), recordType (optional filter to one canonical type), tags (optional exact-match tag list, max 10), updatedAfter (optional ISO datetime), projectRoute (optional, max 120 chars), limit (default 25, max 100), cursor (optional opaque page cursor). Returns count, record summaries with per-record matchedFields, and nextCursor (null when done); call fetch or get_context for detail.",
         "annotations": {
           "readOnlyHint": true,
           "idempotentHint": true,
@@ -311,13 +353,41 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 200,
-              "description": "Text to match in title, summary, or tags."
+              "description": "Text to match in title, summary, tags, and key record_data fields."
+            },
+            "tags": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "maxItems": 10,
+              "description": "Only return records carrying every listed tag (exact match, max 10)."
+            },
+            "updatedAfter": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100,
+              "description": "Only return records updated at or after this ISO datetime."
+            },
+            "projectRoute": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120,
+              "description": "Only return records on this project route."
             },
             "limit": {
               "type": "integer",
               "minimum": 1,
               "maximum": 100,
               "description": "Maximum rows to return (default 25)."
+            },
+            "cursor": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Opaque page cursor from a previous result's nextCursor."
             }
           },
           "required": [
@@ -371,6 +441,12 @@
                   },
                   "updated_at": {
                     "type": "string"
+                  },
+                  "matchedFields": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
                   }
                 },
                 "required": [
@@ -381,15 +457,23 @@
                   "tags",
                   "is_example",
                   "created_at",
-                  "updated_at"
+                  "updated_at",
+                  "matchedFields"
                 ],
                 "additionalProperties": false
               }
+            },
+            "nextCursor": {
+              "type": [
+                "string",
+                "null"
+              ]
             }
           },
           "required": [
             "count",
-            "records"
+            "records",
+            "nextCursor"
           ],
           "additionalProperties": false,
           "$schema": "http://json-schema.org/draft-07/schema#"
@@ -601,6 +685,339 @@
             "record",
             "linkedRecordIds",
             "linkedRecords"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        }
+      },
+      {
+        "name": "list_tags",
+        "title": "List archive tags",
+        "description": "Use to see which tags the signed-in owner's archive uses and how often. Takes no required inputs; optional limit caps how many tags come back. Returns count plus tags sorted by count descending, each with its tag and count. Scans up to 1000 records.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "description": "Maximum tags to return (default 100)."
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "count": {
+              "type": "number"
+            },
+            "tags": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "tag": {
+                    "type": "string"
+                  },
+                  "count": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "tag",
+                  "count"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "count",
+            "tags"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        }
+      },
+      {
+        "name": "list_recent",
+        "title": "List recently updated records",
+        "description": "Use to catch up on what changed in the signed-in owner's archive. Key inputs: since (required ISO datetime; only records updated at or after it come back), recordType (optional filter to one of tool, repository, conversation, decision, document), limit (default 25, max 100). Returns count plus record summaries ordered newest first, without record_data.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "since": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100,
+              "description": "Only return records updated at or after this ISO datetime."
+            },
+            "recordType": {
+              "type": "string",
+              "enum": [
+                "tool",
+                "repository",
+                "conversation",
+                "decision",
+                "document"
+              ],
+              "description": "Restrict results to one canonical record type."
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "Maximum rows to return (default 25)."
+            }
+          },
+          "required": [
+            "since"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "count": {
+              "type": "number"
+            },
+            "records": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "record_type": {
+                    "type": "string",
+                    "enum": [
+                      "tool",
+                      "repository",
+                      "conversation",
+                      "decision",
+                      "document"
+                    ]
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "summary": {
+                    "type": "string"
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "is_example": {
+                    "type": "boolean"
+                  },
+                  "created_at": {
+                    "type": "string"
+                  },
+                  "updated_at": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "record_type",
+                  "title",
+                  "summary",
+                  "tags",
+                  "is_example",
+                  "created_at",
+                  "updated_at"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "count",
+            "records"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        }
+      },
+      {
+        "name": "get_decisions",
+        "title": "Get decision records",
+        "description": "Use to read the signed-in owner's decision records with their safe record_data. Key inputs: query (optional 1-200 char text matched against title, summary, tags, reason, and trigger), status (optional decision status; omit for the default Current plus Tentative), limit (default 25, max 100). Returns count plus decisions, each with supersedes: the decision this one directly replaces, or null; supersedesChain: ids of older decisions it replaces, max depth 5.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Text to match in title, summary, tags, reason, or trigger."
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "Current",
+                "Tentative",
+                "Superseded",
+                "Reversed",
+                "Archived"
+              ],
+              "description": "Filter to one decision status (default Current plus Tentative)."
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "Maximum rows to return (default 25)."
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "count": {
+              "type": "number"
+            },
+            "decisions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "record_type": {
+                    "type": "string",
+                    "const": "decision"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "summary": {
+                    "type": "string"
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "is_example": {
+                    "type": "boolean"
+                  },
+                  "created_at": {
+                    "type": "string"
+                  },
+                  "updated_at": {
+                    "type": "string"
+                  },
+                  "record_data": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  },
+                  "supersedes": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "$ref": "#/properties/decisions/items/properties/id"
+                          },
+                          "record_type": {
+                            "$ref": "#/properties/decisions/items/properties/record_type"
+                          },
+                          "title": {
+                            "$ref": "#/properties/decisions/items/properties/title"
+                          },
+                          "summary": {
+                            "$ref": "#/properties/decisions/items/properties/summary"
+                          },
+                          "tags": {
+                            "$ref": "#/properties/decisions/items/properties/tags"
+                          },
+                          "is_example": {
+                            "$ref": "#/properties/decisions/items/properties/is_example"
+                          },
+                          "created_at": {
+                            "$ref": "#/properties/decisions/items/properties/created_at"
+                          },
+                          "updated_at": {
+                            "$ref": "#/properties/decisions/items/properties/updated_at"
+                          },
+                          "record_data": {
+                            "$ref": "#/properties/decisions/items/properties/record_data"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "record_type",
+                          "title",
+                          "summary",
+                          "tags",
+                          "is_example",
+                          "created_at",
+                          "updated_at",
+                          "record_data"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "supersedesChain": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "id",
+                  "record_type",
+                  "title",
+                  "summary",
+                  "tags",
+                  "is_example",
+                  "created_at",
+                  "updated_at",
+                  "record_data",
+                  "supersedes",
+                  "supersedesChain"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "count",
+            "decisions"
           ],
           "additionalProperties": false,
           "$schema": "http://json-schema.org/draft-07/schema#"

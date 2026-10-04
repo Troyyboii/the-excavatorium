@@ -2,10 +2,12 @@ import { describe, expect, it } from "bun:test";
 import {
   boundedLimit,
   buildSearchFilter,
+  buildSearchSelect,
   compareProjectedRecords,
   errorResult,
   mapSupabaseError,
   projectRecord,
+  projectSearchRow,
 } from "./mcp-utils";
 
 describe("MCP safe projection", () => {
@@ -136,5 +138,38 @@ describe("MCP error mapping", () => {
         message: "Custodian analysis runtime is not available.",
       },
     });
+  });
+});
+
+describe("MCP narrow search projection", () => {
+  it("selects only searchable JSON paths, never full record_data", () => {
+    const select = buildSearchSelect(undefined);
+    expect(select).toContain("record_data->finalVerdict");
+    expect(select).toContain("record_data->reason");
+    expect(select.split(",")).not.toContain("record_data");
+    expect(select).not.toContain("rawConversationText");
+    expect(buildSearchSelect("decision")).toBe(
+      "id,record_type,title,summary,tags,is_example,created_at,updated_at,record_data->reason,record_data->trigger",
+    );
+  });
+
+  it("collects flat JSON-path columns back into the safe projection", () => {
+    const projected = projectSearchRow(
+      {
+        id: "record-3",
+        record_type: "conversation",
+        title: "Conversation",
+        summary: "Summary",
+        tags: [],
+        is_example: false,
+        created_at: "2026-10-01T00:00:00Z",
+        updated_at: "2026-10-01T00:00:00Z",
+        highSignalFindings: "lantern notes",
+        rawConversationText: "secret transcript",
+        reason: "not a conversation field",
+      },
+      undefined,
+    );
+    expect(projected.record_data).toEqual({ highSignalFindings: "lantern notes" });
   });
 });
