@@ -12,14 +12,14 @@
   "mcp": {
     "server": {
       "name": "the-excavatorium",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "title": "The Excavatorium"
     },
     "tools": [
       {
         "name": "archive_stats",
         "title": "Archive statistics",
-        "description": "Return counts of the signed-in user's archive: records per type, total records, and total links.",
+        "description": "Use first to size the signed-in owner's archive before searching. Takes no inputs. Returns recordsByType counts for the five canonical types (tool, repository, conversation, decision, document), plus totalRecords and totalLinks.",
         "annotations": {
           "readOnlyHint": true,
           "idempotentHint": true,
@@ -30,12 +30,57 @@
           "type": "object",
           "properties": {}
         },
-        "outputSchema": null
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "recordsByType": {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "number"
+                },
+                "repository": {
+                  "type": "number"
+                },
+                "conversation": {
+                  "type": "number"
+                },
+                "decision": {
+                  "type": "number"
+                },
+                "document": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "tool",
+                "repository",
+                "conversation",
+                "decision",
+                "document"
+              ],
+              "additionalProperties": false
+            },
+            "totalRecords": {
+              "type": "number"
+            },
+            "totalLinks": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "recordsByType",
+            "totalRecords",
+            "totalLinks"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        }
       },
       {
         "name": "list_records",
         "title": "List archive records",
-        "description": "Compatibility alias for search: list the signed-in user's five canonical archive record types by title, summary, or exact tag.",
+        "description": "Compatibility alias for search: use to discover or list the signed-in owner's records. Key inputs: query (optional here; omit to list recent records, otherwise 1-200 chars matched against title, summary, or exact tag), recordType (optional filter to one canonical type), limit (default 25, max 100). Returns count plus records summaries without record_data.",
         "annotations": {
           "readOnlyHint": true,
           "idempotentHint": true,
@@ -71,12 +116,79 @@
           "additionalProperties": false,
           "$schema": "http://json-schema.org/draft-07/schema#"
         },
-        "outputSchema": null
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "count": {
+              "type": "number"
+            },
+            "records": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "record_type": {
+                    "type": "string",
+                    "enum": [
+                      "tool",
+                      "repository",
+                      "conversation",
+                      "decision",
+                      "document"
+                    ]
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "summary": {
+                    "type": "string"
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "is_example": {
+                    "type": "boolean"
+                  },
+                  "created_at": {
+                    "type": "string"
+                  },
+                  "updated_at": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "record_type",
+                  "title",
+                  "summary",
+                  "tags",
+                  "is_example",
+                  "created_at",
+                  "updated_at"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "count",
+            "records"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        }
       },
       {
         "name": "get_record",
         "title": "Get archive record",
-        "description": "Compatibility alias for fetch with the safe archive projection.",
+        "description": "Compatibility alias for fetch: use to read one full record from the signed-in owner's archive. Key input: id (the record UUID). Returns the record with its safe record_data projection plus linkedRecordIds.",
         "annotations": {
           "readOnlyHint": true,
           "idempotentHint": true,
@@ -97,12 +209,85 @@
           "additionalProperties": false,
           "$schema": "http://json-schema.org/draft-07/schema#"
         },
-        "outputSchema": null
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "record": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "record_type": {
+                  "type": "string",
+                  "enum": [
+                    "tool",
+                    "repository",
+                    "conversation",
+                    "decision",
+                    "document"
+                  ]
+                },
+                "title": {
+                  "type": "string"
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "tags": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "is_example": {
+                  "type": "boolean"
+                },
+                "created_at": {
+                  "type": "string"
+                },
+                "updated_at": {
+                  "type": "string"
+                },
+                "record_data": {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
+              },
+              "required": [
+                "id",
+                "record_type",
+                "title",
+                "summary",
+                "tags",
+                "is_example",
+                "created_at",
+                "updated_at",
+                "record_data"
+              ],
+              "additionalProperties": false
+            },
+            "linkedRecordIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          },
+          "required": [
+            "record",
+            "linkedRecordIds"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        }
       },
       {
         "name": "search",
         "title": "Search archive records",
-        "description": "Search the signed-in user's five canonical archive record types by title, summary, or exact tag.",
+        "description": "Use to discover records in the signed-in owner's archive by text. Key inputs: query (required, 1-200 chars, matched against title, summary, or exact tag), recordType (optional filter to one of tool, repository, conversation, decision, document), limit (default 25, max 100). Returns count plus records summaries without record_data; call fetch or get_context for detail.",
         "annotations": {
           "readOnlyHint": true,
           "idempotentHint": true,
@@ -141,12 +326,79 @@
           "additionalProperties": false,
           "$schema": "http://json-schema.org/draft-07/schema#"
         },
-        "outputSchema": null
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "count": {
+              "type": "number"
+            },
+            "records": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "record_type": {
+                    "type": "string",
+                    "enum": [
+                      "tool",
+                      "repository",
+                      "conversation",
+                      "decision",
+                      "document"
+                    ]
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "summary": {
+                    "type": "string"
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "is_example": {
+                    "type": "boolean"
+                  },
+                  "created_at": {
+                    "type": "string"
+                  },
+                  "updated_at": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "record_type",
+                  "title",
+                  "summary",
+                  "tags",
+                  "is_example",
+                  "created_at",
+                  "updated_at"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "count",
+            "records"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        }
       },
       {
         "name": "fetch",
         "title": "Fetch an archive record",
-        "description": "Fetch one signed-in user's archive record with an explicit safe projection and linked record ids.",
+        "description": "Use after search to read one full record from the signed-in owner's archive. Key input: id (the record UUID). Returns the record with its safe record_data projection (never raw transcripts, user ids, seed keys, or storage paths) plus linkedRecordIds; call get_context for the linked records themselves.",
         "annotations": {
           "readOnlyHint": true,
           "idempotentHint": true,
@@ -167,12 +419,85 @@
           "additionalProperties": false,
           "$schema": "http://json-schema.org/draft-07/schema#"
         },
-        "outputSchema": null
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "record": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "record_type": {
+                  "type": "string",
+                  "enum": [
+                    "tool",
+                    "repository",
+                    "conversation",
+                    "decision",
+                    "document"
+                  ]
+                },
+                "title": {
+                  "type": "string"
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "tags": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "is_example": {
+                  "type": "boolean"
+                },
+                "created_at": {
+                  "type": "string"
+                },
+                "updated_at": {
+                  "type": "string"
+                },
+                "record_data": {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
+              },
+              "required": [
+                "id",
+                "record_type",
+                "title",
+                "summary",
+                "tags",
+                "is_example",
+                "created_at",
+                "updated_at",
+                "record_data"
+              ],
+              "additionalProperties": false
+            },
+            "linkedRecordIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          },
+          "required": [
+            "record",
+            "linkedRecordIds"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        }
       },
       {
         "name": "get_context",
         "title": "Get record context",
-        "description": "Fetch one safe archive record and its caller-owned linked records for bounded context.",
+        "description": "Use to load an anchor record plus its caller-owned linked records for bounded context. Key inputs: id (the anchor record UUID), limit (default 25, max 50 linked records). Returns the anchor record, linkedRecordIds, and linkedRecords with safe projections.",
         "annotations": {
           "readOnlyHint": true,
           "idempotentHint": true,
@@ -199,12 +524,92 @@
           "additionalProperties": false,
           "$schema": "http://json-schema.org/draft-07/schema#"
         },
-        "outputSchema": null
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "record": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "record_type": {
+                  "type": "string",
+                  "enum": [
+                    "tool",
+                    "repository",
+                    "conversation",
+                    "decision",
+                    "document"
+                  ]
+                },
+                "title": {
+                  "type": "string"
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "tags": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "is_example": {
+                  "type": "boolean"
+                },
+                "created_at": {
+                  "type": "string"
+                },
+                "updated_at": {
+                  "type": "string"
+                },
+                "record_data": {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
+              },
+              "required": [
+                "id",
+                "record_type",
+                "title",
+                "summary",
+                "tags",
+                "is_example",
+                "created_at",
+                "updated_at",
+                "record_data"
+              ],
+              "additionalProperties": false
+            },
+            "linkedRecordIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "linkedRecords": {
+              "type": "array",
+              "items": {
+                "$ref": "#/properties/record"
+              }
+            }
+          },
+          "required": [
+            "record",
+            "linkedRecordIds",
+            "linkedRecords"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        }
       },
       {
         "name": "list_cases",
         "title": "List Custodian cases",
-        "description": "List caller-owned Custodian cases when the owner-RLS case foundation is available.",
+        "description": "Use to discover the signed-in owner's Custodian cases (Investigations). Key inputs: query (optional 1-200 char title/summary text), status (optional exact status filter), limit (default 25, max 100). Returns count plus cases. Returns FOUNDATION_UNAVAILABLE when the case tables are absent.",
         "annotations": {
           "readOnlyHint": true,
           "idempotentHint": true,
@@ -216,28 +621,88 @@
             "query": {
               "type": "string",
               "minLength": 1,
-              "maxLength": 200
+              "maxLength": 200,
+              "description": "Text to match in case title or summary."
             },
             "status": {
               "type": "string",
               "minLength": 1,
-              "maxLength": 50
+              "maxLength": 50,
+              "description": "Filter to one exact case status."
             },
             "limit": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 100
+              "maximum": 100,
+              "description": "Maximum rows to return (default 25)."
             }
           },
           "additionalProperties": false,
           "$schema": "http://json-schema.org/draft-07/schema#"
         },
-        "outputSchema": null
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "count": {
+              "type": "number"
+            },
+            "cases": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "title": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "objective": {},
+                  "current_question": {},
+                  "default_working_set": {},
+                  "archive_scope": {},
+                  "status": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "created_at": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "updated_at": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "additionalProperties": {}
+              }
+            }
+          },
+          "required": [
+            "count",
+            "cases"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        }
       },
       {
         "name": "get_case",
         "title": "Get a Custodian case",
-        "description": "Fetch one caller-owned Custodian case when the owner-RLS case foundation is available.",
+        "description": "Use to read one caller-owned Custodian case after listing. Key input: id (the case UUID). Returns the case. Returns NOT_FOUND when the id is unknown and FOUNDATION_UNAVAILABLE when the case tables are absent.",
         "annotations": {
           "readOnlyHint": true,
           "idempotentHint": true,
@@ -258,12 +723,62 @@
           "additionalProperties": false,
           "$schema": "http://json-schema.org/draft-07/schema#"
         },
-        "outputSchema": null
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "case": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "title": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "objective": {},
+                "current_question": {},
+                "default_working_set": {},
+                "archive_scope": {},
+                "status": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "created_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "updated_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": {}
+            }
+          },
+          "required": [
+            "case"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        }
       },
       {
         "name": "compare_records",
         "title": "Compare archive records",
-        "description": "Compare two to four signed-in user's archive records using their safe projected fields.",
+        "description": "Use after fetching records to contrast 2-4 of them. Key input: ids (2-4 distinct record UUIDs). Returns recordIds, differences (only fields whose values differ across the set), and the full safe records.",
         "annotations": {
           "readOnlyHint": true,
           "idempotentHint": true,
@@ -289,100 +804,225 @@
           "additionalProperties": false,
           "$schema": "http://json-schema.org/draft-07/schema#"
         },
-        "outputSchema": null
-      },
-      {
-        "name": "get_findings",
-        "title": "Get Custodian findings",
-        "description": "List caller-owned Custodian findings when the owner-RLS case foundation is available.",
-        "annotations": {
-          "readOnlyHint": true,
-          "idempotentHint": true,
-          "openWorldHint": false
-        },
-        "inputSchema": {
+        "outputSchema": {
           "type": "object",
           "properties": {
-            "caseId": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "limit": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 100
-            }
-          },
-          "additionalProperties": false,
-          "$schema": "http://json-schema.org/draft-07/schema#"
-        },
-        "outputSchema": null
-      },
-      {
-        "name": "get_pending_approvals",
-        "title": "Get pending Custodian approvals",
-        "description": "Read pending caller-owned approvals, including the exact proposed action hash, when the Custodian runtime foundation is available. This tool does not record an owner decision or execute work.",
-        "annotations": {
-          "readOnlyHint": true,
-          "idempotentHint": true,
-          "openWorldHint": false
-        },
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "caseId": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "limit": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 100
-            }
-          },
-          "additionalProperties": false,
-          "$schema": "http://json-schema.org/draft-07/schema#"
-        },
-        "outputSchema": null
-      },
-      {
-        "name": "start_analysis",
-        "title": "Start Custodian analysis",
-        "description": "Reserved read-safe boundary for analysis execution; never fakes a run or performs a direct write.",
-        "annotations": {
-          "readOnlyHint": true,
-          "idempotentHint": false,
-          "openWorldHint": false
-        },
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "caseId": {
-              "type": "string",
-              "format": "uuid",
-              "description": "The case to analyze."
-            },
             "recordIds": {
               "type": "array",
               "items": {
                 "type": "string",
                 "format": "uuid"
-              },
-              "maxItems": 50
+              }
+            },
+            "differences": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": {}
+              }
+            },
+            "records": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "record_type": {
+                    "type": "string",
+                    "enum": [
+                      "tool",
+                      "repository",
+                      "conversation",
+                      "decision",
+                      "document"
+                    ]
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "summary": {
+                    "type": "string"
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "is_example": {
+                    "type": "boolean"
+                  },
+                  "created_at": {
+                    "type": "string"
+                  },
+                  "updated_at": {
+                    "type": "string"
+                  },
+                  "record_data": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "id",
+                  "record_type",
+                  "title",
+                  "summary",
+                  "tags",
+                  "is_example",
+                  "created_at",
+                  "updated_at",
+                  "record_data"
+                ],
+                "additionalProperties": false
+              }
             }
           },
           "required": [
-            "caseId"
+            "recordIds",
+            "differences",
+            "records"
           ],
           "additionalProperties": false,
           "$schema": "http://json-schema.org/draft-07/schema#"
+        }
+      },
+      {
+        "name": "get_findings",
+        "title": "Get Custodian findings",
+        "description": "Use to read the signed-in owner's Custodian findings with their evidence links. Key inputs: caseId (optional filter to one case UUID), limit (default 25, max 100). Returns count plus findings, each with an evidence array where each link carries its relationship_kind. Returns FOUNDATION_UNAVAILABLE when the finding tables are absent.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
         },
-        "outputSchema": null
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Filter findings to one case id."
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "Maximum rows to return (default 25)."
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "count": {
+              "type": "number"
+            },
+            "findings": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "evidence": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "additionalProperties": {}
+              }
+            }
+          },
+          "required": [
+            "count",
+            "findings"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        }
+      },
+      {
+        "name": "get_pending_approvals",
+        "title": "Get pending Custodian approvals",
+        "description": "Use to check pending approvals before acting on a case. Key inputs: caseId (optional filter to one case UUID), limit (default 25, max 100). Returns count plus approvals including the exact proposed action hash, proposed_diff, tool_action, and provenance. Read-only: it never records an owner decision or executes work. Returns RUNTIME_UNAVAILABLE when the runtime tables are absent.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Filter approvals to one case id."
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "Maximum rows to return (default 25)."
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "count": {
+              "type": "number"
+            },
+            "approvals": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "status": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "additionalProperties": {}
+              }
+            }
+          },
+          "required": [
+            "count",
+            "approvals"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        }
       },
       {
         "name": "get_run",
         "title": "Get Custodian run status",
-        "description": "Read a caller-owned analysis run status when the agent-runs runtime foundation is available.",
+        "description": "Use to check the status of one caller-owned analysis run. Key input: id (the analysis run UUID). Returns the run with its status, model tier, and failure details when present. Returns NOT_FOUND for an unknown id and RUNTIME_UNAVAILABLE when the runtime tables are absent.",
         "annotations": {
           "readOnlyHint": true,
           "idempotentHint": true,
@@ -403,38 +1043,40 @@
           "additionalProperties": false,
           "$schema": "http://json-schema.org/draft-07/schema#"
         },
-        "outputSchema": null
-      },
-      {
-        "name": "cancel_run",
-        "title": "Cancel Custodian run",
-        "description": "Reserved cancellation boundary; never fakes cancellation or performs a direct write.",
-        "annotations": {
-          "readOnlyHint": true,
-          "idempotentHint": false,
-          "openWorldHint": false
-        },
-        "inputSchema": {
+        "outputSchema": {
           "type": "object",
           "properties": {
-            "id": {
-              "type": "string",
-              "format": "uuid",
-              "description": "The analysis run id."
+            "run": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "status": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": {}
             }
           },
           "required": [
-            "id"
+            "run"
           ],
           "additionalProperties": false,
           "$schema": "http://json-schema.org/draft-07/schema#"
-        },
-        "outputSchema": null
+        }
       },
       {
         "name": "excavate_document",
         "title": "Excavate and save document",
-        "description": "Take the user-supplied PDF, Markdown document, or UTF-8 text file, excavate it through The Excavatorium's existing File Excavation system, and save the resulting Document in the authenticated owner's archive.",
+        "description": "Use only when the user supplies a file to archive. Key input: file with download_url, file_id, and optional mime_type/file_name for a PDF, Markdown (.md), or plain-text (.txt) file up to 10 MB. Excavates it through the existing File Excavation system and saves the resulting document in the authenticated owner's archive. Returns id, isNew, title, recordType document, originalFileName, and contentHash. This is the only mutation; every other tool is read-only.",
         "annotations": {
           "readOnlyHint": false,
           "destructiveHint": false,

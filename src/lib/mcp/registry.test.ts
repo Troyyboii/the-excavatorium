@@ -15,9 +15,7 @@ describe("MCP registry", () => {
       "compare_records",
       "get_findings",
       "get_pending_approvals",
-      "start_analysis",
       "get_run",
-      "cancel_run",
       "excavate_document",
     ]);
   });

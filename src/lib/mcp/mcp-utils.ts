@@ -170,7 +170,10 @@ export function errorResult(
   };
   return {
     content: [{ type: "text", text: JSON.stringify(payload) }],
-    ...(options.includeStructuredContent === false ? {} : { structuredContent: payload }),
+    // Errors intentionally carry no structuredContent by default: tools with
+    // an outputSchema must not return error payloads that violate it.
+    // Pass { includeStructuredContent: true } to opt in explicitly.
+    ...(options.includeStructuredContent === true ? { structuredContent: payload } : {}),
     isError: true,
   };
 }

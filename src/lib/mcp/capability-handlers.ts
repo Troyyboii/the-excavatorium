@@ -188,24 +188,6 @@ export async function handleGetRun(
   }
 }
 
-export async function handleStartAnalysis(
-  _input: { caseId: string; recordIds?: string[] },
-  ctx: ToolContext,
-): Promise<JsonToolResult> {
-  const authError = await authResult(ctx);
-  if (authError) return authError;
-  return errorResult("RUNTIME_UNAVAILABLE");
-}
-
-export async function handleCancelRun(
-  _input: { id: string },
-  ctx: ToolContext,
-): Promise<JsonToolResult> {
-  const authError = await authResult(ctx);
-  if (authError) return authError;
-  return errorResult("RUNTIME_UNAVAILABLE");
-}
-
 async function readRuntimeTable(
   ctx: ToolContext,
   table: "approval_requests",

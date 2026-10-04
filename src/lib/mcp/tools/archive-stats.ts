@@ -1,4 +1,5 @@
 import { defineTool } from "@lovable.dev/mcp-js";
+import { z } from "zod";
 import { supabaseForUser } from "../supabase";
 import { authResult, errorResult, jsonResult } from "../mcp-utils";
 
@@ -8,8 +9,19 @@ export default defineTool({
   name: "archive_stats",
   title: "Archive statistics",
   description:
-    "Return counts of the signed-in user's archive: records per type, total records, and total links.",
+    "Use first to size the signed-in owner's archive before searching. Takes no inputs. Returns recordsByType counts for the five canonical types (tool, repository, conversation, decision, document), plus totalRecords and totalLinks.",
   inputSchema: {},
+  outputSchema: {
+    recordsByType: z.object({
+      tool: z.number(),
+      repository: z.number(),
+      conversation: z.number(),
+      decision: z.number(),
+      document: z.number(),
+    }),
+    totalRecords: z.number(),
+    totalLinks: z.number(),
+  },
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   handler: async (_input, ctx) => {
     const authError = await authResult(ctx);

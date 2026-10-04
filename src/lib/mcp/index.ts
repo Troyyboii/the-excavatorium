@@ -10,9 +10,7 @@ import getCase from "./tools/get-case";
 import compareRecords from "./tools/compare-records";
 import getFindings from "./tools/get-findings";
 import getPendingApprovals from "./tools/get-pending-approvals";
-import startAnalysis from "./tools/start-analysis";
 import getRun from "./tools/get-run";
-import cancelRun from "./tools/cancel-run";
 import excavateDocument from "./tools/excavate-document";
 
 // The OAuth issuer must be the direct Supabase host, never a proxy URL.
@@ -31,18 +29,16 @@ export const mcpTools = [
   compareRecords,
   getFindings,
   getPendingApprovals,
-  startAnalysis,
   getRun,
-  cancelRun,
   excavateDocument,
 ] as const;
 
 export default defineMcp({
   name: "the-excavatorium",
   title: "The Excavatorium",
-  version: "0.3.0",
+  version: "0.4.0",
   instructions:
-    "Bounded tools over a private technical archive of tools, repositories, conversations, decisions, and documents. Use `search` or the compatibility alias `list_records` to find records, `fetch` or `get_record` for a safe detail view, and `get_context` or `compare_records` for bounded analysis. `excavate_document` is the one intentional mutation: it excavates a user-supplied document and saves it to the authenticated owner's archive. Custodian case, finding, approval, and run tools report capability-unavailable when their owner-RLS foundation or runtime is absent. All access is scoped to the signed-in user.",
+    "Private owner-scoped archive with five record types: tool, repository, conversation, decision, document. Workflow: search (list_records is an alias) to discover records, fetch (get_record is an alias) for one safe record, then get_context for linked records or compare_records for 2-4 records. archive_stats reports counts; list_cases, get_case, get_findings, get_pending_approvals, and get_run read Custodian cases, findings, approvals, and runs. excavate_document is the only mutation: it saves a user-supplied PDF, Markdown, or text file as a document record. All access is scoped to the signed-in owner. Errors use stable machine-readable codes: AUTH_REQUIRED, AUTH_CONFIGURATION_ERROR, CLIENT_NOT_ALLOWED, INVALID_INPUT, FILE_UNAVAILABLE, FILE_TOO_LARGE, UNSUPPORTED_FILE, QUOTA_EXCEEDED, EXTRACTION_FAILED, SAVE_FAILED, NOT_FOUND, DATA_UNAVAILABLE, FOUNDATION_UNAVAILABLE, RUNTIME_UNAVAILABLE. Safe projections never include raw transcripts, user ids, seed keys, or storage paths.",
   auth: auth.oauth.issuer({
     issuer: `https://${projectRef}.supabase.co/auth/v1`,
     acceptedAudiences: "authenticated",
