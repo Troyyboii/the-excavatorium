@@ -34,3 +34,8 @@ dist-ssr
 
 # Supabase CLI local cache (project link, service versions)
 supabase/.temp/
+
+# Environment files
+.env
+.env.*
+!.env.example
