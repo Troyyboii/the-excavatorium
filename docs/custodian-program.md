@@ -124,7 +124,7 @@ OAuth connection is authenticated, or that hosted Auth settings were read.
 | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | Owner Cases and selected archive scope                   | **CURRENT** source contract in `supabase/migrations/20260904090000_custodian_case_archive_scope.sql`. | **CURRENT/PARTIAL** Case create/edit and reading UI; no Case UI authoring for every related artifact.                     | Applied migration and owner use are **UNVERIFIED** here.                                                         |
 | Bounded Case Reading                                     | **CURRENT** browser-side bundle builder in `src/lib/case-reading.ts`.                                 | **CURRENT** read-only Case Reading presentation.                                                                          | It is provider-free; it is not evidence of a model run.                                                          |
-| Claims, evidence, actions, findings, revisions           | **CURRENT** owner-scoped tables/RPC foundation, including the M2 Finding attribution migration and protected materialization RPC in `20260920090000_custodian_finding_attribution.sql`. | **PARTIAL** existing collections now expose Finding origin, run/step attribution, caveats, and bounded support/contrary descriptors. | Database application and end-to-end workflow are **UNVERIFIED**.                                                 |
+| Claims, evidence, actions, findings, revisions           | **CURRENT** owner-scoped tables/RPC foundation, including the M2 Finding attribution migration and protected materialization RPC in `20260920090000_custodian_finding_attribution.sql`. | **PARTIAL** existing collections now expose Finding origin, run/step attribution, caveats, and bounded support/contrary descriptors. | Migration `20260920090000` is applied (operator-reported); two operator-reported completed runs each saved one Finding; a full end-to-end proof remains **UNVERIFIED**.                                                 |
 | Durable runs, steps, budgets, approval, proposals, audit | **CURRENT** migration and RPC contracts, including the M3 owner-gate decision RPC.                    | Run Room is **CURRENT** as an owner listing that can start one readonly analysis; Approvals is **CURRENT** as an owner decision surface. Approval does not execute unsupported work. | Runtime foundation is not operational proof.                                                                     |
 | Provider-backed analysis                                 | M4A hold storage is merged source. M4B wires one synthesis attempt in `supabase/functions/custodian-run/provider-attempt.ts`: reserve, at most one Responses request through the official OpenAI SDK, truthful settlement, M2 materialization, and boundary verification. M4D adds the readonly start contract and bounded driver. Both source gates are open. Safe provider diagnostics are recorded per attempt. | M4C Run Room is **CURRENT** and can start one readonly analysis through `{ runId, invocationKey }`. Failed attempts show safe provider metadata behind Technical details. | Operator-reported: two completed `gpt-5.6-luna` runs (2026-09-23 and 2026-09-24) settled known usage and each saved one Finding. Two earlier runs failed with the hold left unresolved. Deployed concurrency and verification-step contents remain **UNVERIFIED**. M4 is not **COMPLETE**. |
 | External or canonical execution                          | Approval and tool-event guard foundations are **CURRENT** source.                                     | No control UI is connected.                                                                                               | **BLOCKED**; current Edge runtime stops approved external execution.                                             |
@@ -758,7 +758,7 @@ effect.
 **Objective:** Make current Case Reading, evidence projection, Desk, Cases, Run Room,
 and MCP availability boundaries easy to verify without changing their authority.
 
-- **Prerequisite:** current source contracts and the light-shell visual constitution.
+- **Prerequisite:** current source contracts and the Night Crypt visual language.
 - **Likely areas:** Case/evidence tests, route truthfulness, `custodian-surfaces`, MCP
   projection/security tests, documentation only where behavior has changed.
 - **Database/provider/connector impact:** none intended. This milestone does not change the provider path.
@@ -781,7 +781,7 @@ interpretation.
   Case UI, focused tests; migration only if a durable admission rationale is required.
 - **Database impact:** avoid a new table unless a stable audit/replay need is proven.
 - **Provider impact:** none; reading remains provider-free.
-- **UI impact:** Evidence Room improvements under the Light Archive Shell.
+- **UI impact:** Evidence Room improvements under Night Crypt.
 - **Connector impact:** define source freshness/admission metadata but do not activate a
   connector.
 - **Security:** preserve selected-only owner scope, 80k cap, redactions, and unavailable
@@ -872,8 +872,8 @@ non-external, policy-controlled action type, if any, for V1.
 
 ### M4 — close the provider activation gate
 
-**Objective:** Turn dormant Responses plumbing into one bounded real provider-backed
-read-only analysis path.
+**Objective:** One bounded real provider-backed read-only analysis path. The Responses
+path is open in source. M4 is not **COMPLETE**.
 
 - **Prerequisite:** M1-M3, non-null policy enforced everywhere, explicit model allowlist,
   provider finding persistence, comprehensive state/idempotency tests, and an approved

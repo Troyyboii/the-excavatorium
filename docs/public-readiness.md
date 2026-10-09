@@ -292,7 +292,7 @@ the actual Auth dashboard behavior.
       is historical.
 - [x] Migrations through `20260925100000` are on the operator-reported ledger,
       including `20260924100000`, `…110000`, `…120000`, `…130000`, `…140000`,
-      and `…25100000`. The ledger proves schema application only.
+      and `20260925100000`. The ledger proves schema application only.
 - [ ] Set `PROVIDER_KEY_ENCRYPTION_KEYS`, `PROVIDER_KEY_ACTIVE_VERSION`, and
       `CUSTODIAN_MODEL_PRICING_JSON` (six models) as Edge secrets. Left open:
       the migration ledger does not report secret values, and this change did
