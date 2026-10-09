@@ -1,6 +1,6 @@
 # Night Crypt
 
-Working-tree source: the untracked local file `night-crypt/DESIGN.md`. That file is the spec copied below. The private canvas it referred to is not in this repository, and a personal name in its opening sentence was omitted before this copy was added.
+The original spec and the task brief are kept outside the repository. The spec text below is the copy in this document. A personal name in the spec's opening sentence was omitted from this copy.
 
 `src/styles.css` is what ships. This document does not change those values. Where the spec and the stylesheet disagree, the disagreement is listed under [Drift from source](#drift-from-source) and neither side is silently edited.
 
@@ -33,7 +33,7 @@ Night Crypt is the default theme. No green anywhere. One lantern glow per screen
 
 ## Icons
 
-22 SVGs in `icons/`, 24×24 grid, 1.6 stroke, `currentColor`. Build one `CryptIcon` component with a typed `glyph` union; icons are decorative (`aria-hidden`) next to visible text; icon-only buttons need `aria-label`.
+The 22 glyphs are inlined in `src/components/crypt-icon.tsx` (`CRYPT_GLYPHS`), and that file is the source of truth. They are a 24×24 grid, 1.6 stroke, `currentColor`. `CryptIcon` takes a typed `glyph` union; icons are decorative (`aria-hidden`) next to visible text; icon-only buttons need `aria-label`.
 
 | Meaning | Glyph |
 |---|---|
@@ -63,10 +63,14 @@ Night Crypt is the default theme. No green anywhere. One lantern glow per screen
 
 ## The Custodian
 
-- `custodian-cutout.webp` (473×1200, transparent): full figure, cut out of the canon sheet's parchment. Only appears inside the **arched niche** on Home and empty states — stone frame, raven above, plinth with his name between two candles. Never free-standing.
-- `custodian-portrait.webp`: hooded skull close-up. Circle portrait (object-position 60% 30%) wherever he speaks: Archive, record reading, Findings, Capture, mobile Home.
-- `custodian-lantern.webp`: lantern panel, arched on Capture and in "Examine again".
-- All three are derived from `public/character/00-custodian-canon.png` (already in the repo). `cut-custodian.py` regenerates them.
+- `public/character/custodian-cutout.webp` (473×1200, transparent): full figure, cut out of the canon sheet's parchment. Only appears inside the **arched niche** on Home and empty states — stone frame, raven above, plinth with his name between two candles. Never free-standing.
+- `public/character/custodian-portrait.webp`: hooded skull close-up. Circle portrait (object-position 60% 30%) wherever he speaks: Archive, record reading, Findings, Capture, mobile Home.
+- `public/character/custodian-lantern.webp`: lantern panel, arched on Capture and in "Examine again".
+- All three live in `public/character/` and are regenerated from `public/character/00-custodian-canon.png` by `docs/design/night-crypt/cut-custodian.py`. From the repository root:
+
+```text
+python docs/design/night-crypt/cut-custodian.py public/character/00-custodian-canon.png public/character
+```
 
 ## Voice
 
