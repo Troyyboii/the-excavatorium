@@ -154,7 +154,7 @@ grep -RIn "SERVICE_ROLE\|service_role\|SUPABASE_JWT_SECRET\|SMTP_\|DATABASE_URL"
 
 Expected: no matches.
 
-## 11. Migration ledger reconciliation gate
+## 12. Migration ledger reconciliation gate
 
 The repository's timestamped migration filenames are the deployment ledger.
 Before the first operator `supabase db push`, an authorized operator must
@@ -182,6 +182,11 @@ migrations. Hosted CI is not a remote ledger. The retained `migration list`
 evidence is the only bookkeeping proof.
 
 ## Gate record
+
+> [!IMPORTANT]
+> **HISTORICAL** (pre-public-beta). This table records an earlier private-owner
+> gate, including "public signup disabled." It is not the public-beta checklist.
+> Current beta notes are in [`public-readiness.md`](./public-readiness.md).
 
 | Item                                        | Status              |
 | ------------------------------------------- | ------------------- |
@@ -253,19 +258,23 @@ Do not reuse the historical “exactly 32 signed-in `SECURITY DEFINER`
 advisories” figure as current production proof. That count classified archive
 write RPCs plus the original 25 authenticated Custodian APIs from migrations
 `20260811190000` through `20260811191200`. Later source added further
-`SECURITY DEFINER` functions. Re-count the live catalog after M2, M3, and M4A
-are applied. Accept the observed set only after release-time checks reconfirm
-function ownership, empty `search_path`, intended role grants, and
-caller-owner or service-role predicates. `export_user_archive_snapshot` is a
-`SECURITY INVOKER` function and must not increase the advisory count.
+`SECURITY DEFINER` functions. The operator-reported ledger includes M2
+(`20260920090000`), M3 (`20260921140000`), M4A (`20260921180000`), and
+diagnostics (`20260923120000`). A live advisory recount is still
+**UNVERIFIED**. Accept the observed set only after release-time checks
+reconfirm function ownership, empty `search_path`, intended role grants, and
+caller-owner or service-role predicates. `export_user_archive_snapshot` and
+`export_user_account_snapshot` are `SECURITY INVOKER` functions and must not
+increase the advisory count.
 
 ### Custodian `SECURITY DEFINER` classification
 
 Source review of migrations `20260811190000` through
-`20260921180000` classifies the following Custodian `SECURITY DEFINER`
+`20260925100000` classifies the following `SECURITY DEFINER`
 functions. Every listed function sets an empty `search_path`. This
 classification explains database-linter warnings; it does not replace live
 privilege inspection, a production advisory recount, or cross-owner tests.
+Grants below are taken from the migration that last defines each function.
 
 | Class | Functions | Required execute state |
 | ----- | --------- | ---------------------- |
@@ -277,6 +286,22 @@ privilege inspection, a production advisory recount, or cross-owner tests.
 | M4A owner bootstrap and reserve | `custodian_ensure_readonly_analysis_policy`, `custodian_create_readonly_analysis_run`, `custodian_reserve_provider_call` | Denied to `public` and `anon`; granted to `authenticated` |
 | M4A trusted settlement | `custodian_settle_provider_reservation` | Denied to `public`, `anon`, and `authenticated`; granted to `service_role` |
 | M4A internal snapshot helper | `custodian_build_readonly_analysis_snapshot` | Denied to `public`, `anon`, and `authenticated` |
+| Diagnostics trusted runtime (`20260923120000`) | `custodian_record_provider_diagnostic` | Denied to `public`, `anon`, and `authenticated`; granted to `service_role` |
+| Public-signup trigger (`20260924100000`) | `handle_new_auth_user` | Denied to `public`, `anon`, and `authenticated` |
+| Empty-archive owner APIs (`20260924100000`) | `initialize_user_archive`, `restore_missing_examples` | Denied to `public` and `anon`; granted to `authenticated` |
+| BYOK owner APIs (`20260924120000`) | `custodian_provider_key_status`, `custodian_remove_provider_credential`, `custodian_set_model_preference` | Denied to `public` and `anon`; granted to `authenticated` |
+| BYOK trusted runtime (`20260924120000`) | `custodian_store_provider_credential`, `custodian_get_provider_credential` | Denied to `public`, `anon`, and `authenticated`; granted to `service_role` |
+| Account purge (`20260924130000`, redefined in `20260924140000`) | `purge_owner_account_data` | Denied to `public`, `anon`, and `authenticated`; granted to `service_role` |
+
+`20260924110000` replaces `custodian_reserve_provider_call` and keeps the M4A
+grant: denied to `public` and `anon`, granted to `authenticated`.
+`custodian_openai_model_tier` in that migration is not `SECURITY DEFINER`.
+
+These functions in `20260923120000` through `20260925100000` are
+`SECURITY INVOKER` and are not part of the definer class:
+`custodian_reject_provider_diagnostic_update`, `install_canonical_seeds`,
+`owner_provider_credential_events_reject_change`, `export_user_account_snapshot`,
+and `assert_record_data_valid`.
 
 The authenticated owner APIs derive the caller from `auth.uid()` through
 `custodian_current_owner()` and repeat owner-qualified checks inside the
@@ -288,6 +313,11 @@ guidance also requires explicit function privileges and careful review of every
 <https://supabase.com/docs/guides/database/functions>.
 
 ## Verification evidence notes
+
+> [!IMPORTANT]
+> **HISTORICAL** (pre-public-beta). These notes describe an earlier initialized
+> archive (`initialize_user_archive` returned `installed`, with example records).
+> New beta accounts start empty. They are not current production proof.
 
 - Auth reachability: reachable
 - Authenticated owner session: verified

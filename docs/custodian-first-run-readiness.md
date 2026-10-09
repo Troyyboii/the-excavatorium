@@ -1,5 +1,10 @@
 # First real Custodian run — source readiness map
 
+> [!IMPORTANT]
+> **HISTORICAL.** The first completed Custodian run was achieved on 2026-09-23
+> (operator-reported). This map is no longer the current-state document. Use
+> [the Custodian program](./custodian-program.md).
+
 - **Status:** repository-local readiness map, not a production claim
 - **Inspected against:** live repository source at the commit that lands this file
 - **Does not authorize:** provider activation, secret changes, migration application, Edge deployment, Lovable publication, or a paid run
@@ -101,6 +106,11 @@ Two production runs reached the provider and failed. They are immutable forensic
 | --- | ----------- | ------- | ----------------- |
 | `0c45212e-24e7-4ca6-a192-80b5f2e112fd` | `82c5776f-9e33-4f56-a4a6-a139cd8b4072` | `failed`, `openai_unavailable` | `held`, usage unknown, hold 7633 tokens / $0.0057 |
 | `36ee430c-ba04-40af-9dd0-cf780e441042` | `b053366b-0d05-40ba-8fbf-1081b8c28290` | `failed`, `openai_request_rejected` | `held`, usage unknown, hold 7970 tokens / $0.0057 |
+| 2026-09-23 (operator-reported; no id recorded in this table) | — | `completed`, `gpt-5.6-luna` | `settled_known`, 1249 tok / $0.0008 (hold $0.0058); 1 Finding; diagnostic `openai_completed` / 200 |
+| 2026-09-24 (operator-reported; no id recorded in this table) | — | `failed`, `gpt-5.6-luna` | `settled_known`, 1376 tok / $0.0010; 0 Findings; diagnostic `openai_invalid_output` / 200 (malformed output: usage accounted, no Finding) |
+| 2026-09-24 (operator-reported; no id recorded in this table) | — | `completed`, `gpt-5.6-luna` | `settled_known`, 1820 tok / $0.0009 (hold $0.0064); 1 Finding; diagnostic `openai_completed` / 200 |
+
+The three dated rows were appended from operator-reported evidence and add no run or reservation ids. Sentences in this file that say no deployed run has completed describe the record before 2026-09-23. Current state is [the Custodian program](./custodian-program.md).
 
 The second run proves provider-free retrieval, reservation, provider contact, and a request-level rejection that the classifier separated from authentication, quota, permission, rate limiting, timeout, and server errors. No automatic retry occurred, usage was not falsely claimed, and the hold stayed unresolved. The rejected parameter was not retained at that time; the diagnostics above now retain it for future attempts. Those two runs predate the diagnostics table and have no diagnostic row.
 

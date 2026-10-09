@@ -1,5 +1,11 @@
 # Custodian roadmap
 
+> [!IMPORTANT]
+> **HISTORICAL.** The provider-activation plan in this roadmap is superseded.
+> MCP run-control tools (`start_analysis`, `cancel_run`) were removed. Current
+> Custodian state is [the Custodian program](../custodian-program.md). The
+> visual language is [Night Crypt](./night-crypt.md).
+
 This roadmap turns the visual constitution in
 [Light archive shell](./light-archive-shell.md) into a bounded evidence product.
 It reuses the existing archive, cases, findings, run contracts, and connector

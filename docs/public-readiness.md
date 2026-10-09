@@ -1,8 +1,11 @@
 # Public readiness: signup, empty accounts, and bring-your-own OpenAI key
 
-Status: **source implemented on a local branch; nothing here is deployed, applied,
-or configured in any hosted project.** Every hosted setting below is
-**UNVERIFIED** until someone reads it from the live Supabase dashboard.
+Status: **deployed for the public beta** (operator-reported migration ledger,
+rechecked 2026-10-09: 32 migrations, ending `20260925100000`, including
+`20260920090000`, `20260921140000`, `20260921180000`, `20260923120000`, and
+`20260924100000`–`20260924140000`; no legacy `0001`–`0012` rows and no
+`20260923113236` row). **Hosted Auth settings are still UNVERIFIED.** This
+change did not read the live dashboard.
 
 Product rule: **The Excavatorium is free to use as an archive. Provider-backed
 Custodian work runs on the owner's own OpenAI API key.** Registering, signing
@@ -283,18 +286,28 @@ the actual Auth dashboard behavior.
 
 ## 8. Release-time checklist (each item needs explicit authorization)
 
-- [ ] Reconcile migration `20260923113236` (applied) with source
-      `20260923120000_custodian_provider_diagnostics.sql` before applying new ones;
-      new migrations sort after both. Operator procedure only:
-      [`migration-reconcile-diagnostics.md`](./migration-reconcile-diagnostics.md).
-- [ ] Apply migrations `20260924100000`, `…110000`, `…120000`, `…130000`,
-      `…140000` (staging first).
+- [x] Diagnostics version `20260923120000` is on the operator-reported ledger.
+      There is no `20260923113236` row. The repair in
+      [`migration-reconcile-diagnostics.md`](./migration-reconcile-diagnostics.md)
+      is historical.
+- [x] Migrations through `20260925100000` are on the operator-reported ledger,
+      including `20260924100000`, `…110000`, `…120000`, `…130000`, `…140000`,
+      and `…25100000`. The ledger proves schema application only.
 - [ ] Set `PROVIDER_KEY_ENCRYPTION_KEYS`, `PROVIDER_KEY_ACTIVE_VERSION`, and
-      `CUSTODIAN_MODEL_PRICING_JSON` (six models) as Edge secrets.
+      `CUSTODIAN_MODEL_PRICING_JSON` (six models) as Edge secrets. Left open:
+      the migration ledger does not report secret values, and this change did
+      not read them.
 - [ ] Deploy `provider-key`, updated `custodian-run`, extract functions, and
-      `account-delete` (JWT verification on).
-- [ ] Verify and set hosted Auth settings (§1).
-- [ ] Two-account isolation run on staging (§7).
+      `account-delete` (JWT verification on). Left open: the ledger is not
+      function-deploy evidence. Operator-reported completed runs show that some
+      `custodian-run` revision executed; they do not prove the current source
+      of every function in this list is the deployed revision.
+- [ ] Verify and set hosted Auth settings (§1). Left open: hosted Auth was not
+      read. Public signup in product source is not a dashboard proof.
+- [ ] Two-account isolation run on staging (§7). Left open: hosted second-owner
+      isolation remains UNVERIFIED.
 - [x] Account deletion and expanded export implemented in source (§6); hosted
       deploy + ephemeral populated-account proof still required.
-- [ ] Lovable publication and release.
+- [ ] Lovable publication and release. Left open: this checklist item was not
+      re-verified here. The README links the public beta; that link is not a
+      fresh publication record for this item.

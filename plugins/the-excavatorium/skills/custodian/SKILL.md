@@ -17,6 +17,12 @@ inferred, and what is unavailable. Do not invent runtime state.
   after retrieving the records that matter.
 - Treat `list_records` and `get_record` as compatibility aliases for the safe
   retrieval tools.
+- Use `list_tags` for tag usage, `list_recent` for records updated since a
+  time, and `get_decisions` for decisions with their resolved supersedes chain.
+- `excavate_document` is the mutation exception. It archives exactly one
+  document per call, from a file reference, a public https URL, or pasted
+  Markdown or text. Every other tool stays read-only. It does not start,
+  cancel, approve, or reject a Custodian run.
 - Assume projections exclude conversation transcripts, document storage paths,
   user identifiers, and seed keys. Do not ask for or reconstruct those values.
 - If a tool returns an error object, preserve its code. A capability-unavailable

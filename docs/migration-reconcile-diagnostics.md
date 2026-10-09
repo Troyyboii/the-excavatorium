@@ -1,5 +1,11 @@
 # Operator procedure: diagnostics migration ledger (`113236` ↔ `120000`)
 
+> [!IMPORTANT]
+> **HISTORICAL.** The repair is completed. The operator-reported ledger
+> (rechecked 2026-10-09) includes `20260923120000` and has no `20260923113236`
+> row. Do not run this procedure again. Current state is
+> [the Custodian program](./custodian-program.md).
+
 **Audience:** authorized operators of the directly managed Supabase project.
 **This document does not apply anything.** Coding agents and casual PRs must not
 run these commands against production.

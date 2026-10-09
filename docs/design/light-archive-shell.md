@@ -1,5 +1,10 @@
 # Light archive shell
 
+> [!IMPORTANT]
+> **HISTORICAL.** Night Crypt is the current and only visual language. See
+> [Night Crypt](./night-crypt.md). This ivory-shell constitution is retained
+> as provenance and no longer governs the application.
+
 This document is the authoritative whole-application visual constitution for
 The Excavatorium. It supersedes the global dark-shell direction recorded in
 [The Custodian design system](./custodian-design-system.md) while preserving
