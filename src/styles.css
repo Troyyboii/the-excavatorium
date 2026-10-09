@@ -65,7 +65,7 @@
   --font-serif: "IM Fell English", "Iowan Old Style", Georgia, serif;
 }
 
-/* Night Crypt palette (night-crypt/DESIGN.md). It is the only theme: the
+/* Night Crypt palette (docs/design/night-crypt.md). It is the only theme: the
    legacy token names below are kept so existing components keep working. */
 :root {
   color-scheme: dark;

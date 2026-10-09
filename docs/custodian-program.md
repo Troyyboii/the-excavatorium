@@ -26,9 +26,10 @@ The intended hierarchy is:
 | Authority or reference                                                   | Role                                                                         |
 | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
 | This document                                                            | Canonical Custodian product and implementation program.                      |
-| `docs/design/light-archive-shell.md`                                     | Current whole-application visual constitution.                               |
-| `docs/design/custodian-roadmap.md`                                       | Supporting roadmap and implementation provenance.                            |
-| `docs/design/custodian-design-system.md`                                 | Historical dark-shell and retained inverse-panel reference.                  |
+| `docs/design/night-crypt.md`                                             | Current and only visual language (Night Crypt).                              |
+| `docs/design/light-archive-shell.md`                                     | **HISTORICAL** ivory-shell constitution.                                     |
+| `docs/design/custodian-roadmap.md`                                       | **HISTORICAL** roadmap. Provider-activation plan superseded; MCP run-control tools removed. |
+| `docs/design/custodian-design-system.md`                                 | **HISTORICAL** dark-shell reference.                                         |
 | `docs/custodian-first-run-readiness.md`                                  | Repository-local first-run map: source-complete vs live-proof blockers.      |
 | `docs/release-verification.md`                                           | Reusable release procedure.                                                  |
 | `docs/supabase-setup.md`, `docs/supabase-verification.md`                | Backend setup, security, and verification procedures.                        |
@@ -114,17 +115,18 @@ failure, source authority, or the owner gate.
 
 ## 4. Current source-grounded snapshot
 
-This snapshot describes inspected repository source. It does not assert that migrations
-are applied, functions are deployed, an OAuth connection is authenticated, or a live
-provider call is available.
+This snapshot describes inspected repository source. Remote application of the
+migrations named in §23 is operator-reported (ledger rechecked 2026-10-09). It
+does not assert that Edge Functions are the current deployed revision, that an
+OAuth connection is authenticated, or that hosted Auth settings were read.
 
 | Capability                                               | Source / database                                                                                     | Browser and MCP                                                                                                           | Provider / production                                                                                            |
 | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | Owner Cases and selected archive scope                   | **CURRENT** source contract in `supabase/migrations/20260904090000_custodian_case_archive_scope.sql`. | **CURRENT/PARTIAL** Case create/edit and reading UI; no Case UI authoring for every related artifact.                     | Applied migration and owner use are **UNVERIFIED** here.                                                         |
 | Bounded Case Reading                                     | **CURRENT** browser-side bundle builder in `src/lib/case-reading.ts`.                                 | **CURRENT** read-only Case Reading presentation.                                                                          | It is provider-free; it is not evidence of a model run.                                                          |
-| Claims, evidence, actions, findings, revisions           | **CURRENT** owner-scoped tables/RPC foundation, including the M2 Finding attribution migration and protected materialization RPC in `20260920090000_custodian_finding_attribution.sql`. | **PARTIAL** existing collections now expose Finding origin, run/step attribution, caveats, and bounded support/contrary descriptors. | Database application and end-to-end workflow are **UNVERIFIED**.                                                 |
+| Claims, evidence, actions, findings, revisions           | **CURRENT** owner-scoped tables/RPC foundation, including the M2 Finding attribution migration and protected materialization RPC in `20260920090000_custodian_finding_attribution.sql`. | **PARTIAL** existing collections now expose Finding origin, run/step attribution, caveats, and bounded support/contrary descriptors. | Migration `20260920090000` is applied (operator-reported); two operator-reported completed runs each saved one Finding; a full end-to-end proof remains **UNVERIFIED**.                                                 |
 | Durable runs, steps, budgets, approval, proposals, audit | **CURRENT** migration and RPC contracts, including the M3 owner-gate decision RPC.                    | Run Room is **CURRENT** as an owner listing that can start one readonly analysis; Approvals is **CURRENT** as an owner decision surface. Approval does not execute unsupported work. | Runtime foundation is not operational proof.                                                                     |
-| Provider-backed analysis                                 | M4A hold storage is merged source. M4B wires one synthesis attempt in `supabase/functions/custodian-run/provider-attempt.ts`: reserve, at most one Responses request through the official OpenAI SDK, truthful settlement, M2 materialization, and boundary verification. M4D adds the readonly start contract and bounded driver. Both source gates are open. Safe provider diagnostics are recorded per attempt. | M4C Run Room is **CURRENT** and can start one readonly analysis through `{ runId, invocationKey }`. Failed attempts show safe provider metadata behind Technical details. | Two production runs reached the provider and failed; no deployed run has completed. See [`custodian-first-run-readiness.md`](./custodian-first-run-readiness.md). |
+| Provider-backed analysis                                 | M4A hold storage is merged source. M4B wires one synthesis attempt in `supabase/functions/custodian-run/provider-attempt.ts`: reserve, at most one Responses request through the official OpenAI SDK, truthful settlement, M2 materialization, and boundary verification. M4D adds the readonly start contract and bounded driver. Both source gates are open. Safe provider diagnostics are recorded per attempt. | M4C Run Room is **CURRENT** and can start one readonly analysis through `{ runId, invocationKey }`. Failed attempts show safe provider metadata behind Technical details. | Operator-reported: two completed `gpt-5.6-luna` runs (2026-09-23 and 2026-09-24) settled known usage and each saved one Finding. Two earlier runs failed with the hold left unresolved. Deployed concurrency and verification-step contents remain **UNVERIFIED**. M4 is not **COMPLETE**. |
 | External or canonical execution                          | Approval and tool-event guard foundations are **CURRENT** source.                                     | No control UI is connected.                                                                                               | **BLOCKED**; current Edge runtime stops approved external execution.                                             |
 | MCP Custodian reads                                      | **CURRENT** bounded reader registrations and safe projections.                                        | `list_cases`, `get_case`, `get_findings`, `get_pending_approvals`, and `get_run` are conditional on deployed foundations; `get_findings` now projects bounded attribution and evidence descriptors. | Fresh authenticated production callability is **UNVERIFIED**.                                                    |
 | MCP run control                                          | Removed from the MCP catalog in 0.4.0.                                                            | `start_analysis` and `cancel_run` no longer exist; run controls are app-only.                                         | **BLOCKED**, never simulated.                                                                                    |
@@ -137,18 +139,20 @@ Important gaps and contradictions must remain visible:
    exported source model list is not a selection default. `custodian_run_budget_status`
    denies a missing or inactive policy and counts held provider reservations separately
    from recorded usage. M4B source calls `custodian_reserve_provider_call` and
-   `custodian_settle_provider_reservation` only inside the open-gate synthesis path.
-   `handleRequest` does not enter that path while `PROVIDER_EXECUTION_UNSUPPORTED` is
-   true, so production provider execution remains blocked. Deployed behavior remains
-   **UNVERIFIED**.
-2. The Edge Function contains a real OpenAI Responses call path behind its hard gate.
-   This is dormant plumbing, not active provider execution.
+   `custodian_settle_provider_reservation` inside the synthesis path.
+   `PROVIDER_EXECUTION_UNSUPPORTED` is `false`, so `handleRequest` can enter that
+   path. Deployed concurrency — two invocations of one run sharing one reservation —
+   remains **UNVERIFIED**.
+2. The Edge Function contains a real OpenAI Responses call path. It is the synthesis
+   path used when the owner key and a catalog model resolve. It is not a closed gate.
 3. The runtime still persists generic `agent_steps` output, and that output remains
    insufficient to become a Finding. The M2 source path now requires a completed
    `synthesize` step, a validated structured candidate, same-owner/same-Case evidence,
    and the protected `custodian_materialize_finding` RPC before creating an analysis
-   Finding. Generic automation `brief` output fails closed. Database application and
-   deployed behavior remain **UNVERIFIED**.
+   Finding. Generic automation `brief` output fails closed. Remote application of
+   `20260920090000` is operator-reported. A full deployed-edge proof of this path
+   remains **UNVERIFIED**, aside from the two completed runs that each saved one
+   Finding.
 4. M4 read-only verification checks durable reservation identity and settlement, usage
    knowledge, factual tokens and cost when known, agreement between that reservation and
    the completed synthesis step, that known actual usage does not exceed the conservative
@@ -172,6 +176,24 @@ Important gaps and contradictions must remain visible:
 7. The plugin README describes ordinary archive and Custodian retrieval as bounded and
    read-oriented, with `excavate_document` as the intentional non-read-only Document
    mutation exception outside Custodian run execution. Keep the distinction exact.
+
+Public beta, from source plus the operator-reported ledger:
+
+- Public signup is the account-creation path. Magic-link sign-in keeps
+  `shouldCreateUser: false` (`src/components/login-screen.tsx`).
+- New archives are empty (`supabase/migrations/20260924100000_public_signup_empty_archive.sql`).
+- Account export is `export_user_account_snapshot` (`SECURITY INVOKER`). Account
+  deletion is `supabase/functions/account-delete`, which purges Storage binaries and
+  calls `purge_owner_account_data`.
+- Provider-key storage is `supabase/functions/provider-key`. Document fetch for
+  excavation is `supabase/functions/document-fetch`.
+- Hosted Auth dashboard settings and hosted second-owner isolation remain
+  **UNVERIFIED**.
+
+The persisted analysis object remains a Case (`cases`, `case_id`). Where the UI
+labels that object, it says Investigation: the nav item in
+`src/components/app-shell.tsx`, and the Case surface in
+`src/components/custodian/case-surface.tsx`. Do not rename the schema.
 
 ## 5. Canonical lifecycle
 
@@ -245,6 +267,9 @@ noise. A quiet state should be the normal outcome for an archive with no support
 reason to act.
 
 ## 8. Cases and bounded evidence
+
+The schema name is Case. The UI calls a Case an Investigation, as in §4. This
+section keeps the schema term.
 
 `cases.archive_scope` is the current durable contract: `{ record_ids,
 free_text_context }`. The scope migration limits it to 50 owner-visible UUIDs and
@@ -379,7 +404,9 @@ missing its owner, missing ports, or
 `CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER` is false, and that closed control performs
 no policy RPC, run RPC, or Edge call. Persisted runs stay visible when Start is
 disabled. A missing reservation relation is shown as
-unavailable rather than as zero spend. Production activation is not done.
+unavailable rather than as zero spend. Two operator-reported runs completed
+with settled known usage. Deployed concurrency and the contents of the M4
+verification step remain **UNVERIFIED**. M4 is not **COMPLETE**.
 
 Target V1 runtime behavior is retrieve/extract/synthesize/approval/execute/verify with
 durable artifacts at each boundary. Resume must use the persisted state and exact
@@ -390,18 +417,42 @@ product decision; it needs a reviewed schema and privacy design before implement
 
 ## 12. Models and provider strategy
 
-The current dormant provider contract is deliberately narrow and OpenAI-specific; V1
-does not need multiple providers merely for abstraction's sake. The source allowlist is
-Luna (`gpt-5.6-luna`), Terra (`gpt-5.6-terra`), Sol (`gpt-5.6-sol`), and Pro
-(`gpt-5.6-pro`) in `src/lib/custodian-runtime-types.ts` and
-`supabase/functions/custodian-run/runtime.ts`. Extraction defaults to Luna and
-synthesis to Terra; an allowed persisted Sol or Pro tier can override the stage
-default. Policy must constrain the permitted tier.
+The provider contract is OpenAI-specific and owner-funded. V1 does not need multiple
+providers merely for abstraction's sake. There is no operator `OPENAI_API_KEY`
+fallback. Custodian runs resolve the owner's key through `resolveOwnerProviderKey`
+(`supabase/functions/custodian-run/owner-provider-key.ts`). Conversation and file
+excavation use the same rule (`supabase/functions/_shared/owner-excavation-funding.ts`):
+a missing key or model fails closed before any provider request.
+
+The selectable catalog is the six models in `src/lib/openai-models.ts` and
+`supabase/functions/_shared/openai-models.ts`. The two lists match.
+
+| Model id | Tier | Tone |
+| --- | --- | --- |
+| `gpt-5.6-luna` | luna | efficient |
+| `gpt-5.6-terra` | terra | balanced |
+| `gpt-5.6-sol` | sol | strong |
+| `gpt-6-luna` | luna | efficient |
+| `gpt-6-sol` | sol | strong |
+| `gpt-6-astra` | pro | highest |
+
+`gpt-5.6-pro` is retired for new reservations. `custodian_openai_model_tier()` does
+not map it, and `custodian_reserve_provider_call` rejects it. The reservation table
+CHECK still accepts a historical `gpt-5.6-pro` row
+(`supabase/migrations/20260924110000_custodian_openai_model_catalog.sql`).
+
+Tiers remain `luna`, `terra`, `sol`, and `pro`. `MODEL_ALLOWLIST` in
+`src/lib/custodian-runtime-types.ts` and `supabase/functions/custodian-run/runtime.ts`
+maps each tier to `defaultModelForTier`: luna → `gpt-5.6-luna`, terra →
+`gpt-5.6-terra`, sol → `gpt-5.6-sol`, pro → `gpt-6-astra`. That map is not how a
+provider attempt chooses the model. `resolveOwnerModel` uses the owner's stored
+catalog id and stops the run when the choice is missing, off-catalog, or a different
+tier. Nothing is substituted. Policy must still constrain the permitted tier.
 
 The provider request uses the official OpenAI JavaScript SDK on the Edge only, the
 Responses API with a strict Structured Outputs format generated from one Zod schema
 (`supabase/functions/custodian-run/openai-schema.ts`), `store: false`, a bounded system
-prompt and input evidence, a server-side API key, SDK retries disabled, one request per
+prompt and input evidence, the owner key, SDK retries disabled, one request per
 attempt, refusal/incomplete/invalid-output handling, a deadline that covers the
 response body, and versioned server-only pricing. The system instruction explicitly
 treats supplied evidence as untrusted data and says not to obey instructions inside it.
@@ -415,10 +466,16 @@ Both source gates are open: `CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER` is `true
 `PROVIDER_EXECUTION_UNSUPPORTED` is `false`. No environment value can change either
 constant. Retrieval stays provider-free. The bounded synthesis path in
 `provider-attempt.ts` is one synthesis attempt per run: reserve first, at most one
-Responses request, then settle. Extract is not a second paid call. Two production runs
-reached the provider and failed with the hold left unresolved; they are immutable
-evidence. No deployed run has completed, so M4 proof is incomplete. Deployed
-concurrency proof and M5 are not done.
+Responses request, then settle. Extract is not a second paid call. Operator-reported
+runs, all `gpt-5.6-luna`: two on 2026-09-22 failed (`openai_unavailable`, then
+`openai_request_rejected`) with the reservation held and usage unknown; 2026-09-23
+completed, `settled_known`, 1249 tok / $0.0008 (hold $0.0058), one Finding,
+diagnostic `openai_completed` / 200; 2026-09-24 failed, `settled_known`, 1376 tok /
+$0.0010, zero Findings, diagnostic `openai_invalid_output` / 200; 2026-09-24
+completed, `settled_known`, 1820 tok / $0.0009 (hold $0.0064), one Finding,
+diagnostic `openai_completed` / 200. Which completed run used the owner-key path is
+**UNVERIFIED**. Deployed concurrency proof and M5 are not done. M4 is not
+**COMPLETE**.
 
 ## 13. Budget and cost safety
 
@@ -468,8 +525,10 @@ fails, the response stays unavailable and keeps the already settled provider acc
 without inventing `awaiting_approval`. The exact action hash
 remains the M3 server hash of the proposed diff and tool action. The database still keys
 reservations by idempotency key; this source does not add a second synthesis key.
-`PROVIDER_EXECUTION_UNSUPPORTED` remains `true`, so the production handler never
-enters this path. The first paid Custodian run requires the separate M4D sequence.
+`PROVIDER_EXECUTION_UNSUPPORTED` is `false`, so the production handler can enter
+this path. M4D implements the readonly driver. Two operator-reported runs completed.
+Deployed concurrency of two invocations sharing one reservation remains
+**UNVERIFIED**.
 
 A null daily or monthly cost ceiling is not a product default.
 `custodian_reserve_provider_call` and the read-only policy and run RPCs refuse it.
@@ -498,13 +557,22 @@ conversation text, private document storage/extracted paths, and unknown documen
 fields by default. `get_context` returns a bounded owner-linked bundle rather than an
 archive dump. `compare_records` compares projection fields without adjudicating truth.
 
-Current Custodian MCP readers are `list_cases`, `get_case`, `get_findings`,
-`get_pending_approvals`, and `get_run`, conditional on the relevant deployed owner-RLS
-foundation. `start_analysis` and `cancel_run` were removed from the MCP catalog in
-0.4.0: run controls are app-only and never happen through MCP. Connected ChatGPT
-or Codex clients must stop there. A live connector call requires its own fresh
-proof; registration or a plugin manifest is not proof of authentication or
-callability.
+The MCP server version is `0.6.0` (`src/lib/mcp/index.ts` and
+`.lovable/mcp/manifest.json`). Registered tools, in that order, are
+`archive_stats`, `list_records`, `get_record`, `search`, `fetch`, `get_context`,
+`list_tags`, `list_recent`, `get_decisions`, `list_cases`, `get_case`,
+`compare_records`, `get_findings`, `get_pending_approvals`, `get_run`, and
+`excavate_document`. `list_tags` reports tag usage. `list_recent` lists records
+updated since a time. `get_decisions` reads decisions with their resolved supersedes
+chain. `excavate_document` is the only mutation: one document per call, from a
+file reference, a public https URL, or pasted Markdown or text. Custodian readers
+`list_cases`, `get_case`, `get_findings`, `get_pending_approvals`, and `get_run`
+remain conditional on the relevant deployed owner-RLS foundation. `start_analysis`
+and `cancel_run` were removed from the MCP catalog in 0.4.0: run controls are
+app-only and never happen through MCP. The Codex plugin package version in
+`plugins/the-excavatorium/.codex-plugin/plugin.json` is `0.2.0`; that is not the
+MCP server version. A live connector call requires its own fresh proof;
+registration or a plugin manifest is not proof of authentication or callability.
 
 The `custodian` plugin skill in `plugins/the-excavatorium/skills/custodian/SKILL.md`
 defines useful retrieval discipline: discover narrowly, fetch/prove provenance, compare
@@ -518,7 +586,7 @@ These actions are deliberately different:
 
 | Action                   | Meaning                                                           | Current V1 position                                                                      |
 | ------------------------ | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Reasoning                | Interpret a bounded evidence bundle.                              | Provider-free case reading exists; provider reasoning is blocked.                        |
+| Reasoning                | Interpret a bounded evidence bundle.                              | Provider-free case reading exists. Provider reasoning is on the open synthesis path. Two operator-reported completed runs each saved one Finding. M5 execution stays **UNRESOLVED**. |
 | Proposing                | Persist an exact possible action for review.                      | Foundation exists; Approvals exposes linked proposals when persisted.                    |
 | Approving                | Owner decision on the exact action hash.                          | Foundation and owner-scoped UI exist; MCP has no decision tool; execution stays blocked. |
 | Evidence write           | Create a non-canonical evidence artifact within policy and audit. | Foundation exists; only implement after explicit contract and gate.                      |
@@ -559,9 +627,10 @@ per-class counts. When a disallowed event is known only as a count, verification
 and does not record every subtype as false. `semantic_correctness` is always
 `not_claimed`. Unknown or missing provider usage fails the run closed. A hold that was
 exceeded fails verification and keeps the factual actual usage. This proves persistence
-and boundary integrity. It does not prove that a model conclusion is correct. The closed
-Edge gate does not advance a run into this stage. M5 execution verification remains
-unimplemented.
+and boundary integrity. It does not prove that a model conclusion is correct. The
+source gates are open, so a completed synthesis can enter this stage. The contents
+of the deployed verification step remain **UNVERIFIED**. M5 execution verification
+remains unimplemented.
 
 ## 17. Resident attention and automation
 
@@ -589,21 +658,20 @@ not invent health, model, cost, approval, verification, or monitoring statistics
 
 ## 18. User experience
 
-The visual authority is `docs/design/light-archive-shell.md`: a grouped near-black
-structural shell, warm ivory archival workspace, evidence-led ledger treatment, and
-light provenance/boundary inspector. Historical dark Custodian design language remains
-only for inverse interpretation, refusal, security, code, and execution boundaries.
+The visual authority is `docs/design/night-crypt.md`. Night Crypt is the current
+and only visual language. `docs/design/light-archive-shell.md` and
+`docs/design/custodian-design-system.md` are **HISTORICAL**.
 
 | Surface                      | Current state                                                                                                     | Intended role                                                                                                |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | Custodian Desk               | **CURRENT** projection of real archive/link-derived attention and working sets; not a control plane.              | Quiet first view that surfaces only materially supported attention.                                          |
 | Inbox                        | **CURRENT** owner intake, review, save, triage, and promotion foundation with truthful offline/foundation states. | Bring tentative material into a bounded Case without calling it archive evidence too early.                  |
-| Cases                        | **CURRENT/PARTIAL** owner Case and scope UI; related artifacts display but are not all authorable there.          | Owner defines question, bounded archive scope, and free-text context.                                        |
+| Cases                        | **CURRENT/PARTIAL** owner Case and scope UI; the UI label is Investigation. Related artifacts display but are not all authorable there. | Owner defines question, bounded archive scope, and free-text context.                                        |
 | Evidence Room / Case Reading | **CURRENT** provider-free, bounded, provenance-rich reading.                                                      | Inspect what was admitted, excluded, unavailable, superseded, or uncertain.                                  |
 | Findings                     | **PARTIAL** persisted finding display via evidence readers and case collections.                                  | Separate attributable interpretation from source truth and expose support/contrary evidence.                 |
 | Proposal / Gate              | **CURRENT** inspectable exact-action presentation on Approvals.                                                   | Show exact before/diff/after and owner decision, never a vague "approve agent" button.                       |
 | Approvals                    | **CURRENT** owner-scoped inspect-and-decide surface; execution remains **BLOCKED**.                               | Read and decide exact owner-scoped requests with expiry/reject/defer audit.                                  |
-| Run Room                     | **CURRENT** closed owner inspection. Start analysis stays disabled and does not invoke the Edge Function while the browser gate is false. | Show status, objective, model tier, recorded cost and tokens, held budget, unknown usage, pricing version, cancellation, failure, and step state. A hold is encumbrance, not recorded spend. |
+| Run Room                     | **CURRENT** owner inspection. Start analysis can invoke the Edge Function: `CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER` is `true`. | Show status, objective, model tier, recorded cost and tokens, held budget, unknown usage, pricing version, cancellation, failure, and step state. A hold is encumbrance, not recorded spend. |
 | Observatory                  | **BLOCKED/PLANNED** scaffold with no runtime source.                                                              | Present truthful resident/rule/cost/verification evidence only after it exists.                              |
 | Quiet state                  | A required product state.                                                                                         | Say no meaningful matter is known; do not create AI theatre.                                                 |
 
@@ -615,10 +683,13 @@ states.
 
 ## 19. ChatGPT, Codex, and MCP roles
 
-Connected clients may inspect safe archive projections, bounded context, cases,
-findings, pending approvals, and run records when the authenticated runtime exposes
-them. They must report what is observed, inferred, contradictory, unavailable, or not
-checked. They must use the narrowest useful projection and preserve source boundaries.
+Connected clients use the MCP server at version `0.6.0`. They may inspect safe
+archive projections, bounded context, tags (`list_tags`), recent updates
+(`list_recent`), decisions (`get_decisions`), cases, findings, pending approvals,
+and run records when the authenticated runtime exposes them. `excavate_document`
+can save one document from a file, a public https URL, or pasted text. They must
+report what is observed, inferred, contradictory, unavailable, or not checked. They
+must use the narrowest useful projection and preserve source boundaries.
 
 They may start or control analysis only after explicit application support, owner
 authorization, policy enforcement, durable application persistence, and real runtime
@@ -649,11 +720,13 @@ reconstruct what happened without exposing secrets.
 
 ## 21. Public/open-source readiness
 
-The repository may become public; the archive must not thereby become public. Public
-documentation should describe the architecture, authority model, schema categories,
-test strategy, and product philosophy without including private record content,
-account identifiers, storage paths, production credentials, keys, tokens, or personal
-archive narratives. Samples and demos must be synthetic or deliberately public.
+The repository is public under the Business Source License 1.1 (`LICENSE`,
+`CONTRIBUTING.md`). It is source-available, not OSI open source. The archive must
+not thereby become public. Public documentation should describe the architecture,
+authority model, schema categories, test strategy, and product philosophy without
+including private record content, account identifiers, storage paths, production
+credentials, keys, tokens, or personal archive narratives. Samples and demos must
+be synthetic or deliberately public.
 
 Before making new Custodian material public, inspect documentation, fixtures,
 screenshots, test snapshots, generated manifests, migration comments, and commit
@@ -685,10 +758,10 @@ effect.
 **Objective:** Make current Case Reading, evidence projection, Desk, Cases, Run Room,
 and MCP availability boundaries easy to verify without changing their authority.
 
-- **Prerequisite:** current source contracts and the light-shell visual constitution.
+- **Prerequisite:** current source contracts and the Night Crypt visual language.
 - **Likely areas:** Case/evidence tests, route truthfulness, `custodian-surfaces`, MCP
   projection/security tests, documentation only where behavior has changed.
-- **Database/provider/connector impact:** none intended; provider gate stays closed.
+- **Database/provider/connector impact:** none intended. This milestone does not change the provider path.
 - **UI impact:** small truthfulness and accessibility repairs only, no invented runtime.
 - **Security:** preserve owner scope, redaction, bounded context, and read-only paths.
 - **Validation:** focused source tests; authenticated browser proof and RLS/projection
@@ -708,7 +781,7 @@ interpretation.
   Case UI, focused tests; migration only if a durable admission rationale is required.
 - **Database impact:** avoid a new table unless a stable audit/replay need is proven.
 - **Provider impact:** none; reading remains provider-free.
-- **UI impact:** Evidence Room improvements under the Light Archive Shell.
+- **UI impact:** Evidence Room improvements under Night Crypt.
 - **Connector impact:** define source freshness/admission metadata but do not activate a
   connector.
 - **Security:** preserve selected-only owner scope, 80k cap, redactions, and unavailable
@@ -744,9 +817,11 @@ and revisit conditions.
 - **M2 SOURCE IMPLEMENTATION:** **COMPLETE**
 - **LOCAL VALIDATION:** **PARTIAL** — frontend and Edge Function validation passed;
   local database runtime validation is unverified because Docker is unavailable.
-- **REMOTE MIGRATION APPLICATION:** **UNVERIFIED**
-- **DEPLOYED EDGE BEHAVIOR:** **UNVERIFIED**
-- **PROVIDER EXECUTION:** **BLOCKED**
+- **REMOTE MIGRATION APPLICATION:** **VERIFIED** (operator-reported ledger includes
+  `20260920090000`)
+- **DEPLOYED EDGE BEHAVIOR:** **UNVERIFIED** as a full deploy proof. Two
+  operator-reported completed runs each saved one Finding.
+- **PROVIDER EXECUTION:** not this milestone. The M4 source gates are open.
 - **Validation:** deterministic support/contrary/absence/refusal fixtures, replay and
   conflicting-identity checks, owner/RLS checks, canonical-record preservation, and
   source-to-Finding audit assertions.
@@ -783,9 +858,10 @@ non-external, policy-controlled action type, if any, for V1.
 - **LOCAL VALIDATION:** **PARTIAL** — frontend typecheck, lint of changed files, `bun test src`,
   Edge `deno task check`/`test`, and `bun run build` passed in this workspace. Local
   database runtime validation is **UNVERIFIED/BLOCKED** because Docker is unavailable.
-- **REMOTE MIGRATION APPLICATION:** **UNVERIFIED**
+- **REMOTE MIGRATION APPLICATION:** **VERIFIED** (operator-reported ledger includes
+  `20260921140000`)
 - **DEPLOYED EDGE BEHAVIOR:** **UNVERIFIED**
-- **PROVIDER EXECUTION:** **BLOCKED**
+- **PROVIDER EXECUTION:** not this milestone. The M4 source gates are open.
 - **INTERNAL V1 EXECUTION CLASS:** **UNRESOLVED**
 - **Validation:** rejection, expiry, changed hash, duplicate approval, cross-owner,
   unauthorized write, and audited no-mutation tests.
@@ -796,8 +872,8 @@ non-external, policy-controlled action type, if any, for V1.
 
 ### M4 — close the provider activation gate
 
-**Objective:** Turn dormant Responses plumbing into one bounded real provider-backed
-read-only analysis path.
+**Objective:** One bounded real provider-backed read-only analysis path. The Responses
+path is open in source. M4 is not **COMPLETE**.
 
 - **Prerequisite:** M1-M3, non-null policy enforced everywhere, explicit model allowlist,
   provider finding persistence, comprehensive state/idempotency tests, and an approved
@@ -825,28 +901,35 @@ read-only analysis path.
   owner-scoped reserve, persistent unknown holds, aggregate budgets, policy bootstrap,
   the server-built read-only snapshot, allowed model tiers, and in-flight cancellation
   semantics exist. No M4A migration was rewritten by the later source slice.
-- **M4B SOURCE WIRING:** **PRESENT, UNREACHABLE.** `provider-attempt.ts` can perform
-  exactly one bounded synthesis attempt after a successful reservation. Retrieval stays
+  **REMOTE MIGRATION APPLICATION:** **VERIFIED** (operator-reported ledger includes
+  `20260921180000`).
+- **M4B SOURCE WIRING:** **PRESENT.** `provider-attempt.ts` can perform exactly one
+  bounded synthesis attempt after a successful reservation. Retrieval stays
   provider-free. Valid synthesis still materializes only through the M2 contract.
-  `PROVIDER_EXECUTION_UNSUPPORTED` remains `true`, so `handleRequest` does not enter
-  the fetch path.
-- **M4C BROWSER PREPARATION:** **PRESENT, CLOSED.**
-  `CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER` remains `false`. The prepared invocation
-  body is only `{ runId, invocationKey }`. While the constant is false, Start analysis
-  does not call the Edge Function.
-- **M4D SOURCE:** **IMPLEMENTED, NOT ACTIVATED.** The readonly start contract and
-  bounded driver exist. The driver allowlist is `queued`, `retrieving`,
-  `synthesizing`, and `verifying`. It does not advance `executing`. Ambiguous
-  invocations are reconciled from the persisted run and are not retried. Idempotency
-  keys rotate only after a durable stop. A browser reload cannot resume the same
-  invocation key; an uncertain persisted run blocks a second start. Both provider
-  constants remain closed. Production activation is not done. Secrets and pricing
-  are not configured. The first paid run is not done. Deployed concurrency proof is
-  pending. M5 is not done.
-- **M4 PROVIDER ACTIVATION:** **BLOCKED.** M4 is not complete.
-- **PRODUCTION / DEPLOYED BEHAVIOR:** **UNVERIFIED** until a separately authorized
-  deploy and proof. M5 and M6 are not started. The first-run blocker
-  split is recorded in `docs/custodian-first-run-readiness.md`.
+  `PROVIDER_EXECUTION_UNSUPPORTED` is `false`, so `handleRequest` can enter the
+  fetch path.
+- **M4C BROWSER PREPARATION:** **PRESENT.**
+  `CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER` is `true`. The invocation body is
+  only `{ runId, invocationKey }`. Start analysis can call the Edge Function.
+- **M4D SOURCE:** **IMPLEMENTED.** The readonly start contract and bounded driver
+  exist. The driver allowlist is `queued`, `retrieving`, `synthesizing`, and
+  `verifying`. It does not advance `executing`. Ambiguous invocations are reconciled
+  from the persisted run and are not retried. Idempotency keys rotate only after a
+  durable stop. A browser reload cannot resume the same invocation key; an uncertain
+  persisted run blocks a second start. Both provider constants are open. Owner BYOK
+  is the key path. Two operator-reported runs completed with settled known usage.
+  The contents of the M4 verification step were not inspected and remain
+  **UNVERIFIED**. Deployed concurrency proof is pending. M5 is not done.
+- **M4 PROVIDER ACTIVATION:** **PARTIAL.** Deployed and proven by the two completed
+  runs, except concurrency and verification-step inspection. M4 is not **COMPLETE**.
+- **DIAGNOSTICS REMOTE APPLICATION:** **VERIFIED** (operator-reported ledger includes
+  `20260923120000` and has no `20260923113236` row).
+- **PRODUCTION / DEPLOYED BEHAVIOR:** **PARTIAL.** Operator-reported runs show
+  provider contact, two completions, and one settled malformed-output failure.
+  Still **UNVERIFIED**: deployed concurrency, the contents of the M4 verification
+  step, which completed run used the owner-key path, and hosted second-owner
+  isolation. M5 and M6 are not started. `docs/custodian-first-run-readiness.md` is
+  **HISTORICAL**.
 
 ### M5 — finish V1 lifecycle inspection and permitted execution
 
@@ -989,14 +1072,14 @@ into release notes.
 | Area                        | Authoritative/supporting paths                                                                                                                                                                                                       | Role                                                                                  |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
 | Canonical program           | `docs/custodian-program.md`                                                                                                                                                                                                          | This document.                                                                        |
-| First-run readiness         | `docs/custodian-first-run-readiness.md`                                                                                                                                                                                              | Source-complete vs remaining live proof for one bounded read-only run. M4D source is not activation. |
-| Visual authority            | `docs/design/light-archive-shell.md`                                                                                                                                                                                                 | Current whole-application visual constitution.                                        |
-| Roadmap provenance          | `docs/design/custodian-roadmap.md`                                                                                                                                                                                                   | Supporting delivery history and existing provider gate.                               |
-| Historical visual reference | `docs/design/custodian-design-system.md`, `design-qa.md`                                                                                                                                                                             | Retained dark/inverse language and historical QA, not the default visual authority.   |
+| First-run readiness         | `docs/custodian-first-run-readiness.md`                                                                                                                                                                                              | **HISTORICAL.** First completed run 2026-09-23 (operator-reported).               |
+| Visual authority            | `docs/design/night-crypt.md`                                                                                                                                                                                                         | Current and only visual language.                                                     |
+| Roadmap provenance          | `docs/design/custodian-roadmap.md`                                                                                                                                                                                                   | **HISTORICAL.** Provider-activation plan superseded; MCP run-control tools removed.  |
+| Historical visual reference | `docs/design/light-archive-shell.md`, `docs/design/custodian-design-system.md`, `design-qa.md`                                                                                                                                      | Ivory shell, dark-shell reference, and ivory-era QA. Not the current visual language. |
 | Release procedure           | `docs/release-verification.md`                                                                                                                                                                                                       | Reusable local/hosted/Supabase/Lovable/connector/production gate.                     |
 | Backend procedure           | `docs/supabase-setup.md`, `docs/supabase-verification.md`                                                                                                                                                                            | Directly managed backend setup and verification distinction.                          |
 | Cases and evidence          | `src/lib/custodian.ts`, `src/lib/custodian-types.ts`, `src/lib/case-reading.ts`, `src/lib/evidence-display.ts`, `src/components/custodian/`                                                                                          | Owner case contracts, bounded reading, display and source tests.                      |
-| Runtime client              | `src/lib/custodian-runtime.ts`, `src/lib/custodian-readonly-run.ts`, `src/lib/custodian-runtime-types.ts`, `src/lib/custodian-approvals.ts`                                                                                            | Browser read boundary, closed readonly start, state machine, owner-gate decision client, budget/model/request contracts. |
+| Runtime client              | `src/lib/custodian-runtime.ts`, `src/lib/custodian-readonly-run.ts`, `src/lib/custodian-runtime-types.ts`, `src/lib/custodian-approvals.ts`                                                                                            | Browser read boundary, open readonly start (`CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER` is `true`), state machine, owner-gate decision client, budget/model/request contracts. |
 | Frontend surfaces           | `src/routes/index.tsx`, `src/routes/inbox.tsx`, `src/routes/cases.index.tsx`, `src/routes/cases.$caseId.index.tsx`, `src/routes/run-room.tsx`, `src/routes/approvals.tsx`, `src/routes/observatory.tsx`, `src/components/custodian/approvals-surface.tsx`, `src/components/custodian/run-room-surface.tsx` | Current Desk, Inbox, Cases, readonly-analysis Run Room, owner-gate Approvals, and scaffold Observatory. |
 | MCP                         | `src/lib/mcp/index.ts`, `src/lib/mcp/capability-handlers.ts`, `src/lib/mcp/tools/`, `src/lib/mcp/security.ts`                                                                                                                        | Bounded archive/Custodian client surface and authentication.                          |
 | Plugin guidance             | `plugins/the-excavatorium/skills/custodian/SKILL.md`, `plugins/the-excavatorium/.mcp.json`                                                                                                                                           | Client retrieval discipline and MCP endpoint metadata.                                |
@@ -1005,7 +1088,7 @@ into release notes.
 | Runtime migrations          | `supabase/migrations/20260811191000_custodian_runtime_tables.sql` through `20260811191200_custodian_runtime_rpcs.sql`                                                                                                                | Runtime/policy/approval/automation/audit foundation.                                  |
 | Hardening and case scope    | `supabase/migrations/20260817163457_custodian_tool_policy_delete_guard.sql`, `supabase/migrations/20260822214714_harden_archive_and_custodian_boundaries.sql`, `supabase/migrations/20260904090000_custodian_case_archive_scope.sql`, `supabase/migrations/20260921140000_custodian_owner_gate.sql` | Policy, exact action, audit, cost hardening, selected archive scope, and the M3 owner-gate decision contract. |
 | M4A provider budget hold    | `supabase/migrations/20260921180000_custodian_provider_budget_hold.sql`, `supabase/tests/database/custodian_provider_budget_hold.sql`                                                                                                      | Hold storage separate from factual usage, reserve/settle and fail-closed budget RPCs, explicit owner-policy bootstrap, and a server-built read-only snapshot. Not a provider call. |
-| Provider diagnostics        | `supabase/migrations/20260923120000_custodian_provider_diagnostics.sql`, `supabase/tests/database/custodian_provider_diagnostics.sql`                                                                                                      | Owner-readable, service-role-written, append-only, bounded provider metadata per attempt. Not accounting. |
+| Provider diagnostics        | `supabase/migrations/20260923120000_custodian_provider_diagnostics.sql`, `supabase/tests/database/custodian_provider_diagnostics.sql`                                                                                                      | Owner-readable, service-role-written, append-only, bounded provider metadata per attempt. Not accounting. Remote application **VERIFIED** (operator-reported). |
 | M2 database proof           | `supabase/tests/database/custodian_finding_attribution.sql`                                                                                                                                                                               | Deterministic structured-result, attribution, evidence, replay, RLS, automation-guard, and archive-isolation coverage. |
 | Database tests              | `supabase/tests/database/custodian_case_archive_scope.sql`, `supabase/tests/database/harden_archive_and_custodian_boundaries.sql`, `supabase/tests/database/custodian_owner_gate.sql`, `supabase/tests/database/custodian_provider_budget_hold.sql` | Source-level pgTAP/database contract evidence; execution must be recorded separately. |
 
@@ -1016,11 +1099,17 @@ into release notes.
   the official SDK, and settles truthfully. M4D is implemented: explicit owner inputs,
   one readonly policy, one persisted run, and a bounded `{ runId, invocationKey }`
   driver. Both source gates are open. The policy RPC still has no product-default tiers
-  or ceilings. Two production runs failed at the provider boundary; no deployed run has
-  completed. Deployed concurrency proof and M5 are not done. M4 is not complete. MCP
-  run controls remain **BLOCKED**.
+  or ceilings. Two operator-reported runs completed with settled known usage. Deployed
+  concurrency proof and the contents of the verification step remain **UNVERIFIED**.
+  M5 is not done. M4 is not **COMPLETE**. MCP run controls remain absent from the
+  catalog (removed in 0.4.0); they are app-only.
+- Owner Judgment recording is an open gap. The UI separates a Finding from the
+  owner's decision, and `src/lib/investigation-view.ts` never marks the judgment
+  step done because no recording path exists. The README beta limitations name the
+  missing actions Uphold, Revise, and Leave open. Approvals are a different surface.
 - Interactive Approvals exist as an owner decision surface; meaningful verification
   after execution and a selected internal V1 execution class still need implementation.
+  The M5 execution class remains **UNRESOLVED**. Do not choose one here.
 - External execution is intentionally unsupported; canonical writes are not implied by
   findings or proposals.
 - A resident loop, live Observatory, active connector use, and connector-account UI are
@@ -1029,8 +1118,9 @@ into release notes.
   policy remain unresolved product/security decisions. M3 adds the owner gate and
   keeps execution unavailable. M2 adds source-level Finding provenance linkage but
   does not prove deployment or production behavior.
-- Current source/test inspection does not prove migration application, Edge deployment,
-  live OAuth, production RLS, or provider behavior.
+- Operator-reported ledger proof covers the named migrations. It does not prove
+  Edge deployment of the current source, live OAuth, hosted Auth settings, hosted
+  second-owner isolation, or which completed run used the owner-key path.
 
 Revise this program when a reviewed change alters the authority split, lifecycle,
 status vocabulary, scope limits, data contract, model/cost/policy boundary, execution

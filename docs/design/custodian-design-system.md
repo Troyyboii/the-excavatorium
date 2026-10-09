@@ -1,10 +1,10 @@
 # The Custodian design system
 
 > [!IMPORTANT]
-> This is a historical dark-shell reference. The current whole-application
-> visual authority is [Light archive shell](./light-archive-shell.md). Preserve
-> the dark palette below for inverse interpretation, refusal, security, code,
-> and execution-boundary panels; it no longer defines the default page ground.
+> **HISTORICAL.** Night Crypt is the current and only visual language. See
+> [Night Crypt](./night-crypt.md). This dark-shell reference, and
+> [Light archive shell](./light-archive-shell.md), no longer govern the
+> application. The palette below is retained as provenance.
 
 The historical visual reference is
 [custodian-desk-concept.png](./custodian-desk-concept.png). It documents the

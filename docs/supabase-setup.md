@@ -18,10 +18,12 @@ Migration `20260802150000_tables.sql` creates the original four application tabl
 
 The filenames in `supabase/migrations/` are the deployment ledger and run in
 timestamp order. Do not replay the eight manually applied baseline migrations
-against production. Before the first operator `supabase db push` against the
-directly managed project, reconcile those filenames with the remote
-`supabase_migrations.schema_migrations` history using a reviewed
-`supabase migration repair` operation. Hosted CI does not apply migrations.
+against production. Hosted CI does not apply migrations.
+
+The legacy `0001`–`0012` repair below is **completed history**. The
+operator-reported ledger (rechecked 2026-10-09) has 32 migrations, ends at
+`20260925100000`, includes no legacy `0001`–`0012` rows, and includes no
+`20260923113236` row. Keep the mapping. Do not run the repair again.
 
 ### One-time migration-history reconciliation
 
@@ -122,17 +124,17 @@ Do not use production wildcards.
 
 ## 5. Owner login setup
 
-1. Create the owner account in Authentication → Users.
+1. Create an account through public sign-up. Public signup is **enabled**
+   for the beta.
 2. Use password login as the primary login method.
 3. Keep magic-link login available as the fallback method.
-4. Authentication → Providers → Email → **disable "Enable new user
-   signups"**.
-5. Leave the Email provider enabled so magic-link OTPs remain available
-   for the existing owner.
+4. Leave the Email provider enabled so magic-link OTPs remain available.
+5. Do not turn public signup off for the beta. New accounts are created only
+   by the sign-up path.
 
-## 6. Signup disabling
+## 6. Signup and magic link
 
-The frontend always calls:
+The frontend magic-link call is:
 
 ```ts
 supabase.auth.signInWithOtp({
@@ -144,9 +146,9 @@ supabase.auth.signInWithOtp({
 });
 ```
 
-`shouldCreateUser: false` prevents the client from creating new
-accounts. Disabling public signups in the Supabase dashboard is the
-second, authoritative gate.
+`shouldCreateUser: false` stays on magic-link sign-in
+(`src/components/login-screen.tsx`). Sign-up is the only account-creation
+path. Public signup is enabled for the beta.
 
 ## 7. Protected RPC functions
 

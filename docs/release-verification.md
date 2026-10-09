@@ -11,8 +11,9 @@ Related references:
 - [Lovable project knowledge](./lovable-project-knowledge.md)
 - [Supabase setup](./supabase-setup.md)
 - [Supabase verification checklist](./supabase-verification.md)
-- [Light archive shell](./design/light-archive-shell.md)
-- [Custodian roadmap](./design/custodian-roadmap.md)
+- [Night Crypt](./design/night-crypt.md) (current visual language)
+- [Light archive shell](./design/light-archive-shell.md) (historical)
+- [Custodian roadmap](./design/custodian-roadmap.md) (historical)
 - [First-run readiness](./custodian-first-run-readiness.md)
 
 ## Evidence rules
@@ -116,20 +117,23 @@ safe function paths, RPC ownership checks, and second-user isolation.
 
 ## 5. Provider and cost boundary
 
-Unless a separately approved provider-activation phase has completed, verify:
+The provider gates are open as found in source. Verify that state, and do not
+treat a closed gate as the release condition:
 
 - [`CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER`](../src/lib/custodian-runtime.ts)
-  remains `false`;
+  is `true`;
 - [`PROVIDER_EXECUTION_UNSUPPORTED`](../supabase/functions/custodian-run/index.ts)
-  remains `true`;
-- no paid model call is presented as available;
+  is `false`;
+- provider paths use the owner's key only. There is no operator
+  `OPENAI_API_KEY` on those paths;
 - no direct archive write bypasses owner-scoped RPC and approval boundaries.
 
-Provider activation remains blocked until tool policy is mandatory and
-non-null, per-run and cumulative budgets are enforced, allowed model tiers are
-explicit, concurrent provider calls reserve budget per run, retries are
-idempotent, write-capable operations pause for approval, and safe resume and
-audit evidence are verified.
+Still confirm tool policy is mandatory and non-null, per-run and cumulative
+budgets are enforced, the catalog model and its tier are explicit, concurrent
+provider calls reserve budget per run, retries are idempotent, write-capable
+operations pause for approval, and safe resume and audit evidence are verified.
+Deployed concurrency of two invocations sharing one reservation remains
+unverified.
 
 ## 6. Connector and owner isolation
 
@@ -157,7 +161,12 @@ Desktop checks:
 - Escape restores focus to the visible trigger;
 - route, creation, and persisted-record commands navigate without accidental
   submission;
-- Inbox offers only Thought, Link, Conversation, and Document;
+- Inbox capture offers Thought, Link, Conversation, and Document
+  (`INBOX_CAPTURE_OPTIONS` in `src/components/custodian/inbox-intake.tsx`),
+  stored as `thought`, `url`, `conversation`, and `document`. The stored
+  `INBOX_KINDS` list in `src/lib/custodian-types.ts` also includes `github`,
+  `context7`, `record`, `clipboard`, and `mobile_share`, which this capture
+  control does not offer;
 - blank capture cannot enter Review or save;
 - Capture -> Review -> Back preserves the local draft;
 - `Save to Inbox` is the only persistence action and requires action-time

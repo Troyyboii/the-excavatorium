@@ -1,18 +1,22 @@
 # Core Archive Redesign — design QA
 
+> [!IMPORTANT]
+> **HISTORICAL.** This is ivory-era visual QA. Night Crypt is the current and
+> only visual language. See [Night Crypt](./docs/design/night-crypt.md).
+
 ## Result
 
 **Blocked.** The authenticated local implementation was inspected at desktop, mobile portrait, and mobile landscape sizes, but the required final source-and-implementation comparison could not be opened as one browser input. The in-app Browser's URL security policy rejected the local comparison document, so this run cannot claim a completed visual comparison.
 
 ## Evidence inspected
 
-- Selected Concept 1 source: `C:\Users\Robert i Dario\.codex\generated_images\01a02b17-03e3-7522-92c8-e8f2537f6567\exec-65693a13-ba16-42ed-91e6-0000ffe07a73.png`
-- Desktop graph: `C:\Users\Robert i Dario\.codex\visualizations\2026\08\22\01a02b17-03e3-7522-92c8-e8f2537f6567\graph-desktop-final.png`
-- Desktop Desk: `C:\Users\Robert i Dario\.codex\visualizations\2026\08\22\01a02b17-03e3-7522-92c8-e8f2537f6567\desk-desktop.png`
-- Desktop Archive: `C:\Users\Robert i Dario\.codex\visualizations\2026\08\22\01a02b17-03e3-7522-92c8-e8f2537f6567\archive-desktop.png`
-- Desktop Timeline: `C:\Users\Robert i Dario\.codex\visualizations\2026\08\22\01a02b17-03e3-7522-92c8-e8f2537f6567\timeline-desktop.png`
-- Graph mobile portrait: `C:\Users\Robert i Dario\.codex\visualizations\2026\08\22\01a02b17-03e3-7522-92c8-e8f2537f6567\graph-mobile-portrait.png`
-- Graph mobile landscape: `C:\Users\Robert i Dario\.codex\visualizations\2026\08\22\01a02b17-03e3-7522-92c8-e8f2537f6567\graph-mobile-landscape.png`
+- Selected Concept 1 source: local Codex artifact (not in repository)
+- Desktop graph: local Codex artifact (not in repository)
+- Desktop Desk: local Codex artifact (not in repository)
+- Desktop Archive: local Codex artifact (not in repository)
+- Desktop Timeline: local Codex artifact (not in repository)
+- Graph mobile portrait: local Codex artifact (not in repository)
+- Graph mobile landscape: local Codex artifact (not in repository)
 
 ## Verified implementation behavior
 
