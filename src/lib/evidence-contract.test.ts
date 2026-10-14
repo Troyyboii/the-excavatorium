@@ -78,9 +78,9 @@ describe("shared evidence contract", () => {
     expect(migration.includes("* 100 / 115.0")).toBe(true);
     // Product default: the evidence that fits is small and must stay visible, not silently assumed.
     const budget = evidenceBudgetBytes(OWNER_READONLY_CEILINGS.perRunTokenBudget, 200);
-    expect(budget).toBeGreaterThan(0);
-    expect(budget).toBeLessThan(10_000);
-    expect(evidenceBudgetBytes(60_000, 200)).toBeGreaterThan(budget * 3);
+    expect(OWNER_READONLY_CEILINGS.perRunTokenBudget).toBe(40_000);
+    expect(budget).toBeGreaterThan(20_000);
+    expect(evidenceBudgetBytes(80_000, 200)).toBeGreaterThan(budget * 1.8);
     expect(evidenceBudgetBytes(1_000, 200)).toBe(0);
   });
 });

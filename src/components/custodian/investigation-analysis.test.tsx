@@ -73,7 +73,7 @@ describe("InvestigationAnalysisPanel", () => {
     expect(analysisPorts.ensurePolicy).toHaveBeenCalled();
     const ensureMock = analysisPorts.ensurePolicy as ReturnType<typeof mock>;
     const policyArg = ensureMock.mock.calls[0]?.[1] as { policy_name?: string };
-    expect(policyArg?.policy_name).toBe("investigation-readonly");
+    expect(policyArg?.policy_name).toBe("investigation-readonly-v2");
     expect(analysisPorts.createRun).toHaveBeenCalled();
     const createMock = analysisPorts.createRun as ReturnType<typeof mock>;
     const runArg = createMock.mock.calls[0]?.[2] as {

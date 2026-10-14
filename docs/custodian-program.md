@@ -320,8 +320,9 @@ still creates no `evidence_items` and no archive rows.
   is derived from the owner's own per-run token ceiling (formula in the migration,
   mirrored by `evidenceBudgetBytes`). Admission is deterministic: contrary / open /
   uncertain material first (capped at 40% of the budget), then round-robin across
-  records ordered by overlap with the objective. At the product default (20,000
-  tokens) only a few kilobytes of claims fit; this is a stated limitation, not hidden.
+  records ordered by overlap with the objective. The product default is 40,000
+  tokens (policy `investigation-readonly-v2`, about 22 KB of claims); the earlier 20,000
+  ceiling admitted under 5 KB, less than the record headers of a two-record case.
 - **Citations.** A Finding cites admitted units through `supporting_source_refs` /
   `contrary_source_refs`. `custodian_materialize_finding` resolves each ref against the
   run's persisted snapshot (never against model-supplied record ids) and stores the
@@ -1146,9 +1147,9 @@ into release notes.
 - Source-backed analysis is verified locally only (Postgres 16 with a Supabase shim,
   Deno, Bun); the migration, Edge deployment and a live Structured Outputs request with the
   new `*_source_refs` schema are **UNVERIFIED** in production. The MCP `get_findings`
-  projection does not yet return `source_citations`. At the 20,000-token product ceiling
-  the admitted claim volume is small; raising it is an owner decision (new policy name,
-  because the policy RPC rejects changed parameters on an existing name).
+  projection does not yet return `source_citations`. The product ceiling is 40,000 tokens
+  (owner-approved; new policy name `investigation-readonly-v2` because the policy RPC
+  rejects changed parameters on an existing name). Very large cases still truncate by design.
 - Owner Judgment recording is an open gap. The UI separates a Finding from the
   owner's decision, and `src/lib/investigation-view.ts` never marks the judgment
   step done because no recording path exists. The README beta limitations name the
