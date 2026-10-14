@@ -1254,7 +1254,9 @@ describe("completed-run copy", () => {
       holdResolved: true,
       usageUnclaimed: false,
     } as never);
-    expect(text).toBe("Analysis completed successfully.");
+    expect(text).toBe(
+      "Analysis finished. Each Finding states what it cites; one that cites nothing is not a supported answer.",
+    );
     expect(text).not.toContain("fa2fd07c");
   });
 });

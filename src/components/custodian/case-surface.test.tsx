@@ -1,13 +1,15 @@
 // Bun supplies this module at test runtime; it is not part of the app's type surface.
 // @ts-expect-error -- Bun's runner provides the test module at runtime.
-import { describe, expect, test } from "bun:test";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, test } from "bun:test";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type {
   CustodianFinding,
   CustodianFindingEvidence,
   EvidenceItem,
 } from "@/lib/custodian-types";
 import { FindingDetails } from "./case-surface";
+
+afterEach(() => cleanup());
 
 const finding = {
   id: "finding-1",
@@ -31,6 +33,7 @@ const finding = {
   assumptions: [],
   scopeLimits: [],
   evidenceGaps: [],
+  sourceCitations: [],
   createdBy: "owner-1",
   updatedBy: "owner-1",
   createdAt: "2026-08-11T19:00:00.000Z",
@@ -129,5 +132,62 @@ describe("Case Finding details", () => {
     expect(screen.getByText("Candidate index")).not.toBeNull();
     expect(screen.getByText("0")).not.toBeNull();
     expect(screen.getByText(/Numeric confidence:/)).not.toBeNull();
+  });
+
+  test("shows cited archive material with its evidence level and keeps the score for grounded findings", () => {
+    const grounded = {
+      ...finding,
+      sourceCitations: [
+        {
+          ref: "r1.f3",
+          relationship: "supporting",
+          recordId: "c1000000-0000-4000-8000-0000000000c1",
+          recordType: "conversation",
+          recordTitle: "Trait research notes A",
+          selectionIndex: 1,
+          field: "High-signal findings",
+          unitKind: "finding",
+          evidenceLevel: "owner_extracted_notes",
+          currency: "unspecified",
+          excerpt: "Claim A3: a generated hypothesis says trait X is separable.",
+        },
+        {
+          ref: "r2.f2",
+          relationship: "contrary",
+          recordId: "c2000000-0000-4000-8000-0000000000c2",
+          recordType: "conversation",
+          recordTitle: "Trait research notes B",
+          selectionIndex: 2,
+          field: "High-signal findings",
+          unitKind: "finding",
+          evidenceLevel: "owner_extracted_notes",
+          currency: "superseded",
+          excerpt: "Claim B2: overlap is substantial.",
+        },
+      ],
+    } satisfies CustodianFinding;
+    render(<FindingDetails finding={grounded} evidence={[]} evidenceLinks={[]} />);
+    expect(screen.getByText("Cited archive material")).not.toBeNull();
+    expect(screen.getByText(/Supporting · Trait research notes A/)).not.toBeNull();
+    expect(screen.getByText(/Contrary · Trait research notes B/)).not.toBeNull();
+    expect(screen.getByText(/Claim A3: a generated hypothesis/)).not.toBeNull();
+    expect(screen.getAllByText(/not independently verified/).length).toBe(2);
+    expect(screen.getByText(/Supported by cited archive material/)).not.toBeNull();
+    fireEvent.click(screen.getByText("Analysis details"));
+    expect(screen.getByText(/80% \(not a calibrated probability\)/)).not.toBeNull();
+  });
+
+  test("an analysis result that cites nothing says so and shows no confidence number", () => {
+    const starved = {
+      ...finding,
+      analysisOutcome: "unresolved",
+      confidence: 98,
+      sourceCitations: [],
+    } satisfies CustodianFinding;
+    render(<FindingDetails finding={starved} evidence={[]} evidenceLinks={[]} />);
+    expect(screen.getByText(/Insufficient source material — nothing was cited/)).not.toBeNull();
+    fireEvent.click(screen.getByText("Analysis details"));
+    expect(screen.getByText(/Not shown: no source material was cited/)).not.toBeNull();
+    expect(screen.queryByText(/98%/)).toBeNull();
   });
 });

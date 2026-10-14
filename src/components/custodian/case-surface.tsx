@@ -22,6 +22,7 @@ import type {
   EvidenceItem,
   JsonValue,
 } from "@/lib/custodian-types";
+import { classifyFindingOutcome } from "@/lib/custodian-analysis-outcome";
 import type { ArchiveRecord } from "@/lib/types";
 import {
   CASE_ARCHIVE_CONTEXT_MAX_CHARS,
@@ -950,6 +951,8 @@ export function FindingDetails({
   const evidenceById = new Map(evidence.map((entry) => [entry.id, entry]));
   const supporting = evidenceLinks.filter((link) => link.relationshipKind === "supporting");
   const contrary = evidenceLinks.filter((link) => link.relationshipKind === "contrary");
+  const outcomeView = classifyFindingOutcome(finding, evidenceLinks);
+  const citations = finding.sourceCitations;
   const caveats = [
     ["Uncertainty", finding.uncertainties],
     ["Assumptions", finding.assumptions],
@@ -985,6 +988,33 @@ export function FindingDetails({
           {evidenceTitles(contrary)}
         </p>
       ) : null}
+      {outcomeView ? (
+        <p className="break-words">
+          <span className="font-medium text-foreground">Evidence basis:</span> {outcomeView.label}
+        </p>
+      ) : null}
+      {citations.length ? (
+        <div className="space-y-1.5">
+          <p className="font-medium text-foreground">Cited archive material</p>
+          <ul className="space-y-1.5">
+            {citations.map((citation) => (
+              <li key={`${citation.relationship}-${citation.ref}`} className="break-words">
+                <span className="font-medium text-foreground">
+                  {citation.relationship === "contrary" ? "Contrary" : "Supporting"} ·{" "}
+                  {citation.recordTitle || "Untitled record"} · {citation.field} ({citation.ref})
+                </span>
+                {citation.currency === "superseded" ? " — superseded" : ""}
+                <br />
+                {citation.excerpt}
+                <br />
+                <span className="text-xs">
+                  Archive-extracted, not original research; not independently verified.
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {caveats.map(([label, values]) =>
         values.length ? (
           <p key={label} className="break-words">
@@ -1011,7 +1041,9 @@ export function FindingDetails({
         <div className="space-y-2 break-words pb-2 pt-1 text-sm leading-6">
           <p>
             <span className="font-medium text-foreground">Numeric confidence:</span>{" "}
-            {finding.confidence}% (not a calibrated probability)
+            {outcomeView && !outcomeView.showNumericConfidence
+              ? "Not shown: no source material was cited, so a score would imply confidence in material that was never supplied."
+              : `${finding.confidence}% (not a calibrated probability)`}
           </p>
           <p>
             <span className="font-medium text-foreground">Origin:</span> {finding.originKind}

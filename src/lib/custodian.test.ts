@@ -213,6 +213,7 @@ describe("Custodian record context", () => {
       assumptions: [],
       scopeLimits: [],
       evidenceGaps: [],
+      sourceCitations: [],
       createdBy: "owner-1",
       updatedBy: "owner-1",
       createdAt: timestamps.created_at,

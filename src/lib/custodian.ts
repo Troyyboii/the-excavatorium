@@ -30,6 +30,7 @@ import {
   type CustodianCase,
   type CustodianCaseRow,
   type CustodianFinding,
+  type CustodianFindingSourceCitation,
   type CustodianFindingEvidence,
   type CustodianFindingEvidenceRow,
   type CustodianFindingRow,
@@ -354,6 +355,36 @@ export function mapActionRow(value: unknown): CustodianAction {
   };
 }
 
+function sourceCitations(row: UnknownRecord): CustodianFindingSourceCitation[] {
+  const raw = row.source_citations;
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) {
+    throw new Error("Custodian row field source_citations must be an array");
+  }
+  return raw.flatMap((entry): CustodianFindingSourceCitation[] => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+    const item = entry as UnknownRecord;
+    const str = (key: string) => (typeof item[key] === "string" ? (item[key] as string) : "");
+    const relationship = item.relationship === "contrary" ? "contrary" : "supporting";
+    if (!str("ref")) return [];
+    return [
+      {
+        ref: str("ref"),
+        relationship,
+        recordId: str("record_id"),
+        recordType: str("record_type"),
+        recordTitle: str("record_title"),
+        selectionIndex: typeof item.selection_index === "number" ? item.selection_index : 0,
+        field: str("field"),
+        unitKind: str("unit_kind"),
+        evidenceLevel: str("evidence_level"),
+        currency: str("currency"),
+        excerpt: str("excerpt"),
+      },
+    ];
+  });
+}
+
 export function mapCustodianFindingRow(value: unknown): CustodianFinding {
   const row = asRecord(value, "finding");
   owner(row);
@@ -382,6 +413,7 @@ export function mapCustodianFindingRow(value: unknown): CustodianFinding {
     assumptions: stringArray(row, "assumptions"),
     scopeLimits: stringArray(row, "scope_limits"),
     evidenceGaps: stringArray(row, "evidence_gaps"),
+    sourceCitations: sourceCitations(row),
     createdBy: text(row, "created_by"),
     updatedBy: text(row, "updated_by"),
     createdAt: timestamp(row, "created_at"),
@@ -524,7 +556,7 @@ const FULL_FINDING_EVIDENCE_SELECT =
 const FULL_ACTION_SELECT =
   "id,owner_id,case_id,title,description,status,priority,due_at,source_record_id,lifecycle_status,created_by,updated_by,created_at,updated_at";
 const FULL_FINDING_SELECT =
-  "id,owner_id,case_id,analysis_mode,title,finding,confidence,what_would_change_mind,revisit_condition,source_record_id,status,lifecycle_status,origin_kind,analysis_outcome,origin_run_id,origin_step_id,candidate_index,analysis_result_hash,uncertainties,assumptions,scope_limits,evidence_gaps,created_by,updated_by,created_at,updated_at";
+  "id,owner_id,case_id,analysis_mode,title,finding,confidence,what_would_change_mind,revisit_condition,source_record_id,status,lifecycle_status,origin_kind,analysis_outcome,origin_run_id,origin_step_id,candidate_index,analysis_result_hash,uncertainties,assumptions,scope_limits,evidence_gaps,source_citations,created_by,updated_by,created_at,updated_at";
 const FULL_REVISION_SELECT =
   "id,owner_id,record_id,revision_number,operation,snapshot,changed_by,changed_at";
 

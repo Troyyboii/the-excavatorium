@@ -377,10 +377,31 @@ export type CustodianFindingRow = {
   assumptions: string[];
   scope_limits: string[];
   evidence_gaps: string[];
+  /** Absent on rows read before source citations existed. */
+  source_citations?: unknown;
   created_by: string;
   updated_by: string;
   created_at: string;
   updated_at: string;
+};
+
+/**
+ * A Finding's citation of one admitted source unit (an extracted claim or note
+ * from an owner-selected archive record). It is archive-level evidence: not
+ * the original source text and not independently verified.
+ */
+export type CustodianFindingSourceCitation = {
+  ref: string;
+  relationship: "supporting" | "contrary";
+  recordId: string;
+  recordType: string;
+  recordTitle: string;
+  selectionIndex: number;
+  field: string;
+  unitKind: string;
+  evidenceLevel: string;
+  currency: string;
+  excerpt: string;
 };
 
 export type CustodianFinding = {
@@ -405,6 +426,7 @@ export type CustodianFinding = {
   assumptions: string[];
   scopeLimits: string[];
   evidenceGaps: string[];
+  sourceCitations: CustodianFindingSourceCitation[];
   createdBy: string;
   updatedBy: string;
   createdAt: string;

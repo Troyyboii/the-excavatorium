@@ -5,6 +5,7 @@ import {
   type CustodianRunRead,
 } from "./custodian-runtime";
 import { isRuntimeRunState, MODEL_ALLOWLIST, type ModelTier } from "./custodian-runtime-types";
+import { classifyRunStop } from "./custodian-analysis-outcome";
 import { supabase } from "./supabase";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -428,11 +429,17 @@ export function describeReadonlyAnalysisResult(result: ReadonlyAnalysisStartResu
   if (result.holdResolved !== true) {
     return `UNKNOWN/INDETERMINATE. Persisted run ${result.runId} is at ${result.status}. Recorded usage is unclaimed. The invocation outcome is not established.`;
   }
+  const stop = classifyRunStop(result.failureCode);
+  if (stop && result.status !== "completed") {
+    return `${stop.label} Persisted run ${result.runId} stopped at ${result.status}.${
+      result.usageUnclaimed ? " Recorded usage is not claimed." : ""
+    }`;
+  }
   const failure = result.failureCode ? ` Failure ${result.failureCode}.` : "";
   const usage = result.usageUnclaimed ? " Recorded usage is not claimed." : "";
   // Plain language for the ordinary success; run ids stay in Advanced / Run Room.
   if (result.status === "completed" && !result.failureCode) {
-    return `Analysis completed successfully.${usage}`;
+    return `Analysis finished.${usage} Each Finding states what it cites; one that cites nothing is not a supported answer.`;
   }
   return `Persisted run ${result.runId} stopped at ${result.status}.${failure}${usage}`;
 }
