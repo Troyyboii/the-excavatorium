@@ -33,7 +33,7 @@ import {
 
 export { classifyOpenAiHttpFailure } from "./openai-diagnostics.ts";
 export { OPENAI_RESPONSES_URL } from "./openai-provider.ts";
-export const PROVIDER_ATTEMPT_TIMEOUT_MS = 25_000;
+export const PROVIDER_ATTEMPT_TIMEOUT_MS = 55_000;
 
 export function boundedProviderTimeoutMs(
   remainingLatencyMs: number,

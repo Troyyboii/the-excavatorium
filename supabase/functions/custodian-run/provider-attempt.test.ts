@@ -1285,7 +1285,8 @@ Deno.test("remaining latency blocks contact and caps the provider timeout", asyn
   assertEquals(boundedProviderTimeoutMs(20), 20);
   assertEquals(boundedProviderTimeoutMs(20, 30), 20);
   assertEquals(boundedProviderTimeoutMs(60_000), PROVIDER_ATTEMPT_TIMEOUT_MS);
-  assertEquals(boundedProviderTimeoutMs(60_000, 30_000), PROVIDER_ATTEMPT_TIMEOUT_MS);
+  assertEquals(boundedProviderTimeoutMs(60_000, 30_000), 30_000);
+  assertEquals(boundedProviderTimeoutMs(60_000, 90_000), PROVIDER_ATTEMPT_TIMEOUT_MS);
   assertEquals(boundedProviderTimeoutMs(60_000, 30), 30);
 
   const exhausted = world();
