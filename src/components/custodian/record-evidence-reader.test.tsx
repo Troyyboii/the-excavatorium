@@ -178,6 +178,7 @@ describe("Record evidence display", () => {
       assumptions: [],
       scopeLimits: [],
       evidenceGaps: [],
+      sourceCitations: [],
       createdBy: "owner-1",
       updatedBy: "owner-1",
       createdAt: "2026-08-11T19:00:00.000Z",

@@ -23,8 +23,10 @@ import {
   type ProviderFetch,
   type SynthesisRequestParams,
 } from "./openai-provider.ts";
+import { preflightSnapshot } from "./preflight.ts";
 import {
   citableEvidenceIdsFromSnapshot,
+  citableSourceRefsFromSnapshot,
   classifySynthesisRejection,
   synthesisEvidenceIdsWithinSnapshot,
 } from "./openai-schema.ts";
@@ -431,6 +433,7 @@ export function providerFreeAdmissionSummary(snapshot: unknown): Record<string, 
     admittedRecordCount: count(record.admitted_records),
     excludedRecordCount: count(record.excluded_records),
     citableEvidenceCount: count(record.citable_evidence_ids),
+    citableSourceRefCount: count(record.citable_source_refs),
     truncated: record.truncated === true,
   };
 }
@@ -639,7 +642,15 @@ async function advanceRetrieval(
   run: SynthesisRun,
   invocationKey: string,
 ): Promise<AdvanceResult> {
-  const summary = providerFreeAdmissionSummary(run.input_snapshot);
+  // Provider-free: a snapshot that can only yield a non-answer is stopped here,
+  // before any reservation, hold or provider contact.
+  const preflight = preflightSnapshot(run.input_snapshot);
+  const summary = {
+    ...providerFreeAdmissionSummary(run.input_snapshot),
+    preflight: preflight.ok
+      ? { ok: true, warnings: preflight.warnings }
+      : { ok: false, code: preflight.code },
+  };
   const recorded = await io.recordStep({
     run,
     stepKind: "retrieve",
@@ -652,6 +663,17 @@ async function advanceRetrieval(
   });
   if (TERMINAL_STATES.has(recorded.run.status)) {
     return outcome(200, "stopped", recorded.run, emptyAccounting(recorded.run));
+  }
+  if (!preflight.ok) {
+    return transitionFailure(
+      io,
+      recorded.run,
+      invocationKey,
+      "blocked",
+      preflight.failureCode,
+      preflight.message,
+      emptyAccounting(recorded.run),
+    );
   }
   const next = await io.transitionRun(recorded.run, invocationKey, "synthesizing");
   return outcome(200, "advanced", next, emptyAccounting(next));
@@ -1388,6 +1410,7 @@ async function executeBoundedSynthesisAttempt(input: {
       },
       maxOutputTokens,
       citableEvidenceIds: citableEvidenceIdsFromSnapshot(run.input_snapshot),
+      citableSourceRefs: citableSourceRefsFromSnapshot(run.input_snapshot),
     });
     inputBytes = serializedRequestBytes(params);
   } catch {

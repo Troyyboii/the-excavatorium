@@ -297,6 +297,46 @@ last successful snapshot is shown after refresh failure, it is labeled stale. A 
 but unavailable record remains visible as unavailable rather than being silently
 dropped. These are correctness properties, not cosmetic error states.
 
+### Source-backed analysis contract (migration `20261014120000`)
+
+Before this change the provider snapshot carried only each selected record's title and
+a 2,000-character summary, and only case-linked `evidence_items` were citable. A run
+over records with no hand-made evidence items therefore reached the model nearly empty
+and the provider schema forbade an ordinary `finding`, so it completed with a generic
+`unresolved` / `evidence_gap` result. The repair keeps the read-only boundary: a run
+still creates no `evidence_items` and no archive rows.
+
+- **Admission.** `custodian_build_readonly_analysis_snapshot` emits `contract_version: 2`.
+  For each explicitly selected, owner-owned record it admits bounded **source units**
+  (one claim, note, decision or open loop each, at most 700 characters, at most 24 per
+  field) with refs `r<selection index>.<field code><n>`, a per-record `field_legend`
+  (field, unit kind, evidence level), provenance, currency (current/superseded),
+  document source-reference locators, and truncation/omission counts. The field map is
+  stated once in `src/lib/custodian-evidence-contract.ts`; `evidence-contract.test.ts`
+  fails if the SQL builder or `case-reading.ts` drifts from it. `rawConversationText`
+  and storage paths are never admitted. Linked records outside the scope are only
+  counted (`linked_records_not_admitted`), never read.
+- **Budget.** The provider hold counts request bytes as tokens, so the evidence budget
+  is derived from the owner's own per-run token ceiling (formula in the migration,
+  mirrored by `evidenceBudgetBytes`). Admission is deterministic: contrary / open /
+  uncertain material first (capped at 40% of the budget), then round-robin across
+  records ordered by overlap with the objective. At the product default (20,000
+  tokens) only a few kilobytes of claims fit; this is a stated limitation, not hidden.
+- **Citations.** A Finding cites admitted units through `supporting_source_refs` /
+  `contrary_source_refs`. `custodian_materialize_finding` resolves each ref against the
+  run's persisted snapshot (never against model-supplied record ids) and stores the
+  resolved citations in `custodian_findings.source_citations`. Evidence-item citations
+  work as before. Source units are archive-level material: extracted notes, not original
+  text and not independently verified. The prompt forbids inventing literature.
+- **Preflight.** `custodian-run/preflight.ts` runs in the retrieval stage, before any
+  reservation. Empty scope, unavailable records, no substantive content, no citable
+  material, an insufficient context budget or too little coverage move the run to
+  `blocked` with `failure_code = preflight_<reason>` and no provider call. A run that
+  reaches the provider and returns an evidence-backed `unresolved` is still `completed`.
+- **Presentation.** `src/lib/custodian-analysis-outcome.ts` separates supported,
+  meaningful uncertainty and insufficient-source results; a Finding that cites nothing
+  shows no numeric confidence.
+
 ## 9. Findings and reasoning
 
 A finding is a Custodian interpretation, not a canonical record fact. It must carry:
@@ -1103,6 +1143,12 @@ into release notes.
   concurrency proof and the contents of the verification step remain **UNVERIFIED**.
   M5 is not done. M4 is not **COMPLETE**. MCP run controls remain absent from the
   catalog (removed in 0.4.0); they are app-only.
+- Source-backed analysis is verified locally only (Postgres 16 with a Supabase shim,
+  Deno, Bun); the migration, Edge deployment and a live Structured Outputs request with the
+  new `*_source_refs` schema are **UNVERIFIED** in production. The MCP `get_findings`
+  projection does not yet return `source_citations`. At the 20,000-token product ceiling
+  the admitted claim volume is small; raising it is an owner decision (new policy name,
+  because the policy RPC rejects changed parameters on an existing name).
 - Owner Judgment recording is an open gap. The UI separates a Finding from the
   owner's decision, and `src/lib/investigation-view.ts` never marks the judgment
   step done because no recording path exists. The README beta limitations name the

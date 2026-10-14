@@ -222,6 +222,8 @@ Deno.test("the generated Structured Outputs format is strict, fixed, and authori
         "confidence",
         "supporting_evidence_ids",
         "contrary_evidence_ids",
+        "supporting_source_refs",
+        "contrary_source_refs",
         "uncertainties",
         "assumptions",
         "scope_limits",

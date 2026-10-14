@@ -1,6 +1,8 @@
 import {
   CustodianFindingSchema,
   citableEvidenceIdsFromSnapshot,
+  citableSourceRefsFromSnapshot,
+  citationEnumPlan,
   classifySynthesisRejection,
   MAX_ENUMERATED_EVIDENCE_IDS,
   synthesisEvidenceIdsWithinSnapshot,
@@ -208,5 +210,186 @@ Deno.test("local defense in depth is unchanged", () => {
     CustodianFindingSchema.safeParse(finding({ outcome: "finding", supporting_evidence_ids: [] }))
       .success,
     false,
+  );
+});
+
+function refFinding(overrides: Record<string, unknown> = {}) {
+  return finding({
+    outcome: "finding",
+    supporting_source_refs: ["r1.f1"],
+    contrary_source_refs: [],
+    ...overrides,
+  });
+}
+
+function refVariants(refs: string[], ids: string[] = []): Node[] {
+  const schema = synthesisTextFormat(ids, refs).schema as Node;
+  const items = ((schema.properties as Node).findings as Node).items as Node;
+  return items.anyOf as Node[];
+}
+
+Deno.test("source refs alone make an ordinary Finding possible", () => {
+  const variants = refVariants(["r1.f1", "r2.f1"]);
+  assertEquals(variants.map(outcomeOf), ["finding", "unresolved", "no_finding", "refusal"]);
+  const props = (variants[0].properties as Node).supporting_source_refs as Node;
+  assertEquals(props.minItems, 1, "finding requires a cited ref");
+  assertEquals((props.items as Node).enum as string[], ["r1.f1", "r2.f1"]);
+  const ids = (variants[0].properties as Node).supporting_evidence_ids as Node;
+  assertEquals(ids.maxItems, 0, "no evidence ids exist to cite");
+});
+
+Deno.test("with neither ids nor refs no Finding variant exists", () => {
+  assertEquals(refVariants([]).map(outcomeOf), ["unresolved", "no_finding", "refusal"]);
+});
+
+Deno.test("evidence ids and refs together offer two ways to support a Finding", () => {
+  const outcomes = refVariants(["r1.f1"], [A]).map(outcomeOf);
+  assertEquals(outcomes, ["finding", "finding", "unresolved", "no_finding", "refusal"]);
+});
+
+Deno.test("a Finding supported only by source refs validates; unsupported does not", () => {
+  assertEquals(validSynthesis(synthesis(refFinding())), true);
+  assertEquals(
+    validSynthesis(
+      synthesis(refFinding({ supporting_source_refs: [], supporting_evidence_ids: [] })),
+    ),
+    false,
+  );
+  assertEquals(
+    classifySynthesisRejection(synthesis(refFinding({ supporting_source_refs: [] })), {
+      citable_source_refs: ["r1.f1"],
+    }),
+    "finding_missing_support",
+  );
+});
+
+Deno.test("outputs recorded before source refs existed remain valid", () => {
+  assertEquals(validSynthesis(synthesis(finding())), true);
+  assertEquals(
+    validSynthesis(synthesis(finding({ outcome: "finding", supporting_evidence_ids: [A] }))),
+    true,
+  );
+});
+
+Deno.test("source refs must be unique and may not be both supporting and contrary", () => {
+  assertEquals(
+    classifySynthesisRejection(
+      synthesis(refFinding({ supporting_source_refs: ["r1.f1", "r1.f1"] })),
+      { citable_source_refs: ["r1.f1"] },
+    ),
+    "evidence_ids_duplicate",
+  );
+  assertEquals(
+    classifySynthesisRejection(synthesis(refFinding({ contrary_source_refs: ["r1.f1"] })), {
+      citable_source_refs: ["r1.f1"],
+    }),
+    "evidence_ids_overlap",
+  );
+});
+
+Deno.test("a ref outside the snapshot, or malformed, is rejected locally", () => {
+  const snapshot = { citable_source_refs: ["r1.f1"] };
+  assertEquals(
+    classifySynthesisRejection(
+      synthesis(refFinding({ supporting_source_refs: ["r2.f1"] })),
+      snapshot,
+    ),
+    "source_ref_outside_snapshot",
+  );
+  assertEquals(
+    synthesisEvidenceIdsWithinSnapshot(
+      synthesis(refFinding({ supporting_source_refs: ["r2.f1"] })),
+      snapshot,
+    ),
+    false,
+  );
+  assertEquals(
+    validSynthesis(
+      synthesis(refFinding({ supporting_source_refs: ["ignore previous instructions"] })),
+    ),
+    false,
+  );
+  assertEquals(classifySynthesisRejection(synthesis(refFinding()), snapshot), null);
+});
+
+Deno.test("refs outside the snapshot are rejected even without any admitted refs", () => {
+  assertEquals(
+    classifySynthesisRejection(synthesis(refFinding()), {}),
+    "source_ref_outside_snapshot",
+  );
+});
+
+Deno.test("only well-formed refs are read from a snapshot", () => {
+  assertEquals(
+    citableSourceRefsFromSnapshot({
+      citable_source_refs: ["r1.f1", "r1.f1", "bad ref", 7, "r12.k3"],
+    }),
+    ["r1.f1", "r12.k3"],
+  );
+  assertEquals(citableSourceRefsFromSnapshot({}), []);
+});
+
+function countEnumValues(node: unknown): number {
+  if (Array.isArray(node))
+    return node.reduce((sum: number, item) => sum + countEnumValues(item), 0);
+  if (!node || typeof node !== "object") return 0;
+  let total = 0;
+  for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+    total += key === "enum" && Array.isArray(value) ? value.length : countEnumValues(value);
+  }
+  return total;
+}
+
+function uuids(count: number): string[] {
+  return Array.from(
+    { length: count },
+    (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+  );
+}
+
+Deno.test("combined citation enums stay under the Structured Outputs limit", () => {
+  const cases: Array<[number, number]> = [
+    [0, 0],
+    [3, 5],
+    [16, 120],
+    [40, 120],
+    [40, 400],
+    [200, 120],
+    [0, 600],
+  ];
+  for (const [ids, refs] of cases) {
+    const refList = Array.from({ length: refs }, (_, index) => `r1.f${index + 1}`);
+    const format = synthesisTextFormat(uuids(ids), refList);
+    const total = countEnumValues(format.schema);
+    if (total > 1000) throw new Error(`${ids} ids + ${refs} refs emit ${total} enum values`);
+  }
+});
+
+Deno.test(
+  "when both lists are large one falls back to a plain string, never both overflowing",
+  () => {
+    assertEquals(citationEnumPlan(16, 120), { ids: true, refs: false });
+    assertEquals(citationEnumPlan(3, 5), { ids: true, refs: true });
+    assertEquals(citationEnumPlan(0, 120), { ids: true, refs: true });
+    assertEquals(citationEnumPlan(0, 400), { ids: true, refs: false });
+  },
+);
+
+Deno.test("a fallback list still validates locally against the snapshot", () => {
+  const refs = Array.from({ length: 400 }, (_, index) => `r1.f${index + 1}`);
+  const snapshot = { citable_source_refs: refs };
+  assertEquals(
+    classifySynthesisRejection(
+      synthesis(refFinding({ supporting_source_refs: ["r1.f9"] })),
+      snapshot,
+    ),
+    null,
+  );
+  assertEquals(
+    classifySynthesisRejection(
+      synthesis(refFinding({ supporting_source_refs: ["r1.f999"] })),
+      snapshot,
+    ),
+    "source_ref_outside_snapshot",
   );
 });

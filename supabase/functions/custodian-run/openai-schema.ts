@@ -63,6 +63,20 @@ function evidenceIdList() {
     .max(32);
 }
 
+/** Bounded, short ref of an admitted source unit, for example "r1.f3". */
+const SOURCE_REF_RE = /^r[0-9]{1,3}\.[a-z][0-9]{0,3}$/;
+
+function sourceRefList() {
+  return z
+    .array(
+      z
+        .string()
+        .refine((value) => SOURCE_REF_RE.test(value))
+        .describe("Ref of an admitted source unit in this snapshot, for example r1.f3."),
+    )
+    .max(32);
+}
+
 function uniqueStrings(values: string[]): boolean {
   return new Set(values).size === values.length;
 }
@@ -70,9 +84,15 @@ function uniqueStrings(values: string[]): boolean {
 function evidenceIdsDoNotOverlap(finding: {
   supporting_evidence_ids: string[];
   contrary_evidence_ids: string[];
+  supporting_source_refs: string[];
+  contrary_source_refs: string[];
 }): boolean {
   const contrary = new Set(finding.contrary_evidence_ids);
-  return finding.supporting_evidence_ids.every((id) => !contrary.has(id));
+  const contraryRefs = new Set(finding.contrary_source_refs);
+  return (
+    finding.supporting_evidence_ids.every((id) => !contrary.has(id)) &&
+    finding.supporting_source_refs.every((ref) => !contraryRefs.has(ref))
+  );
 }
 
 export const CustodianFindingSchema = z
@@ -84,6 +104,9 @@ export const CustodianFindingSchema = z
     confidence: z.int().min(0).max(100),
     supporting_evidence_ids: evidenceIdList(),
     contrary_evidence_ids: evidenceIdList(),
+    // Absent in outputs recorded before source-unit citations existed.
+    supporting_source_refs: sourceRefList().default([]),
+    contrary_source_refs: sourceRefList().default([]),
     uncertainties: nonBlankTextList(32, 1_000),
     assumptions: nonBlankTextList(32, 1_000),
     scope_limits: nonBlankTextList(32, 1_000),
@@ -92,7 +115,9 @@ export const CustodianFindingSchema = z
     revisit_condition: boundedText(10_000),
   })
   .refine(
-    (finding) => finding.outcome !== "finding" || finding.supporting_evidence_ids.length > 0,
+    (finding) =>
+      finding.outcome !== "finding" ||
+      finding.supporting_evidence_ids.length + finding.supporting_source_refs.length > 0,
     { message: REFINE_FINDING_SUPPORT },
   )
   .refine(
@@ -105,7 +130,9 @@ export const CustodianFindingSchema = z
   .refine(
     (finding) =>
       uniqueStrings(finding.supporting_evidence_ids) &&
-      uniqueStrings(finding.contrary_evidence_ids),
+      uniqueStrings(finding.contrary_evidence_ids) &&
+      uniqueStrings(finding.supporting_source_refs) &&
+      uniqueStrings(finding.contrary_source_refs),
     { message: REFINE_UNIQUE },
   )
   .refine(evidenceIdsDoNotOverlap, { message: REFINE_OVERLAP });
@@ -128,6 +155,18 @@ export const SYNTHESIS_FORMAT_NAME = "custodian_synthesis";
  * Local snapshot validation still rejects any id outside the admitted set.
  */
 export const MAX_ENUMERATED_EVIDENCE_IDS = 40;
+/** Refs are short, so more of them can be enumerated; local validation is unchanged. */
+export const MAX_ENUMERATED_SOURCE_REFS = 120;
+/**
+ * Structured Outputs allows 1,000 enum values in total. Every admitted id or ref
+ * is repeated in up to this many outcome-variant slots, and the fixed outcome,
+ * analysis-mode and approval enums take the reserve. The two citation lists
+ * share this budget, so one falls back to a plain string rather than the
+ * request being rejected. Local validation is unchanged either way.
+ */
+export const PROVIDER_ENUM_VALUE_LIMIT = 1000;
+export const CITATION_ENUM_REPEATS = 7;
+export const CITATION_ENUM_RESERVE = 70;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -138,13 +177,45 @@ export function citableEvidenceIdsFromSnapshot(snapshot: Record<string, unknown>
   return [...new Set(raw.filter((id): id is string => typeof id === "string" && UUID_RE.test(id)))];
 }
 
-function providerEvidenceIds(citable: readonly string[], required: boolean) {
+/** The admitted source-unit refs a synthesis may cite, read from the persisted snapshot. */
+export function citableSourceRefsFromSnapshot(snapshot: Record<string, unknown>): string[] {
+  const raw = snapshot.citable_source_refs;
+  if (!Array.isArray(raw)) return [];
+  return [
+    ...new Set(
+      raw.filter((ref): ref is string => typeof ref === "string" && SOURCE_REF_RE.test(ref)),
+    ),
+  ];
+}
+
+/** Which citation lists may be enumerated without exceeding the combined enum budget. */
+export function citationEnumPlan(
+  idCount: number,
+  refCount: number,
+): {
+  ids: boolean;
+  refs: boolean;
+} {
+  const room = (count: number) =>
+    count * CITATION_ENUM_REPEATS + CITATION_ENUM_RESERVE <= PROVIDER_ENUM_VALUE_LIMIT;
+  const ids = idCount <= MAX_ENUMERATED_EVIDENCE_IDS && room(idCount);
+  const refs = refCount <= MAX_ENUMERATED_SOURCE_REFS && room((ids ? idCount : 0) + refCount);
+  return { ids, refs };
+}
+
+function providerSourceRefs(citable: readonly string[], required: boolean, enumerate: boolean) {
+  if (citable.length === 0) return emptyEvidenceIds();
+  const item = enumerate
+    ? z.enum(citable as [string, ...string[]])
+    : z.string().refine((value) => SOURCE_REF_RE.test(value));
+  const list = z.array(item).max(32);
+  return required ? list.min(1) : list;
+}
+
+function providerEvidenceIds(citable: readonly string[], required: boolean, enumerate: boolean) {
   // Nothing admitted: no id is legitimate, so the array itself must be empty.
   if (citable.length === 0) return emptyEvidenceIds();
-  const item =
-    citable.length <= MAX_ENUMERATED_EVIDENCE_IDS
-      ? z.enum(citable as [string, ...string[]])
-      : z.string().uuid();
+  const item = enumerate ? z.enum(citable as [string, ...string[]]) : z.string().uuid();
   const list = z.array(item).max(32);
   return required ? list.min(1) : list;
 }
@@ -165,6 +236,8 @@ function providerFindingVariant(
   evidence: {
     supporting: ReturnType<typeof providerEvidenceIds> | ReturnType<typeof emptyEvidenceIds>;
     contrary: ReturnType<typeof providerEvidenceIds> | ReturnType<typeof emptyEvidenceIds>;
+    supportingRefs: ReturnType<typeof providerEvidenceIds> | ReturnType<typeof emptyEvidenceIds>;
+    contraryRefs: ReturnType<typeof providerEvidenceIds> | ReturnType<typeof emptyEvidenceIds>;
   },
   uncertaintiesRequired: boolean,
 ) {
@@ -177,6 +250,8 @@ function providerFindingVariant(
     confidence: z.int().min(0).max(100),
     supporting_evidence_ids: evidence.supporting,
     contrary_evidence_ids: evidence.contrary,
+    supporting_source_refs: evidence.supportingRefs,
+    contrary_source_refs: evidence.contraryRefs,
     uncertainties: uncertaintiesRequired ? uncertainties.min(1) : uncertainties,
     assumptions: nonBlankTextList(32, 1_000),
     scope_limits: nonBlankTextList(32, 1_000),
@@ -186,36 +261,68 @@ function providerFindingVariant(
   });
 }
 
-export function providerSynthesisSchema(citableEvidenceIds: readonly string[]) {
+export function providerSynthesisSchema(
+  citableEvidenceIds: readonly string[],
+  citableSourceRefs: readonly string[] = [],
+) {
+  const noneIds = emptyEvidenceIds();
+  const noneRefs = emptyEvidenceIds();
+  const plan = citationEnumPlan(citableEvidenceIds.length, citableSourceRefs.length);
+  const ids = (required: boolean) => providerEvidenceIds(citableEvidenceIds, required, plan.ids);
+  const refs = (required: boolean) => providerSourceRefs(citableSourceRefs, required, plan.refs);
   const variants = [
     providerFindingVariant(
       "unresolved",
       {
-        supporting: providerEvidenceIds(citableEvidenceIds, false),
-        contrary: providerEvidenceIds(citableEvidenceIds, false),
+        supporting: ids(false),
+        contrary: ids(false),
+        supportingRefs: refs(false),
+        contraryRefs: refs(false),
       },
       true,
     ),
     providerFindingVariant(
       "no_finding",
-      { supporting: emptyEvidenceIds(), contrary: providerEvidenceIds(citableEvidenceIds, false) },
+      {
+        supporting: noneIds,
+        contrary: ids(false),
+        supportingRefs: noneRefs,
+        contraryRefs: refs(false),
+      },
       false,
     ),
     providerFindingVariant(
       "refusal",
-      { supporting: emptyEvidenceIds(), contrary: emptyEvidenceIds() },
+      { supporting: noneIds, contrary: noneIds, supportingRefs: noneRefs, contraryRefs: noneRefs },
       false,
     ),
   ];
-  // A Finding needs at least one supporting id from the admitted set. With no
-  // admitted evidence it cannot be produced at all, so the variant is omitted.
+  // A Finding needs at least one supporting citation: an admitted evidence id
+  // or an admitted source-unit ref. With neither admitted it cannot be produced
+  // at all, so the variants are omitted.
+  if (citableSourceRefs.length > 0) {
+    variants.unshift(
+      providerFindingVariant(
+        "finding",
+        {
+          supporting: ids(false),
+          contrary: ids(false),
+          supportingRefs: refs(true),
+          contraryRefs: refs(false),
+        },
+        false,
+      ),
+    );
+  }
   if (citableEvidenceIds.length > 0) {
     variants.unshift(
       providerFindingVariant(
         "finding",
         {
-          supporting: providerEvidenceIds(citableEvidenceIds, true),
-          contrary: providerEvidenceIds(citableEvidenceIds, false),
+          supporting: ids(true),
+          contrary: ids(false),
+          supportingRefs: refs(false),
+          contraryRefs: refs(false),
         },
         false,
       ),
@@ -230,8 +337,14 @@ export function providerSynthesisSchema(citableEvidenceIds: readonly string[]) {
 }
 
 /** Snapshot-aware Structured Outputs format for one provider attempt. */
-export function synthesisTextFormat(citableEvidenceIds: readonly string[]) {
-  return zodTextFormat(providerSynthesisSchema(citableEvidenceIds), SYNTHESIS_FORMAT_NAME);
+export function synthesisTextFormat(
+  citableEvidenceIds: readonly string[],
+  citableSourceRefs: readonly string[] = [],
+) {
+  return zodTextFormat(
+    providerSynthesisSchema(citableEvidenceIds, citableSourceRefs),
+    SYNTHESIS_FORMAT_NAME,
+  );
 }
 
 export type SynthesisRejectionReason =
@@ -242,7 +355,8 @@ export type SynthesisRejectionReason =
   | "unresolved_missing_uncertainty"
   | "evidence_ids_duplicate"
   | "evidence_ids_overlap"
-  | "evidence_id_outside_snapshot";
+  | "evidence_id_outside_snapshot"
+  | "source_ref_outside_snapshot";
 
 const REFINE_REASONS: Record<string, SynthesisRejectionReason> = {
   [REFINE_FINDING_SUPPORT]: "finding_missing_support",
@@ -273,16 +387,17 @@ export function classifySynthesisRejection(
     }
     return reason;
   }
-  return synthesisEvidenceIdsWithinSnapshot(value, snapshot)
-    ? null
-    : "evidence_id_outside_snapshot";
+  if (!synthesisEvidenceIdsOnlyWithinSnapshot(value, snapshot))
+    return "evidence_id_outside_snapshot";
+  if (!synthesisSourceRefsWithinSnapshot(value, snapshot)) return "source_ref_outside_snapshot";
+  return null;
 }
 
 export function validFindingCandidate(value: unknown): boolean {
   return CustodianFindingSchema.safeParse(value).success;
 }
 
-export function synthesisEvidenceIdsWithinSnapshot(
+function synthesisEvidenceIdsOnlyWithinSnapshot(
   value: unknown,
   snapshot: Record<string, unknown>,
 ): boolean {
@@ -298,6 +413,31 @@ export function synthesisEvidenceIdsWithinSnapshot(
     (finding) =>
       finding.supporting_evidence_ids.every((id) => allowed.has(id)) &&
       finding.contrary_evidence_ids.every((id) => allowed.has(id)),
+  );
+}
+
+function synthesisSourceRefsWithinSnapshot(
+  value: unknown,
+  snapshot: Record<string, unknown>,
+): boolean {
+  const parsed = CustodianSynthesisSchema.safeParse(value);
+  if (!parsed.success) return false;
+  const allowed = new Set(citableSourceRefsFromSnapshot(snapshot));
+  return parsed.data.findings.every(
+    (finding) =>
+      finding.supporting_source_refs.every((ref) => allowed.has(ref)) &&
+      finding.contrary_source_refs.every((ref) => allowed.has(ref)),
+  );
+}
+
+/** Every cited evidence id and source-unit ref must have been admitted to this run's snapshot. */
+export function synthesisEvidenceIdsWithinSnapshot(
+  value: unknown,
+  snapshot: Record<string, unknown>,
+): boolean {
+  return (
+    synthesisEvidenceIdsOnlyWithinSnapshot(value, snapshot) &&
+    synthesisSourceRefsWithinSnapshot(value, snapshot)
   );
 }
 
