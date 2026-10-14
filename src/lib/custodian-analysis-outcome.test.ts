@@ -54,6 +54,21 @@ describe("finding outcome classes", () => {
     expect(view?.kind).toBe("supported");
   });
 
+  test("a result resting only on contrary evidence still cites what it weighed", () => {
+    const viaLink = classifyFindingOutcome(
+      { originKind: "analysis", analysisOutcome: "unresolved", sourceCitations: [] },
+      [{ relationshipKind: "contrary" }],
+    );
+    expect(viaLink?.kind).toBe("meaningful_uncertainty");
+    expect(viaLink?.showNumericConfidence).toBe(true);
+    const viaCitation = classifyFindingOutcome({
+      originKind: "analysis",
+      analysisOutcome: "unresolved",
+      sourceCitations: [{ ...citation, relationship: "contrary" }],
+    });
+    expect(viaCitation?.kind).toBe("meaningful_uncertainty");
+  });
+
   test("owner-authored and legacy findings are not classified", () => {
     for (const originKind of ["owner_authored", "legacy"] as const) {
       expect(

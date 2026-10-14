@@ -157,6 +157,16 @@ export const SYNTHESIS_FORMAT_NAME = "custodian_synthesis";
 export const MAX_ENUMERATED_EVIDENCE_IDS = 40;
 /** Refs are short, so more of them can be enumerated; local validation is unchanged. */
 export const MAX_ENUMERATED_SOURCE_REFS = 120;
+/**
+ * Structured Outputs allows 1,000 enum values in total. Every admitted id or ref
+ * is repeated in up to this many outcome-variant slots, and the fixed outcome,
+ * analysis-mode and approval enums take the reserve. The two citation lists
+ * share this budget, so one falls back to a plain string rather than the
+ * request being rejected. Local validation is unchanged either way.
+ */
+export const PROVIDER_ENUM_VALUE_LIMIT = 1000;
+export const CITATION_ENUM_REPEATS = 7;
+export const CITATION_ENUM_RESERVE = 70;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -178,23 +188,34 @@ export function citableSourceRefsFromSnapshot(snapshot: Record<string, unknown>)
   ];
 }
 
-function providerSourceRefs(citable: readonly string[], required: boolean) {
+/** Which citation lists may be enumerated without exceeding the combined enum budget. */
+export function citationEnumPlan(
+  idCount: number,
+  refCount: number,
+): {
+  ids: boolean;
+  refs: boolean;
+} {
+  const room = (count: number) =>
+    count * CITATION_ENUM_REPEATS + CITATION_ENUM_RESERVE <= PROVIDER_ENUM_VALUE_LIMIT;
+  const ids = idCount <= MAX_ENUMERATED_EVIDENCE_IDS && room(idCount);
+  const refs = refCount <= MAX_ENUMERATED_SOURCE_REFS && room((ids ? idCount : 0) + refCount);
+  return { ids, refs };
+}
+
+function providerSourceRefs(citable: readonly string[], required: boolean, enumerate: boolean) {
   if (citable.length === 0) return emptyEvidenceIds();
-  const item =
-    citable.length <= MAX_ENUMERATED_SOURCE_REFS
-      ? z.enum(citable as [string, ...string[]])
-      : z.string().refine((value) => SOURCE_REF_RE.test(value));
+  const item = enumerate
+    ? z.enum(citable as [string, ...string[]])
+    : z.string().refine((value) => SOURCE_REF_RE.test(value));
   const list = z.array(item).max(32);
   return required ? list.min(1) : list;
 }
 
-function providerEvidenceIds(citable: readonly string[], required: boolean) {
+function providerEvidenceIds(citable: readonly string[], required: boolean, enumerate: boolean) {
   // Nothing admitted: no id is legitimate, so the array itself must be empty.
   if (citable.length === 0) return emptyEvidenceIds();
-  const item =
-    citable.length <= MAX_ENUMERATED_EVIDENCE_IDS
-      ? z.enum(citable as [string, ...string[]])
-      : z.string().uuid();
+  const item = enumerate ? z.enum(citable as [string, ...string[]]) : z.string().uuid();
   const list = z.array(item).max(32);
   return required ? list.min(1) : list;
 }
@@ -246,14 +267,17 @@ export function providerSynthesisSchema(
 ) {
   const noneIds = emptyEvidenceIds();
   const noneRefs = emptyEvidenceIds();
+  const plan = citationEnumPlan(citableEvidenceIds.length, citableSourceRefs.length);
+  const ids = (required: boolean) => providerEvidenceIds(citableEvidenceIds, required, plan.ids);
+  const refs = (required: boolean) => providerSourceRefs(citableSourceRefs, required, plan.refs);
   const variants = [
     providerFindingVariant(
       "unresolved",
       {
-        supporting: providerEvidenceIds(citableEvidenceIds, false),
-        contrary: providerEvidenceIds(citableEvidenceIds, false),
-        supportingRefs: providerSourceRefs(citableSourceRefs, false),
-        contraryRefs: providerSourceRefs(citableSourceRefs, false),
+        supporting: ids(false),
+        contrary: ids(false),
+        supportingRefs: refs(false),
+        contraryRefs: refs(false),
       },
       true,
     ),
@@ -261,9 +285,9 @@ export function providerSynthesisSchema(
       "no_finding",
       {
         supporting: noneIds,
-        contrary: providerEvidenceIds(citableEvidenceIds, false),
+        contrary: ids(false),
         supportingRefs: noneRefs,
-        contraryRefs: providerSourceRefs(citableSourceRefs, false),
+        contraryRefs: refs(false),
       },
       false,
     ),
@@ -281,10 +305,10 @@ export function providerSynthesisSchema(
       providerFindingVariant(
         "finding",
         {
-          supporting: providerEvidenceIds(citableEvidenceIds, false),
-          contrary: providerEvidenceIds(citableEvidenceIds, false),
-          supportingRefs: providerSourceRefs(citableSourceRefs, true),
-          contraryRefs: providerSourceRefs(citableSourceRefs, false),
+          supporting: ids(false),
+          contrary: ids(false),
+          supportingRefs: refs(true),
+          contraryRefs: refs(false),
         },
         false,
       ),
@@ -295,10 +319,10 @@ export function providerSynthesisSchema(
       providerFindingVariant(
         "finding",
         {
-          supporting: providerEvidenceIds(citableEvidenceIds, true),
-          contrary: providerEvidenceIds(citableEvidenceIds, false),
-          supportingRefs: providerSourceRefs(citableSourceRefs, false),
-          contraryRefs: providerSourceRefs(citableSourceRefs, false),
+          supporting: ids(true),
+          contrary: ids(false),
+          supportingRefs: refs(false),
+          contraryRefs: refs(false),
         },
         false,
       ),

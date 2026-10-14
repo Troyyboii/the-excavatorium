@@ -2,6 +2,7 @@ import {
   CustodianFindingSchema,
   citableEvidenceIdsFromSnapshot,
   citableSourceRefsFromSnapshot,
+  citationEnumPlan,
   classifySynthesisRejection,
   MAX_ENUMERATED_EVIDENCE_IDS,
   synthesisEvidenceIdsWithinSnapshot,
@@ -326,4 +327,69 @@ Deno.test("only well-formed refs are read from a snapshot", () => {
     ["r1.f1", "r12.k3"],
   );
   assertEquals(citableSourceRefsFromSnapshot({}), []);
+});
+
+function countEnumValues(node: unknown): number {
+  if (Array.isArray(node))
+    return node.reduce((sum: number, item) => sum + countEnumValues(item), 0);
+  if (!node || typeof node !== "object") return 0;
+  let total = 0;
+  for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+    total += key === "enum" && Array.isArray(value) ? value.length : countEnumValues(value);
+  }
+  return total;
+}
+
+function uuids(count: number): string[] {
+  return Array.from(
+    { length: count },
+    (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+  );
+}
+
+Deno.test("combined citation enums stay under the Structured Outputs limit", () => {
+  const cases: Array<[number, number]> = [
+    [0, 0],
+    [3, 5],
+    [16, 120],
+    [40, 120],
+    [40, 400],
+    [200, 120],
+    [0, 600],
+  ];
+  for (const [ids, refs] of cases) {
+    const refList = Array.from({ length: refs }, (_, index) => `r1.f${index + 1}`);
+    const format = synthesisTextFormat(uuids(ids), refList);
+    const total = countEnumValues(format.schema);
+    if (total > 1000) throw new Error(`${ids} ids + ${refs} refs emit ${total} enum values`);
+  }
+});
+
+Deno.test(
+  "when both lists are large one falls back to a plain string, never both overflowing",
+  () => {
+    assertEquals(citationEnumPlan(16, 120), { ids: true, refs: false });
+    assertEquals(citationEnumPlan(3, 5), { ids: true, refs: true });
+    assertEquals(citationEnumPlan(0, 120), { ids: true, refs: true });
+    assertEquals(citationEnumPlan(0, 400), { ids: true, refs: false });
+  },
+);
+
+Deno.test("a fallback list still validates locally against the snapshot", () => {
+  const refs = Array.from({ length: 400 }, (_, index) => `r1.f${index + 1}`);
+  const snapshot = { citable_source_refs: refs };
+  assertEquals(
+    classifySynthesisRejection(
+      synthesis(refFinding({ supporting_source_refs: ["r1.f9"] })),
+      snapshot,
+    ),
+    null,
+  );
+  assertEquals(
+    classifySynthesisRejection(
+      synthesis(refFinding({ supporting_source_refs: ["r1.f999"] })),
+      snapshot,
+    ),
+    "source_ref_outside_snapshot",
+  );
 });

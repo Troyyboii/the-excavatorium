@@ -69,6 +69,8 @@ export type CustodianCollectionOptions = {
   pageSize?: number;
   maxPages?: number;
   sourceRecordId?: string;
+  /** Findings whose source_citations cite this archive record. */
+  citedRecordId?: string;
   ids?: readonly string[];
   claimIds?: readonly string[];
   evidenceIds?: readonly string[];
@@ -520,6 +522,9 @@ async function fetchOwnerCollection<Row, Domain>(
       if (options?.sourceRecordId !== undefined) {
         query = query.eq("source_record_id", options.sourceRecordId);
       }
+      if (options?.citedRecordId !== undefined) {
+        query = query.contains("source_citations", [{ record_id: options.citedRecordId }]);
+      }
       if (options?.ids !== undefined) query = query.in("id", options.ids);
       if (options?.claimIds !== undefined) query = query.in("claim_id", options.claimIds);
       if (options?.evidenceIds !== undefined) {
@@ -659,10 +664,11 @@ export async function fetchCustodianRecordContext(
   if (!ownerId.trim()) throw new Error("ownerId is required for Custodian reads");
   if (!recordId.trim()) throw new Error("recordId is required for Custodian reads");
 
-  const [claims, evidence, sourceRecordFindings] = await Promise.all([
+  const [claims, evidence, sourceRecordFindings, citingFindings] = await Promise.all([
     fetchCustodianClaims(ownerId, { sourceRecordId: recordId }),
     fetchCustodianEvidence(ownerId, { sourceRecordId: recordId }),
     fetchCustodianFindings(ownerId, { sourceRecordId: recordId }),
+    fetchCustodianFindings(ownerId, { citedRecordId: recordId }),
   ]);
 
   const evidenceIds = evidence.map((entry) => entry.id);
@@ -672,6 +678,7 @@ export async function fetchCustodianRecordContext(
   const findingIds = [
     ...new Set([
       ...sourceRecordFindings.map((finding) => finding.id),
+      ...citingFindings.map((finding) => finding.id),
       ...findingEvidenceForRecord.map((link) => link.findingId),
     ]),
   ];

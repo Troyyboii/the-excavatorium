@@ -27,13 +27,9 @@ export function classifyFindingOutcome(
   evidenceLinks: readonly Pick<CustodianFindingEvidence, "relationshipKind">[] = [],
 ): FindingOutcomeView | null {
   if (finding.originKind !== "analysis") return null;
-  const supportingCitations = finding.sourceCitations.filter(
-    (citation) => citation.relationship === "supporting",
-  ).length;
-  const supportingEvidence = evidenceLinks.filter(
-    (link) => link.relationshipKind === "supporting",
-  ).length;
-  const cited = supportingCitations + supportingEvidence > 0 || finding.sourceCitations.length > 0;
+  // Any citation counts, supporting or contrary: a result that rests only on
+  // contrary material still cites what it was weighing.
+  const cited = finding.sourceCitations.length + evidenceLinks.length > 0;
   if (!cited) {
     return {
       kind: "insufficient_source",

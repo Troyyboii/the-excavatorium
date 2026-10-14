@@ -5,7 +5,7 @@
 -- admission, owner isolation, citation integrity and replay.
 begin;
 
-select plan(53);
+select plan(56);
 
 set local role postgres;
 
@@ -480,6 +480,28 @@ select is(
      'f1000000-0000-4000-8000-0000000000f5','f1000000-0000-4000-8000-0000000000f6','f1000000-0000-4000-8000-0000000000f7')),
   0,
   'T12 no rejected variant persisted a Finding'
+);
+
+-- The record reader finds source-cited Findings by the cited record (the same
+-- containment predicate the client sends: source_citations @> [{record_id}]).
+select is(
+  (select count(*)::integer from public.custodian_findings
+    where owner_id = 'a1000000-0000-4000-8000-000000000001'
+      and source_citations @> '[{"record_id":"c1000000-0000-4000-8000-0000000000c1"}]'::jsonb),
+  2,
+  'both Findings citing record 1 are found by citation, with no source_record_id and no evidence links'
+);
+select is(
+  (select count(*)::integer from public.custodian_findings
+    where source_citations @> '[{"record_id":"c2000000-0000-4000-8000-0000000000c2"}]'::jsonb),
+  1,
+  'a contrary citation also links the Finding to its record'
+);
+select is(
+  (select count(*)::integer from public.custodian_findings
+    where source_citations @> '[{"record_id":"c3000000-0000-4000-8000-0000000000c3"}]'::jsonb),
+  0,
+  'a record that was never cited finds no Finding'
 );
 
 -- Owner isolation of the result.
