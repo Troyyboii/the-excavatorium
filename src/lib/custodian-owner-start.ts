@@ -25,7 +25,7 @@ const MODEL_TIERS = Object.keys(MODEL_ALLOWLIST) as ModelTier[];
  * Must not equal the Advanced/Run Room draft name owners commonly type
  * (`owner-readonly`), or ensure-policy fails closed on parameter mismatch.
  */
-export const INVESTIGATION_READONLY_POLICY_NAME = "investigation-readonly";
+export const INVESTIGATION_READONLY_POLICY_NAME = "investigation-readonly-v2";
 
 /** @deprecated Alias kept for local imports that still name the constant OWNER_*. */
 export const OWNER_READONLY_POLICY_NAME = INVESTIGATION_READONLY_POLICY_NAME;
@@ -42,7 +42,10 @@ export const OWNER_READONLY_PROMPT_VERSION = INVESTIGATION_READONLY_PROMPT_VERSI
  * readonly policy RPC and stay owner-protecting (not operator-funded).
  */
 export const OWNER_READONLY_CEILINGS = {
-  perRunTokenBudget: 20_000,
+  // The provider hold counts request bytes as tokens, so 20k left room for ~4.5 KB of
+  // evidence (less than the record headers of a two-record case). 40k admits ~22 KB.
+  // A new policy name is required: ensure-policy fails closed on a parameter mismatch.
+  perRunTokenBudget: 40_000,
   perRunCostUsd: 1,
   perRunLatencyMs: 60_000,
   perRunToolEventBudget: 50,
