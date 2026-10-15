@@ -24,6 +24,7 @@ export type CustodianProviderHold = {
   actualCostUsd: number | null;
   pricingVersion: string;
   failureCode: string | null;
+  ownerAcknowledgedUnknownAt: string | null;
   inFlightUntil: string;
   updatedAt: string;
 };
@@ -210,6 +211,10 @@ export function mapProviderHoldRow(value: unknown): CustodianProviderHold {
     actualCostUsd: nullableNumber(row, "actual_cost_usd"),
     pricingVersion: text(row, "pricing_version"),
     failureCode: nullableText(row, "failure_code"),
+    ownerAcknowledgedUnknownAt:
+      row.owner_acknowledged_unknown_at === undefined
+        ? null
+        : nullableTimestamp(row, "owner_acknowledged_unknown_at"),
     inFlightUntil: timestamp(row, "in_flight_until"),
     updatedAt: timestamp(row, "updated_at"),
   };
@@ -400,10 +405,14 @@ export function describeCustodianRunAccounting(
           : String(run.tokensUsed),
     heldProviderBudget:
       hold?.status === "held"
-        ? `${formatUsd(hold.holdCostUsd)} encumbered · ${hold.holdTokens} tokens`
+        ? `${formatUsd(hold.holdCostUsd)} encumbered · ${hold.holdTokens} tokens${
+            hold.ownerAcknowledgedUnknownAt ? " (owner acknowledged; usage unknown)" : ""
+          }`
         : "None",
     usageKnowledge: unknown
-      ? "Unknown. Provider contact may already have happened."
+      ? hold?.ownerAcknowledgedUnknownAt
+        ? "Unknown. Owner acknowledged the unresolved provider usage; the original budget hold remains counted."
+        : "Unknown. Provider contact may already have happened."
       : known
         ? "Known recorded usage."
         : "No provider usage recorded.",
@@ -449,7 +458,7 @@ export async function invokeCustodianRun(input: CustodianRunInvocation): Promise
 const RUN_SELECT =
   "id,case_id,objective,model_tier,status,budget_tokens,budget_cost_usd,budget_latency_ms,budget_tool_events,tokens_used,cost_usd,latency_ms,tool_events_count,last_step_number,failure_code,failure_message,cancel_requested_at,created_at,updated_at";
 const HOLD_SELECT =
-  "id,run_id,status,usage_knowledge,hold_tokens,hold_cost_usd,actual_tokens,actual_cost_usd,pricing_version,failure_code,in_flight_until,updated_at";
+  "id,run_id,status,usage_knowledge,hold_tokens,hold_cost_usd,actual_tokens,actual_cost_usd,pricing_version,failure_code,owner_acknowledged_unknown_at,in_flight_until,updated_at";
 const STEP_SELECT = "run_id,step_kind,status,sequence_no";
 const DIAGNOSTIC_SELECT =
   "id,run_id,reservation_id,attempt_key,provider,contact_state,classification,http_status,request_id,error_type,error_code,error_param,incomplete_reason,created_at";

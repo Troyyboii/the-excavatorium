@@ -120,6 +120,7 @@ describe("readonly analysis start", () => {
       refreshRuns: async () => undefined,
     });
     expect(ports.surfaceEnabled).toBe(true);
+    expect(typeof ports.acknowledgeUnknownHold).toBe("function");
     const source = await Bun.file(new URL("./custodian-readonly-run.ts", import.meta.url)).text();
     expect(source).not.toMatch(/\.insert\(/);
     expect(source).not.toMatch(/\.update\(/);
@@ -956,6 +957,37 @@ describe("readonly analysis adversarial matrix", () => {
     expect(session.runIdempotencyKey()).toBe(runKey);
     expect(session.invocationKey()).toBe(invocationKey);
     expect(describeReadonlyAnalysisResult(first)).toContain("may already have happened");
+  });
+
+  test("an owner-acknowledged unknown reservation no longer blocks a fresh run", async () => {
+    const acknowledged = {
+      ...listedRun("failed", "available", "held", "unknown"),
+      ownerAcknowledgedUnknownAt: "2026-10-15T10:00:00.000Z",
+    };
+    const started = await startAfterListed(acknowledged);
+    expect(started.creates).toBe(1);
+    expect(started.invokes).toBe(1);
+    expect(started.result).toMatchObject({ ok: true, stop: "completed", holdResolved: true });
+
+    const unavailable = await startAfterListed({ ...acknowledged, holdProjection: "unavailable" });
+    expect(unavailable.creates).toBe(0);
+    expect(unavailable.invokes).toBe(0);
+    expect(unavailable.result).toMatchObject({ ok: false, reason: "unresolved_run" });
+  });
+
+  test("restarting a session after owner acknowledgement clears the stale resume id", async () => {
+    let nextKey = 0;
+    const session = createReadonlyAnalysisSession(() => `session-${++nextKey}`);
+    session.bindRun(RUN_ID);
+    session.finish(false);
+    expect(session.resumeRunId()).toBeNull();
+    expect(session.tryBegin()).toBe(true);
+    expect(session.resumeRunId()).toBe(RUN_ID);
+    session.finish(false);
+    session.restart();
+    expect(session.resumeRunId()).toBeNull();
+    expect(session.tryBegin()).toBe(true);
+    expect(session.resumeRunId()).toBeNull();
   });
 
   test("a fresh start succeeds after a confirmed pre-provider terminal run", async () => {

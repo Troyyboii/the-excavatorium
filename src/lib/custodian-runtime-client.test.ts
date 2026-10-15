@@ -124,6 +124,33 @@ describe("Custodian run read contract", () => {
     expect(accounting.usageKnowledge).toContain("Known");
   });
 
+  test("keeps an acknowledged unknown reservation visible and counted as an encumbrance", () => {
+    const run = {
+      ...mapCustodianRunRow({ ...runRow(), cost_usd: "0", tokens_used: "0" }),
+      providerHold: mapProviderHoldRow({
+        id: "00000000-0000-4000-8000-000000000010",
+        run_id: "00000000-0000-4000-8000-000000000001",
+        status: "held",
+        usage_knowledge: "unknown",
+        owner_acknowledged_unknown_at: "2026-10-15T10:00:00.000Z",
+        hold_tokens: 400,
+        hold_cost_usd: "0.0500",
+        actual_tokens: null,
+        actual_cost_usd: null,
+        pricing_version: "2026-09-21",
+        failure_code: "openai_timeout",
+        in_flight_until: "2026-09-21T19:02:00.000Z",
+        updated_at: "2026-09-21T19:00:30.000Z",
+      }),
+    };
+    const accounting = describeCustodianRunAccounting(run);
+    expect(accounting.recordedProviderCost).toBe("Not recorded");
+    expect(accounting.recordedProviderTokens).toBe("Not recorded");
+    expect(accounting.heldProviderBudget).toContain("$0.0500 encumbered · 400 tokens");
+    expect(accounting.heldProviderBudget).toContain("owner acknowledged; usage unknown");
+    expect(accounting.usageKnowledge).toContain("original budget hold remains counted");
+  });
+
   test("does not present a missing hold as recorded zero spend when the projection is unavailable", () => {
     const run = mapCustodianRunRow({
       ...{

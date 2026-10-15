@@ -16,6 +16,7 @@ import {
   type ReadonlyAnalysisStartResult,
 } from "@/lib/custodian-readonly-run";
 import type { CustodianRun, CustodianRunRead } from "@/lib/custodian-runtime";
+import { isTerminalRunState } from "@/lib/custodian-runtime-types";
 import { CUSTODIAN_RUN_SURFACE_CAN_INVOKE_PROVIDER } from "@/lib/custodian-runtime";
 import type { ProviderKeyStatus } from "@/lib/provider-key";
 
@@ -55,6 +56,9 @@ export function InvestigationAnalysisPanel({
   const busyRef = useRef(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ReadonlyAnalysisStartResult | null>(null);
+  const [confirmingRunId, setConfirmingRunId] = useState<string | null>(null);
+  const [acknowledgingRunId, setAcknowledgingRunId] = useState<string | null>(null);
+  const [acknowledgementMessage, setAcknowledgementMessage] = useState<string | null>(null);
 
   const analysisObjective = ownerAnalysisObjective(objective, currentQuestion);
   const readiness = settingsLoading
@@ -68,6 +72,16 @@ export function InvestigationAnalysisPanel({
       });
   const gateOpen = surfaceEnabled && ports?.surfaceEnabled === true;
   const caseRuns = runs.filter((run) => run.caseId === caseId);
+  const acknowledgeableRuns =
+    providerHoldProjection === "available"
+      ? caseRuns.filter(
+          (run) =>
+            isTerminalRunState(run.status) &&
+            run.providerHold?.status === "held" &&
+            run.providerHold.usageKnowledge === "unknown" &&
+            !run.providerHold.ownerAcknowledgedUnknownAt,
+        )
+      : [];
 
   let blockMessage: string | null = null;
   if (!online) {
@@ -112,6 +126,33 @@ export function InvestigationAnalysisPanel({
     } finally {
       busyRef.current = false;
       setBusy(false);
+    }
+  }
+
+  async function acknowledgeUnknownUsage(run: CustodianRun) {
+    const acknowledge = ports?.acknowledgeUnknownHold;
+    const reservationId = run.providerHold?.id;
+    if (!acknowledge || !reservationId || acknowledgingRunId) return;
+    setAcknowledgingRunId(run.id);
+    setAcknowledgementMessage(null);
+    try {
+      await acknowledge(reservationId);
+      session.restart();
+      setResult(null);
+      setConfirmingRunId(null);
+      try {
+        await ports.refreshRuns();
+      } catch {
+        setAcknowledgementMessage(
+          "Acknowledgement was saved, but the run list could not be refreshed. Reload this Investigation before starting again.",
+        );
+      }
+    } catch {
+      setAcknowledgementMessage(
+        "The acknowledgement could not be confirmed. Refresh the Investigation and check the reservation state before trying again.",
+      );
+    } finally {
+      setAcknowledgingRunId(null);
     }
   }
 
@@ -183,6 +224,75 @@ export function InvestigationAnalysisPanel({
           <p className="mt-0.5 break-words">{analysisObjective || "None recorded yet."}</p>
         </div>
 
+        {ports?.acknowledgeUnknownHold && acknowledgeableRuns.length ? (
+          <div className="space-y-3 border border-[color:var(--ember)]/50 bg-[color:var(--ember)]/10 p-4">
+            <h3 className="font-medium text-foreground">Unresolved provider usage</h3>
+            <p className="text-sm leading-6 text-muted-foreground">
+              A stopped analysis has an unsettled provider reservation. You can acknowledge its
+              actual usage is unknown so this Investigation can continue. This does not record zero
+              usage, and the original reserved amount remains counted against your budget.
+            </p>
+            {acknowledgementMessage ? (
+              <p role="alert" className="text-sm text-[color:var(--ember)]">
+                {acknowledgementMessage}
+              </p>
+            ) : null}
+            <ul className="space-y-3">
+              {acknowledgeableRuns.map((run) => {
+                const hold = run.providerHold;
+                if (!hold) return null;
+                const confirming = confirmingRunId === run.id;
+                return (
+                  <li key={run.id} className="border-t border-border pt-3 text-sm">
+                    <p className="text-foreground">
+                      Stopped run {run.id.slice(0, 8)} · {hold.holdTokens.toLocaleString()} tokens
+                      reserved · ${hold.holdCostUsd.toFixed(4)} reserved
+                    </p>
+                    {confirming ? (
+                      <div className="mt-2 space-y-2">
+                        <p className="leading-6 text-muted-foreground">
+                          Confirm that you understand the provider may already have processed this
+                          request. Actual usage will remain unknown; the reservation will continue
+                          counting against your budget.
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={!online || acknowledgingRunId !== null}
+                            onClick={() => void acknowledgeUnknownUsage(run)}
+                            className="min-h-11 border border-[color:var(--ember)] px-3 text-foreground disabled:opacity-50"
+                          >
+                            {acknowledgingRunId === run.id
+                              ? "Saving acknowledgement…"
+                              : "Confirm acknowledgement"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!online || acknowledgingRunId !== null}
+                            onClick={() => setConfirmingRunId(null)}
+                            className="min-h-11 px-3 text-foreground underline underline-offset-2 disabled:opacity-50"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={!online}
+                        onClick={() => setConfirmingRunId(run.id)}
+                        className="mt-2 min-h-11 border border-[color:var(--ember)] px-3 text-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--candlelight)]"
+                      >
+                        Acknowledge unknown usage
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ) : null}
+
         {blockMessage ? (
           <p
             className={`border px-4 py-3 text-base ${
@@ -206,7 +316,7 @@ export function InvestigationAnalysisPanel({
 
         <button
           type="button"
-          disabled={!canStart || busy}
+          disabled={!canStart || busy || acknowledgingRunId !== null}
           onClick={() => void start()}
           className="flex min-h-12 w-full items-center justify-center gap-2.5 rounded-sm border border-[color:var(--candlelight)] px-4 text-base text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--candlelight)] disabled:cursor-not-allowed disabled:opacity-50"
         >

@@ -2,7 +2,7 @@
 -- item is created, and no product-default model tier or cost ceiling is used.
 begin;
 
-select plan(56);
+select plan(59);
 
 set local role postgres;
 
@@ -69,6 +69,8 @@ select ok(
   and not pg_catalog.has_function_privilege('authenticated', 'public.custodian_settle_provider_reservation(uuid,uuid,text,jsonb)', 'EXECUTE')
   and not pg_catalog.has_function_privilege('anon', 'public.custodian_settle_provider_reservation(uuid,uuid,text,jsonb)', 'EXECUTE')
   and pg_catalog.has_function_privilege('service_role', 'public.custodian_settle_provider_reservation(uuid,uuid,text,jsonb)', 'EXECUTE')
+  and pg_catalog.has_function_privilege('authenticated', 'public.custodian_acknowledge_unknown_provider_reservation(uuid)', 'EXECUTE')
+  and not pg_catalog.has_function_privilege('anon', 'public.custodian_acknowledge_unknown_provider_reservation(uuid)', 'EXECUTE')
   and not pg_catalog.has_function_privilege('anon', 'public.custodian_ensure_readonly_analysis_policy(uuid,jsonb)', 'EXECUTE')
   and not pg_catalog.has_function_privilege('anon', 'public.custodian_create_readonly_analysis_run(uuid,text,jsonb)', 'EXECUTE')
   and not pg_catalog.has_function_privilege('anon', 'public.custodian_reserve_provider_call(uuid,text,jsonb)', 'EXECUTE')
@@ -500,6 +502,20 @@ select is(
   'synthesizing',
   'an in-flight hold keeps the run synthesizing after cancellation is requested'
 );
+
+do $$
+begin
+  perform public.custodian_acknowledge_unknown_provider_reservation(
+    (select id from public.agent_provider_reservations where idempotency_key = 'm4a-hold-a')
+  );
+  raise exception 'an active run usage hold was acknowledged';
+exception
+  when insufficient_privilege then
+    if sqlerrm not like '%only after the run stops%' then raise; end if;
+end;
+$$;
+
+select ok(true, 'an owner cannot acknowledge usage while its run is still active');
 
 do $$
 declare
@@ -1357,8 +1373,54 @@ select is(
   'M4A writes no findings'
 );
 
+do $$
+declare
+  run_id uuid;
+  reservation_id uuid;
+  before_budget jsonb;
+  after_budget jsonb;
+  first_ack jsonb;
+  repeated_ack jsonb;
+begin
+  select id into run_id from public.agent_runs where idempotency_key = 'm4a-run-a';
+  select id into reservation_id from public.agent_provider_reservations where idempotency_key = 'm4a-hold-a';
+  before_budget := public.custodian_run_budget_status(run_id);
+  first_ack := public.custodian_acknowledge_unknown_provider_reservation(reservation_id);
+  after_budget := public.custodian_run_budget_status(run_id);
+  repeated_ack := public.custodian_acknowledge_unknown_provider_reservation(reservation_id);
+  if first_ack ->> 'status' <> 'held'
+     or first_ack ->> 'usage_knowledge' <> 'unknown'
+     or first_ack ->> 'owner_acknowledged_unknown_at' is null
+     or coalesce((repeated_ack ->> 'idempotent')::boolean, false) is not true
+     or (before_budget ->> 'daily_cost')::numeric <> (after_budget ->> 'daily_cost')::numeric
+     or (before_budget ->> 'monthly_cost')::numeric <> (after_budget ->> 'monthly_cost')::numeric
+     or (before_budget ->> 'daily_tokens')::numeric <> (after_budget ->> 'daily_tokens')::numeric
+     or (before_budget ->> 'monthly_tokens')::numeric <> (after_budget ->> 'monthly_tokens')::numeric
+     or (before_budget ->> 'run_hold_cost_usd')::numeric <> (after_budget ->> 'run_hold_cost_usd')::numeric
+     or (select actual_tokens is not null or actual_cost_usd is not null from public.agent_provider_reservations where id = reservation_id)
+     or (select count(*) from public.audit_events where action = 'acknowledge_unknown_provider_usage' and target_id = reservation_id) <> 1 then
+    raise exception 'unknown usage acknowledgement changed accounting, actual usage, or audit state';
+  end if;
+end;
+$$;
+
+select ok(true, 'owner acknowledgement preserves unknown actuals, budget counts, and one audit entry');
+
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '15151515-1515-4515-8515-151515151515', true);
+
+do $$
+begin
+  perform public.custodian_acknowledge_unknown_provider_reservation(
+    (select id from public.agent_provider_reservations where idempotency_key = 'm4a-hold-a')
+  );
+  raise exception 'another owner acknowledged a provider reservation';
+exception
+  when sqlstate 'P0002' then null;
+end;
+$$;
+
+select ok(true, 'another owner cannot acknowledge this provider reservation');
 
 do $$
 begin

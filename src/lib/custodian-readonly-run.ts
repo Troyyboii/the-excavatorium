@@ -119,6 +119,7 @@ export type ReadonlyRunObservation = {
   holdStatus: "held" | "settled_known" | "released_uncontacted" | null;
   failureCode: string | null;
   usageKnowledge?: "known" | "unknown" | "none" | null;
+  ownerAcknowledgedUnknownAt?: string | null;
   /**
    * `available` means the reservation read succeeded, so a null hold is a
    * confirmed absence. `unavailable` or omitted means the absence is not confirmed.
@@ -133,6 +134,7 @@ export type PersistedReadonlyRun = {
   holdStatus: ReadonlyRunObservation["holdStatus"];
   failureCode: string | null;
   usageKnowledge?: ReadonlyRunObservation["usageKnowledge"];
+  ownerAcknowledgedUnknownAt?: ReadonlyRunObservation["ownerAcknowledgedUnknownAt"];
   holdProjection?: ReadonlyRunObservation["holdProjection"];
 };
 
@@ -158,6 +160,7 @@ export type ReadonlyAnalysisPorts = {
   invoke: (body: { runId: string; invocationKey: string }) => Promise<ReadonlyInvocationResult>;
   readRun: (runId: string) => Promise<ReadonlyRunObservation | null>;
   refreshRuns: () => Promise<void>;
+  acknowledgeUnknownHold?: (reservationId: string) => Promise<void>;
   /** Already-loaded Run Room rows. Used to refuse a second run while one is uncertain. */
   persistedRuns?: () => readonly PersistedReadonlyRun[];
 };
@@ -170,6 +173,7 @@ export type ReadonlyAnalysisSession = {
   invocationKey: () => string;
   invocationKeyIfSet: () => string | null;
   runIdempotencyKey: () => string;
+  restart: () => void;
 };
 
 export type ReadonlyAnalysisStartResult =
@@ -256,6 +260,13 @@ export function createReadonlyAnalysisSession(
     },
     finish(durableStop: boolean) {
       phase = durableStop ? "stopped" : "unresolved";
+    },
+    restart() {
+      phase = "idle";
+      invocationKey = null;
+      runIdempotencyKey = null;
+      boundRunId = null;
+      pendingResumeId = null;
     },
     bindRun(runId: string) {
       if (UUID_PATTERN.test(runId)) boundRunId = runId.toLowerCase();
@@ -642,6 +653,25 @@ export function productionReadonlyAnalysisPorts(input: {
       if (!runId) throw new Error("The run RPC did not return a persisted id.");
       return { runId };
     },
+    async acknowledgeUnknownHold(reservationId) {
+      if (!UUID_PATTERN.test(reservationId)) {
+        throw new Error("A valid provider reservation is required.");
+      }
+      const { data, error } = await supabase.rpc(
+        "custodian_acknowledge_unknown_provider_reservation",
+        { reservation_id_value: reservationId },
+      );
+      if (error) throw new Error(publicDetail(error.message));
+      const response = data && typeof data === "object" ? (data as Record<string, unknown>) : null;
+      if (
+        !response ||
+        response.status !== "held" ||
+        response.usage_knowledge !== "unknown" ||
+        typeof response.owner_acknowledged_unknown_at !== "string"
+      ) {
+        throw new Error("The provider reservation acknowledgement was not confirmed.");
+      }
+    },
     async invoke(body) {
       if (!surfaceEnabled) {
         return {
@@ -689,6 +719,7 @@ export function observationForCustodianRun(
     holdStatus: run.providerHold?.status ?? null,
     failureCode: run.failureCode,
     usageKnowledge: run.providerHold?.usageKnowledge ?? null,
+    ownerAcknowledgedUnknownAt: run.providerHold?.ownerAcknowledgedUnknownAt ?? null,
     holdProjection,
   };
 }
@@ -737,7 +768,24 @@ function isDriveState(status: string): status is (typeof READONLY_ANALYSIS_ADVAN
 }
 
 function usageUnclaimed(observation: ReadonlyRunObservation): boolean {
-  return observation.holdStatus === "held" || observation.usageKnowledge === "unknown";
+  return (
+    (observation.holdStatus === "held" && !ownerAcknowledgementConfirmed(observation)) ||
+    (observation.usageKnowledge === "unknown" && !ownerAcknowledgementConfirmed(observation))
+  );
+}
+
+function ownerAcknowledgementConfirmed(
+  observation: Pick<
+    ReadonlyRunObservation,
+    "holdStatus" | "usageKnowledge" | "ownerAcknowledgedUnknownAt" | "holdProjection"
+  >,
+): boolean {
+  return (
+    Boolean(observation.ownerAcknowledgedUnknownAt) &&
+    observation.holdStatus === "held" &&
+    observation.usageKnowledge === "unknown" &&
+    observation.holdProjection === "available"
+  );
 }
 
 function holdIsUnresolved(observation: ReadonlyRunObservation): boolean {
@@ -748,6 +796,7 @@ function holdIsUnresolved(observation: ReadonlyRunObservation): boolean {
 function reservationConfirmedAbsent(observation: {
   holdStatus: ReadonlyRunObservation["holdStatus"];
   usageKnowledge?: ReadonlyRunObservation["usageKnowledge"];
+  ownerAcknowledgedUnknownAt?: ReadonlyRunObservation["ownerAcknowledgedUnknownAt"];
   holdProjection?: ReadonlyRunObservation["holdProjection"];
 }): boolean {
   return (
@@ -761,6 +810,7 @@ function holdIsResolved(observation: {
   status?: string;
   holdStatus: ReadonlyRunObservation["holdStatus"];
   usageKnowledge?: ReadonlyRunObservation["usageKnowledge"];
+  ownerAcknowledgedUnknownAt?: ReadonlyRunObservation["ownerAcknowledgedUnknownAt"];
   holdProjection?: ReadonlyRunObservation["holdProjection"];
 }): boolean {
   if (observation.holdStatus === "settled_known" && observation.usageKnowledge === "known") {
@@ -769,6 +819,7 @@ function holdIsResolved(observation: {
   if (observation.holdStatus === "released_uncontacted" && observation.usageKnowledge === "none") {
     return true;
   }
+  if (ownerAcknowledgementConfirmed(observation)) return true;
   return (
     observation.status !== undefined &&
     PRE_PROVIDER_TERMINAL_STATES.has(observation.status) &&

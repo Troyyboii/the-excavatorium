@@ -3,6 +3,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReadonlyAnalysisPorts } from "@/lib/custodian-readonly-run";
+import type { CustodianRun } from "@/lib/custodian-runtime";
 import { InvestigationAnalysisPanel } from "./investigation-analysis";
 
 afterEach(() => cleanup());
@@ -23,6 +24,48 @@ function ports(): ReadonlyAnalysisPorts {
       holdProjection: "available" as const,
     })),
     refreshRuns: mock(async () => undefined),
+    acknowledgeUnknownHold: mock(async () => undefined),
+  };
+}
+
+function failedHeldRun(acknowledged = false): CustodianRun {
+  return {
+    id: "00000000-0000-4000-8000-000000000011",
+    caseId: CASE_ID,
+    objective: "Objective",
+    modelTier: "luna",
+    status: "failed",
+    budgetTokens: 40_000,
+    budgetCostUsd: 1,
+    budgetLatencyMs: 55_000,
+    budgetToolEvents: 0,
+    tokensUsed: 0,
+    costUsd: 0,
+    latencyMs: 0,
+    toolEventsCount: 0,
+    lastStepNumber: 1,
+    failureCode: "openai_timeout",
+    failureMessage: null,
+    cancelRequestedAt: null,
+    createdAt: "2026-10-14T19:14:00.000Z",
+    updatedAt: "2026-10-14T19:14:55.000Z",
+    providerHold: {
+      id: "00000000-0000-4000-8000-000000000012",
+      runId: "00000000-0000-4000-8000-000000000011",
+      status: "held",
+      usageKnowledge: "unknown",
+      holdTokens: 40_000,
+      holdCostUsd: 1,
+      actualTokens: null,
+      actualCostUsd: null,
+      pricingVersion: "test-price-v1",
+      failureCode: "openai_timeout",
+      ownerAcknowledgedUnknownAt: acknowledged ? "2026-10-15T10:00:00.000Z" : null,
+      inFlightUntil: "2026-10-14T19:15:00.000Z",
+      updatedAt: "2026-10-14T19:14:55.000Z",
+    },
+    providerDiagnostic: null,
+    latestStep: null,
   };
 }
 
@@ -118,5 +161,41 @@ describe("InvestigationAnalysisPanel", () => {
     );
     expect(screen.getByText(/not Owner Judgment/)).not.toBeNull();
     expect(screen.getByText(/Prior Findings stay/)).not.toBeNull();
+  });
+
+  test("requires explicit acknowledgement, preserves the unknown warning, and refreshes runs", async () => {
+    const analysisPorts = ports();
+    const user = userEvent.setup();
+    const props = {
+      caseId: CASE_ID,
+      objective: "Objective",
+      currentQuestion: "",
+      ports: analysisPorts,
+      runs: [failedHeldRun()],
+      providerHoldProjection: "available" as const,
+      providerKeyStatus: {
+        configured: true,
+        last4: "abcd",
+        keyVersion: 1,
+        updatedAt: null,
+      },
+      modelPreference: "gpt-5.6-luna",
+    };
+    const view = render(<InvestigationAnalysisPanel {...props} />);
+
+    await user.click(screen.getByRole("button", { name: "Start analysis" }));
+    expect(analysisPorts.ensurePolicy).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Acknowledge unknown usage" }));
+    expect(screen.getByText(/Actual usage will remain unknown/)).not.toBeNull();
+    expect(analysisPorts.acknowledgeUnknownHold).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Confirm acknowledgement" }));
+    expect(analysisPorts.acknowledgeUnknownHold).toHaveBeenCalledWith(
+      "00000000-0000-4000-8000-000000000012",
+    );
+    expect(analysisPorts.refreshRuns).toHaveBeenCalled();
+
+    view.rerender(<InvestigationAnalysisPanel {...props} runs={[failedHeldRun(true)]} />);
+    await user.click(screen.getByRole("button", { name: "Start analysis" }));
+    expect(analysisPorts.ensurePolicy).toHaveBeenCalled();
   });
 });
