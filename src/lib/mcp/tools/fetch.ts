@@ -14,7 +14,7 @@ export const fetchOutputSchema = {
     is_example: z.boolean(),
     created_at: z.string(),
     updated_at: z.string(),
-    record_data: z.record(z.unknown()),
+    record_data: z.record(z.string(), z.unknown()),
   }),
   linkedRecordIds: z.array(z.string().uuid()),
 };
