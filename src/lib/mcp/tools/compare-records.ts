@@ -13,7 +13,7 @@ const safeRecordSchema = z.object({
   is_example: z.boolean(),
   created_at: z.string(),
   updated_at: z.string(),
-  record_data: z.record(z.unknown()),
+  record_data: z.record(z.string(), z.unknown()),
 });
 
 export default defineTool({
@@ -26,7 +26,7 @@ export default defineTool({
   },
   outputSchema: {
     recordIds: z.array(z.string().uuid()),
-    differences: z.record(z.array(z.unknown())),
+    differences: z.record(z.string(), z.array(z.unknown())),
     records: z.array(safeRecordSchema),
   },
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },

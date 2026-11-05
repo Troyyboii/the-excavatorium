@@ -154,7 +154,7 @@ const documentValidationFieldLabels: Record<string, string> = {
   note: "Note",
 };
 
-function formatDocumentValidationPath(path: readonly (string | number)[]): string {
+function formatDocumentValidationPath(path: readonly PropertyKey[]): string {
   if (path.length === 0) return "Document";
   const section = typeof path[0] === "string" ? path[0] : "Document";
   const sectionLabel = documentValidationSectionLabels[section] ?? section;
@@ -166,7 +166,7 @@ function formatDocumentValidationPath(path: readonly (string | number)[]): strin
 
 export function formatDocumentValidationIssues(
   issues: ReadonlyArray<{
-    path: readonly (string | number)[];
+    path: readonly PropertyKey[];
     message: string;
   }>,
 ): string[] {

@@ -5,7 +5,7 @@ import { handleGetFindings } from "../capability-handlers";
 const findingSchema = z
   .object({
     id: z.string().uuid(),
-    evidence: z.array(z.record(z.unknown())).optional(),
+    evidence: z.array(z.record(z.string(), z.unknown())).optional(),
   })
   .catchall(z.unknown());
 
